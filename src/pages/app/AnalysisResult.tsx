@@ -4,7 +4,6 @@ import { ArrowLeft, ChevronDown, ChevronUp, Mic, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Conversation } from '../../types';
 import { MomentumGraph } from '../../components/analysis/MomentumGraph';
-import { ScoreBadge } from '../../components/ui/ScoreBadge';
 import { Button } from '../../components/ui/Button';
 import { getScoreColor, formatDate } from '../../lib/utils';
 import { cn } from '../../lib/utils';

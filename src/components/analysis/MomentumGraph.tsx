@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, ReferenceLine, Dot 
+  ResponsiveContainer, ReferenceLine 
 } from 'recharts';
 import { MomentumPoint } from '../../types';
 
@@ -40,7 +40,6 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export function MomentumGraph({ data, animated = false }: MomentumGraphProps) {
-  const [activePoint, setActivePoint] = useState<MomentumPoint | null>(null);
 
   return (
     <div className="w-full">

@@ -8,7 +8,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 export function Coaching() {
   const { user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
