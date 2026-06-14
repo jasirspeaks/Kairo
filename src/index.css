@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #0A0A0C;
+  color: #FFFFFF;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0C;
+}
+::-webkit-scrollbar-thumb {
+  background: #2A2A35;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6B21A8;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary hover:bg-primaryLight text-white font-medium px-5 py-2.5 rounded-lg transition-all duration-200 hover:shadow-purple-glow active:scale-95 text-sm;
+  }
+  .btn-secondary {
+    @apply bg-surface border border-border hover:border-accent text-textSecondary hover:text-white font-medium px-5 py-2.5 rounded-lg transition-all duration-200 text-sm;
+  }
+  .card {
+    @apply bg-surface border border-border rounded-xl shadow-card;
+  }
+  .card-hover {
+    @apply card hover:border-accent/40 hover:shadow-purple-glow-sm transition-all duration-200;
+  }
+  .input-field {
+    @apply bg-surfaceHigh border border-border rounded-lg px-4 py-3 text-white placeholder-textMuted focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30 transition-all duration-200 w-full text-sm;
+  }
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-textSecondary hover:text-white hover:bg-surfaceHigh transition-all duration-200 cursor-pointer;
+  }
+  .sidebar-item-active {
+    @apply sidebar-item text-white bg-primary/20 border border-primary/30 shadow-purple-glow-sm;
+  }
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-widest text-textMuted;
+  }
+  .score-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+}
