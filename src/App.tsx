@@ -2,12 +2,14 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
+
+// Pages
 import { Landing } from './pages/Landing';
 import { SignIn } from './pages/auth/SignIn';
 import { SignUp } from './pages/auth/SignUp';
 import { Dashboard } from './pages/app/Dashboard';
 import { NewAnalysis } from './pages/app/NewAnalysis';
-import { AnalysisResult } from './pages/app/AnalysisResult';
+import { DealReview } from './pages/app/DealReview';
 import { History } from './pages/app/History';
 import { Patterns } from './pages/app/Patterns';
 import { Coaching } from './pages/app/Coaching';
@@ -43,7 +45,7 @@ export default function App() {
               <Routes>
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="new" element={<NewAnalysis />} />
-                <Route path="analysis/:id" element={<AnalysisResult />} />
+                <Route path="deals/:dealId" element={<DealReview />} />
                 <Route path="history" element={<History />} />
                 <Route path="patterns" element={<Patterns />} />
                 <Route path="coaching" element={<Coaching />} />

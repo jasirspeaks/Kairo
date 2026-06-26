@@ -1,37 +1,40 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, TrendingUp, Brain, Users, BarChart3 } from 'lucide-react';
+import { Zap, TrendingUp, Brain, Shield, BarChart3 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { MomentumGraph } from '../components/analysis/MomentumGraph';
 import { useAuth } from '../hooks/useAuth';
-
-const DEMO_DATA = [
-  { time: 0, score: 38, label: 'Opening', description: 'Cold start — minimal rapport established' },
-  { time: 12, score: 55, label: 'Momentum Building', description: 'Prospect engaged with discovery questions' },
-  { time: 25, score: 72, label: 'Clarity Peak', description: 'Problem-solution alignment reached' },
-  { time: 38, score: 48, label: 'First Objection', description: 'Pricing concern surfaced — rep struggled to pivot' },
-  { time: 52, score: 63, label: 'Recovery Phase', description: 'Reframing attempt partially successful' },
-  { time: 68, score: 44, label: 'Resistance Detected', description: 'Prospect disengaged — pace mismatch' },
-  { time: 82, score: 70, label: 'Buying Signal', description: 'Prospect asked about timeline — intent confirmed' },
-  { time: 100, score: 74, label: 'Closing Window', description: 'Strong close attempt with clear next step' },
-];
+import { cn } from '../lib/utils';
 
 const FEATURES = [
-  { icon: TrendingUp, title: 'Deal Momentum Analysis', desc: 'See exactly where your deal gained or lost traction — not just what happened, but why it shifted.' },
-  { icon: Brain, title: 'Psychological Insight Engine', desc: 'Kairo reads hesitation, trust shifts, objection patterns, and buying intent beneath what was literally said.' },
-  { icon: BarChart3, title: 'Personalized Coaching', desc: 'Specific coaching tied to exact conversation moments. What was said, what went wrong, and what to say instead.' },
-  { icon: Users, title: 'Team Intelligence', desc: 'Managers get full visibility across every rep — performance trends, pattern analysis, and coaching priorities.' },
+  { icon: Shield, title: 'Deal Intelligence', desc: 'Kairo reviews your deals — not your conversations. The transcript is evidence. The deal is what matters.' },
+  { icon: TrendingUp, title: 'Risk Detection', desc: 'Identifies the single risk most likely to prevent your deal from progressing — and what to do about it.' },
+  { icon: Brain, title: 'Missing Information', desc: 'Surfaces what you still don\'t know that could kill the deal before it\'s too late to act.' },
+  { icon: BarChart3, title: 'Multi-Call Intelligence', desc: 'Tracks how risks evolve across every call. What was unknown in call 1. What got resolved. What emerged.' },
 ];
+
+const DEMO_DEAL = {
+  status: 'At Risk',
+  confidence: 'Medium',
+  reason: 'Budget authority has not been confirmed. The champion is engaged but has not indicated whether they have sign-off power or need to escalate.',
+  highest_priority_risk: 'No confirmation of who approves the purchase',
+  missing: [
+    { gap: 'Budget authority', question: 'Who needs to approve a purchase at this size?' },
+    { gap: 'Decision timeline', question: 'When does a decision need to be made, and why?' },
+    { gap: 'Competing options', question: 'Are you evaluating any other solutions right now?' },
+  ],
+  next_move: 'Send a follow-up email requesting a brief call with the economic buyer before moving to proposal.',
+  manager_note: 'Don\'t send pricing until you know who approves it.',
+};
 
 export function Landing() {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
 
   useEffect(() => {
     if (!loading && user) {
       navigate('/app/dashboard', { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [user, profile, loading, navigate]);
 
   return (
     <div className="min-h-screen bg-bg">
@@ -52,26 +55,26 @@ export function Landing() {
       {/* Hero */}
       <div className="text-center pt-20 pb-16 px-8 relative">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/6 rounded-full blur-3xl pointer-events-none" />
-        
+
         <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-1.5 mb-6">
           <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-          <span className="text-xs text-accent font-medium">AI-Powered Conversation Intelligence</span>
+          <span className="text-xs text-accent font-medium">Deal Intelligence Platform</span>
         </div>
 
         <h1 className="text-5xl font-display font-bold text-white mb-5 leading-tight max-w-3xl mx-auto">
-          Understand why your deals{' '}
+          Stop losing deals because you{' '}
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-primaryLight">
-            win or stall
+            missed something
           </span>
         </h1>
-        
+
         <p className="text-textSecondary text-lg max-w-xl mx-auto mb-8 leading-relaxed">
-          Kairo analyzes your sales conversations and surfaces the psychological signals, turning points, and communication patterns that determine whether deals close.
+          Kairo reviews your sales conversations and identifies the unanswered questions, hidden risks, and missing information most likely to determine whether the deal closes or dies.
         </p>
 
         <div className="flex gap-3 justify-center">
           <Button onClick={() => navigate('/signup')} size="lg">
-            Start Analyzing Free
+            Review My First Deal
           </Button>
           <Button onClick={() => navigate('/signin')} variant="secondary" size="lg">
             Sign In
@@ -79,21 +82,66 @@ export function Landing() {
         </div>
       </div>
 
-      {/* Demo Graph */}
-      <div className="max-w-4xl mx-auto px-8 pb-20">
-        <div className="card p-8 shadow-purple-glow">
-          <div className="mb-2 text-center">
-            <span className="text-xs text-textMuted uppercase tracking-widest">Live Demo</span>
+      {/* Demo Deal Review */}
+      <div className="max-w-2xl mx-auto px-8 pb-20">
+        <div className="text-center mb-6">
+          <span className="text-xs text-textMuted uppercase tracking-widest">Live Demo — Deal Review</span>
+        </div>
+        <div className="card p-6 space-y-5 shadow-purple-glow">
+          {/* Verdict */}
+          <div className="border-l-4 border-red-400 pl-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full border bg-red-400/10 border-red-400/30 text-red-400">
+                {DEMO_DEAL.status}
+              </span>
+              <span className="text-xs text-textMuted border border-border px-2 py-1 rounded-full">
+                {DEMO_DEAL.confidence} Confidence
+              </span>
+            </div>
+            <p className="text-textSecondary text-sm leading-relaxed">{DEMO_DEAL.reason}</p>
           </div>
-          <MomentumGraph data={DEMO_DATA} animated />
+
+          {/* What You're Missing */}
+          <div>
+            <p className="section-label mb-3">What You're Missing</p>
+            <div className="space-y-2">
+              {DEMO_DEAL.missing.map((item, i) => (
+                <div key={i} className="bg-surfaceHigh border border-border rounded-lg p-3 flex items-start gap-3">
+                  <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0">
+                    <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
+                  </div>
+                  <div>
+                    <p className="text-white text-xs font-medium mb-1">{item.gap}</p>
+                    <p className="text-accent text-xs">Ask: "{item.question}"</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Next Move */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-surfaceHigh border border-border rounded-lg p-3">
+              <p className="section-label mb-1.5">Next Move</p>
+              <p className="text-white text-xs leading-relaxed">{DEMO_DEAL.next_move}</p>
+            </div>
+            <div className="bg-primary/10 border border-primary/20 rounded-lg p-3">
+              <p className="section-label mb-1.5">Manager Note</p>
+              <p className="text-white text-xs font-medium">{DEMO_DEAL.manager_note}</p>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Features */}
       <div className="max-w-5xl mx-auto px-8 pb-20">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-display font-bold text-white mb-3">Every conversation, decoded</h2>
-          <p className="text-textSecondary">Not summaries. Not notes. Actual intelligence about what happened and why.</p>
+          <h2 className="text-3xl font-display font-bold text-white mb-3">
+            The deal is what matters
+          </h2>
+          <p className="text-textSecondary">
+            Not the conversation. Not the transcript. The deal.
+          </p>
         </div>
         <div className="grid grid-cols-2 gap-5">
           {FEATURES.map(({ icon: Icon, title, desc }) => (
@@ -111,17 +159,21 @@ export function Landing() {
       {/* CTA */}
       <div className="text-center pb-20 px-8">
         <div className="card max-w-lg mx-auto p-8 shadow-purple-glow">
-          <h2 className="text-2xl font-display font-bold text-white mb-2">Ready to understand your conversations?</h2>
-          <p className="text-textSecondary text-sm mb-6">Paste a transcript. Get a full psychological breakdown in seconds.</p>
+          <h2 className="text-2xl font-display font-bold text-white mb-2">
+            What are you missing that could cost you this deal?
+          </h2>
+          <p className="text-textSecondary text-sm mb-6">
+            Paste a transcript. Get a deal review in under 30 seconds.
+          </p>
           <Button onClick={() => navigate('/signup')} size="lg" className="w-full">
-            Get Started — It's Free
+            Review My First Deal
           </Button>
         </div>
       </div>
 
       {/* Footer */}
       <div className="border-t border-border px-8 py-6 text-center">
-        <p className="text-textMuted text-xs">© 2025 Kairo. Conversation intelligence for serious sales professionals.</p>
+        <p className="text-textMuted text-xs">© 2025 Kairo. Deal intelligence for serious sales professionals.</p>
       </div>
     </div>
   );

@@ -1,17 +1,17 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, Plus, History, TrendingUp, 
-  BookOpen, Settings, LogOut, Zap 
+import {
+  LayoutDashboard, Plus, History, ShieldAlert,
+  BookOpen, Settings, LogOut, Zap
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
 
 const NAV_ITEMS = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/app/new', label: 'New Analysis', icon: Plus },
-  { path: '/app/history', label: 'History', icon: History },
-  { path: '/app/patterns', label: 'Patterns', icon: TrendingUp },
+  { path: '/app/new', label: 'New Deal', icon: Plus },
+  { path: '/app/history', label: 'Deal History', icon: History },
+  { path: '/app/patterns', label: 'Risk Center', icon: ShieldAlert },
   { path: '/app/coaching', label: 'Coaching', icon: BookOpen },
 ];
 
@@ -42,7 +42,7 @@ export function Sidebar() {
               onClick={() => navigate(path)}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-left',
-                active 
+                active
                   ? 'text-white bg-primary/20 border border-primary/30 shadow-purple-glow-sm'
                   : 'text-textSecondary hover:text-white hover:bg-surfaceHigh'
               )}
@@ -68,7 +68,7 @@ export function Sidebar() {
           <Settings className="w-4 h-4" />
           Settings
         </button>
-        
+
         <div className="px-3 py-2 mt-2">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-7 h-7 rounded-full bg-primary/30 border border-primary/40 flex items-center justify-center text-xs font-semibold text-accent">
@@ -79,7 +79,7 @@ export function Sidebar() {
               <p className="text-xs text-textMuted truncate">{profile?.email}</p>
             </div>
           </div>
-          <button 
+          <button
             onClick={signOut}
             className="w-full flex items-center gap-2 text-xs text-textMuted hover:text-red-400 transition-colors"
           >

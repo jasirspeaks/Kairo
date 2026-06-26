@@ -1,32 +1,78 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Mic, FileText, ArrowRight } from 'lucide-react';
+import { Plus, AlertTriangle, CheckCircle, Clock, TrendingDown, ArrowRight, Building2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { Conversation } from '../../types';
+import { Deal, DealState } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { ScoreBadge } from '../../components/ui/ScoreBadge';
-import { formatDate } from '../../lib/utils';
+import { getStatusBg } from '../../lib/kairo';
 import { cn } from '../../lib/utils';
+
+interface DealWithState extends Deal {
+  deal_state: DealState | null;
+}
 
 export function Dashboard() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [deals, setDeals] = useState<DealWithState[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('conversations')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-      .then(({ data }) => { setConversations(data || []); setLoading(false); });
+    fetchDeals();
   }, [user]);
 
-  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
+  async function fetchDeals() {
+    const { data: dealsData } = await supabase
+      .from('deals')
+      .select('*')
+      .eq('user_id', user!.id)
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false });
+
+    if (!dealsData) { setLoading(false); return; }
+
+    const dealsWithState = await Promise.all(
+      dealsData.map(async (deal) => {
+        const { data: state } = await supabase
+          .from('deal_state')
+          .select('*')
+          .eq('deal_id', deal.id)
+          .single();
+        return { ...deal, deal_state: state };
+      })
+    );
+
+    // Sort by risk — At Risk and Lost Momentum first
+    const sorted = dealsWithState.sort((a, b) => {
+      const order: Record<string, number> = { high: 0, medium: 1, low: 2, none: 3 };
+      return (order[a.risk_level] ?? 3) - (order[b.risk_level] ?? 3);
+    });
+
+    setDeals(sorted);
+    setLoading(false);
+  }
+
+  function getStatusIcon(status: string | null) {
+    switch (status) {
+      case 'Healthy': return <CheckCircle className="w-4 h-4 text-emerald-400" />;
+      case 'Open': return <Clock className="w-4 h-4 text-amber-400" />;
+      case 'At Risk': return <AlertTriangle className="w-4 h-4 text-red-400" />;
+      case 'Lost Momentum': return <TrendingDown className="w-4 h-4 text-textMuted" />;
+      default: return <Clock className="w-4 h-4 text-textMuted" />;
+    }
+  }
+
+  const greeting = new Date().getHours() < 12
+    ? 'Good morning'
+    : new Date().getHours() < 17
+    ? 'Good afternoon'
+    : 'Good evening';
+
+  const atRiskCount = deals.filter(d => d.risk_level === 'high').length;
+  const activeCount = deals.length;
 
   return (
     <div className="animate-fade-in">
@@ -37,111 +83,112 @@ export function Dashboard() {
             {greeting}, {profile?.name?.split(' ')[0] || 'there'}
           </h1>
           <p className="text-textSecondary text-sm">
-            {conversations.length === 0 
-              ? 'Your conversation intelligence workspace is ready.'
-              : `You have ${conversations.length} analyzed conversation${conversations.length !== 1 ? 's' : ''}.`
+            {activeCount === 0
+              ? 'No active deals yet. Add your first deal to get started.'
+              : atRiskCount > 0
+              ? `${atRiskCount} deal${atRiskCount !== 1 ? 's' : ''} require${atRiskCount === 1 ? 's' : ''} your attention.`
+              : `${activeCount} active deal${activeCount !== 1 ? 's' : ''} — all looking good.`
             }
           </p>
         </div>
         <Button onClick={() => navigate('/app/new')} size="lg">
           <Plus className="w-4 h-4" />
-          New Analysis
+          New Deal
         </Button>
       </div>
 
-      {/* Stats row */}
-      {conversations.length > 0 && (
+      {/* Stats */}
+      {deals.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="card p-4">
-            <p className="section-label mb-1">Total Analyzed</p>
-            <p className="text-2xl font-display font-bold text-white">{conversations.length}</p>
+            <p className="section-label mb-1">Active Deals</p>
+            <p className="text-2xl font-display font-bold text-white">{activeCount}</p>
           </div>
           <div className="card p-4">
-            <p className="section-label mb-1">Average Score</p>
-            <p className="text-2xl font-display font-bold text-white">
-              {Math.round(conversations.filter(c => c.overall_score).reduce((a, c) => a + (c.overall_score || 0), 0) / conversations.filter(c => c.overall_score).length) || '—'}
+            <p className="section-label mb-1">Require Attention</p>
+            <p className={cn('text-2xl font-display font-bold', atRiskCount > 0 ? 'text-red-400' : 'text-white')}>
+              {atRiskCount}
             </p>
           </div>
           <div className="card p-4">
-            <p className="section-label mb-1">This Week</p>
-            <p className="text-2xl font-display font-bold text-white">
-              {conversations.filter(c => {
-                const date = new Date(c.created_at);
-                const weekAgo = new Date();
-                weekAgo.setDate(weekAgo.getDate() - 7);
-                return date > weekAgo;
-              }).length}
+            <p className="section-label mb-1">Healthy</p>
+            <p className="text-2xl font-display font-bold text-emerald-400">
+              {deals.filter(d => d.deal_state?.current_status === 'Healthy').length}
             </p>
           </div>
         </div>
       )}
 
-      {/* Conversations */}
+      {/* Deals list */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="section-label">Recent Conversations</h2>
-          {conversations.length > 0 && (
-            <button onClick={() => navigate('/app/history')} className="text-xs text-accent hover:text-white transition-colors flex items-center gap-1">
-              View all <ArrowRight className="w-3 h-3" />
-            </button>
-          )}
-        </div>
+        <h2 className="section-label mb-4">
+          {atRiskCount > 0 ? 'Deals Requiring Attention' : 'Active Deals'}
+        </h2>
 
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="card p-4 animate-pulse">
-                <div className="h-4 bg-surfaceHigh rounded w-1/3 mb-2" />
-                <div className="h-3 bg-surfaceHigh rounded w-2/3" />
-              </div>
+              <div key={i} className="card h-20 animate-pulse" />
             ))}
           </div>
-        ) : conversations.length === 0 ? (
+        ) : deals.length === 0 ? (
           <EmptyState
-            icon={<FileText className="w-6 h-6" />}
-            title="No conversations yet"
-            description="Upload your first call recording or paste a transcript to begin your conversation intelligence report."
+            icon={<Building2 className="w-6 h-6" />}
+            title="No active deals"
+            description="Add your first deal and paste a call transcript. Kairo will identify what you're missing and what to do next."
             action={
               <Button onClick={() => navigate('/app/new')}>
                 <Plus className="w-4 h-4" />
-                Analyze Your First Conversation
+                Add Your First Deal
               </Button>
             }
           />
         ) : (
           <div className="space-y-3">
-            {conversations.map(conv => (
+            {deals.map(deal => (
               <button
-                key={conv.id}
-                onClick={() => navigate(`/app/analysis/${conv.id}`)}
-                className="card-hover w-full p-4 flex items-center gap-4 text-left group"
+                key={deal.id}
+                onClick={() => navigate(`/app/deals/${deal.id}`)}
+                className="card-hover w-full flex items-center gap-4 p-4 text-left group"
               >
-                <div className={cn(
-                  'w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0',
-                  conv.input_type === 'audio' 
-                    ? 'bg-purple-400/10 border border-purple-400/20'
-                    : 'bg-blue-400/10 border border-blue-400/20'
-                )}>
-                  {conv.input_type === 'audio' 
-                    ? <Mic className="w-4 h-4 text-purple-400" />
-                    : <FileText className="w-4 h-4 text-blue-400" />
-                  }
+                {/* Status icon */}
+                <div className="flex-shrink-0">
+                  {getStatusIcon(deal.deal_state?.current_status || null)}
                 </div>
 
+                {/* Deal info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium truncate">
-                    {conv.title || 'Untitled Conversation'}
-                  </p>
-                  <p className="text-textMuted text-xs mt-0.5">
-                    {formatDate(conv.created_at)} · {conv.input_type === 'audio' ? 'Audio recording' : 'Transcript'}
-                    {conv.status !== 'complete' && (
-                      <span className="ml-2 text-amber-400">Processing...</span>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-white text-sm font-medium truncate">{deal.deal_name}</p>
+                    {deal.deal_state?.current_status && (
+                      <span className={cn(
+                        'text-xs px-2 py-0.5 rounded-full border flex-shrink-0',
+                        getStatusBg(deal.deal_state.current_status)
+                      )}>
+                        {deal.deal_state.current_status}
+                      </span>
                     )}
-                  </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-textMuted text-xs">{deal.company_name}</p>
+                    {deal.deal_state?.highest_priority_risk && (
+                      <>
+                        <span className="text-textMuted text-xs">·</span>
+                        <p className="text-textMuted text-xs truncate max-w-xs">
+                          {deal.deal_state.highest_priority_risk}
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {conv.overall_score && (
-                  <ScoreBadge score={conv.overall_score} />
+                {/* Manager note preview */}
+                {deal.deal_state?.manager_note && (
+                  <div className="hidden lg:block max-w-48 flex-shrink-0">
+                    <p className="text-xs text-textSecondary italic truncate">
+                      "{deal.deal_state.manager_note}"
+                    </p>
+                  </div>
                 )}
 
                 <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-accent transition-colors flex-shrink-0" />

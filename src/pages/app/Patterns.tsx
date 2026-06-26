@@ -1,96 +1,157 @@
 import React, { useEffect, useState } from 'react';
-import { TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { ShieldAlert, AlertCircle, CheckCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { Conversation } from '../../types';
+import { Deal, DealState } from '../../types';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { getStatusBg } from '../../lib/kairo';
+import { cn } from '../../lib/utils';
+
+interface DealWithState extends Deal {
+  deal_state: DealState | null;
+}
 
 export function Patterns() {
   const { user } = useAuth();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [, setLoading] = useState(true);
+  const [deals, setDeals] = useState<DealWithState[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    supabase.from('conversations').select('*').eq('user_id', user.id).eq('status', 'complete')
-      .then(({ data }) => { setConversations(data || []); setLoading(false); });
+    fetchDeals();
   }, [user]);
 
-  // Extract patterns from completed conversations
-  const allWeaknesses: string[] = [];
-  const allStrengths: string[] = [];
-  const allObjections: string[] = [];
+  async function fetchDeals() {
+    const { data } = await supabase
+      .from('deals')
+      .select('*')
+      .eq('user_id', user!.id)
+      .order('updated_at', { ascending: false });
 
-  conversations.forEach(conv => {
-    if (!conv.analysis_json) return;
-    const a = conv.analysis_json;
-    a.insights.weak_moments.forEach(i => allWeaknesses.push(i.point));
-    a.insights.communication_strengths.forEach(i => allStrengths.push(i.point));
-    a.insights.objection_moments.forEach(i => allObjections.push(i.point));
-  });
+    if (!data) { setLoading(false); return; }
+
+    const withState = await Promise.all(
+      data.map(async (deal) => {
+        const { data: state } = await supabase
+          .from('deal_state')
+          .select('*')
+          .eq('deal_id', deal.id)
+          .single();
+        return { ...deal, deal_state: state };
+      })
+    );
+
+    setDeals(withState.sort((a, b) => {
+      const order: Record<string, number> = { high: 0, medium: 1, low: 2, none: 3 };
+      return (order[a.risk_level] ?? 3) - (order[b.risk_level] ?? 3);
+    }));
+    setLoading(false);
+  }
+
+  const atRisk = deals.filter(d =>
+    d.deal_state?.current_status === 'At Risk' ||
+    d.deal_state?.current_status === 'Lost Momentum'
+  );
+  const open = deals.filter(d => d.deal_state?.current_status === 'Open');
+  const healthy = deals.filter(d => d.deal_state?.current_status === 'Healthy');
 
   return (
     <div className="animate-fade-in">
       <div className="mb-8">
-        <h1 className="text-2xl font-display font-bold text-white mb-2">Pattern Intelligence</h1>
+        <h1 className="text-2xl font-display font-bold text-white mb-2">Risk Center</h1>
         <p className="text-textSecondary text-sm">
-          Recurring signals detected across {conversations.length} analyzed conversation{conversations.length !== 1 ? 's' : ''}.
+          All active deals ranked by risk severity.
         </p>
       </div>
 
-      {conversations.length < 2 ? (
+      {deals.length === 0 ? (
         <EmptyState
-          icon={<TrendingUp className="w-6 h-6" />}
-          title="Patterns emerge over time"
-          description="Analyze at least 2 conversations and Kairo will begin identifying recurring signals, habits, and patterns in your sales communication."
+          icon={<ShieldAlert className="w-6 h-6" />}
+          title="No deals yet"
+          description="Add deals and run reviews — Kairo will surface which ones need your attention most."
         />
       ) : (
-        <div className="grid gap-6">
-          <div className="card p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <AlertCircle className="w-4 h-4 text-amber-400" />
-              <h2 className="text-sm font-semibold text-white">Recurring Weaknesses</h2>
-              <span className="text-xs text-textMuted ml-auto">{allWeaknesses.length} occurrences</span>
+        <div className="space-y-6">
+          {atRisk.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <AlertCircle className="w-4 h-4 text-red-400" />
+                <h2 className="text-sm font-semibold text-white">Requires Attention</h2>
+                <span className="text-xs text-textMuted">({atRisk.length})</span>
+              </div>
+              <div className="space-y-2">
+                {atRisk.map(deal => (
+                  <DealRiskCard key={deal.id} deal={deal} />
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              {allWeaknesses.slice(0, 5).map((w, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs text-textSecondary border-l-2 border-amber-400/30 pl-3 py-1">
-                  {w}
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
-          <div className="card p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckCircle className="w-4 h-4 text-emerald-400" />
-              <h2 className="text-sm font-semibold text-white">Consistent Strengths</h2>
-              <span className="text-xs text-textMuted ml-auto">{allStrengths.length} occurrences</span>
+          {open.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <h2 className="text-sm font-semibold text-white">Open Questions</h2>
+                <span className="text-xs text-textMuted">({open.length})</span>
+              </div>
+              <div className="space-y-2">
+                {open.map(deal => (
+                  <DealRiskCard key={deal.id} deal={deal} />
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              {allStrengths.slice(0, 5).map((s, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs text-textSecondary border-l-2 border-emerald-400/30 pl-3 py-1">
-                  {s}
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
-          <div className="card p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <AlertCircle className="w-4 h-4 text-red-400" />
-              <h2 className="text-sm font-semibold text-white">Common Objections Faced</h2>
+          {healthy.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                <h2 className="text-sm font-semibold text-white">Healthy</h2>
+                <span className="text-xs text-textMuted">({healthy.length})</span>
+              </div>
+              <div className="space-y-2">
+                {healthy.map(deal => (
+                  <DealRiskCard key={deal.id} deal={deal} />
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              {allObjections.slice(0, 5).map((o, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs text-textSecondary border-l-2 border-red-400/30 pl-3 py-1">
-                  {o}
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+function DealRiskCard({ deal }: { deal: DealWithState }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      onClick={() => navigate(`/app/deals/${deal.id}`)}
+      className="card-hover w-full flex items-center gap-4 p-4 text-left group"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-white text-sm font-medium truncate">{deal.deal_name}</p>
+          {deal.deal_state?.current_status && (
+            <span className={cn(
+              'text-xs px-2 py-0.5 rounded-full border flex-shrink-0',
+              getStatusBg(deal.deal_state.current_status)
+            )}>
+              {deal.deal_state.current_status}
+            </span>
+          )}
+        </div>
+        <p className="text-textMuted text-xs">{deal.company_name}</p>
+        {deal.deal_state?.highest_priority_risk && (
+          <p className="text-textSecondary text-xs mt-1 truncate">
+            {deal.deal_state.highest_priority_risk}
+          </p>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function useNavigate() {
+  return require('react-router-dom').useNavigate();
 }
