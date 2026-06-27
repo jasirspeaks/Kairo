@@ -1,15 +1,17 @@
 import { supabase } from './supabase';
 import { DealReview } from '../types';
 
+interface SellerContext {
+  what_you_sell?: string;
+  who_you_are?: string;
+}
+
 interface DealContext {
   deal_name: string;
   company_name: string;
-  previous_review?: DealReviewType | null;
+  previous_review?: DealReview | null;
   deal_context?: Record<string, string>;
-  seller_context?: {
-    what_you_sell?: string;
-    who_you_are?: string;
-  };
+  seller_context?: SellerContext;
 }
 
 export async function reviewDeal(
@@ -22,6 +24,8 @@ export async function reviewDeal(
     throw new Error('You must be signed in to review a deal.');
   }
 
+  const seller_context = deal_context?.seller_context;
+
   const response = await fetch(
     `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/analyze-conversation`,
     {
@@ -30,7 +34,11 @@ export async function reviewDeal(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ transcript, deal_context, seller_context }),
+      body: JSON.stringify({
+        transcript,
+        deal_context,
+        seller_context,
+      }),
     }
   );
 

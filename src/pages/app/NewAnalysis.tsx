@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowLeft, Building2, FileText, AlertCircle } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Building2, FileText, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewDeal, getRiskLevel } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
@@ -10,14 +10,31 @@ import { cn } from '../../lib/utils';
 
 type Step = 'deal' | 'transcript';
 
+const DEAL_STAGES = [
+  'Prospecting',
+  'Discovery',
+  'Evaluation',
+  'Proposal',
+  'Negotiation',
+  'Closed Won',
+  'Closed Lost',
+];
+
 export function NewAnalysis() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [step, setStep] = useState<Step>('deal');
 
   // Deal fields
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
+
+  // Optional context
+  const [contextOpen, setContextOpen] = useState(false);
+  const [acv, setAcv] = useState('');
+  const [stage, setStage] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [stakeholders, setStakeholders] = useState('');
 
   // Transcript fields
   const [transcript, setTranscript] = useState('');
@@ -32,6 +49,18 @@ export function NewAnalysis() {
     setStep('transcript');
   }
 
+  function buildDealContext(): Record<string, string> {
+    const context: Record<string, string> = {
+      deal_name: dealName.trim(),
+      company_name: companyName.trim(),
+    };
+    if (acv) context.acv = acv;
+    if (stage) context.stage = stage;
+    if (industry) context.industry = industry;
+    if (stakeholders) context.known_stakeholders = stakeholders;
+    return context;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
@@ -42,12 +71,10 @@ export function NewAnalysis() {
       setError('Please paste a transcript before reviewing.');
       return;
     }
-
     if (text.length < 100) {
       setError('Transcript is too short. Please provide a more complete conversation.');
       return;
     }
-
     if (text.length > 50000) {
       setError('Transcript is too long. Please trim it to under 50,000 characters.');
       return;
@@ -93,7 +120,7 @@ export function NewAnalysis() {
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
         previous_review: null,
-        ...( (acv || stage || industry || stakeholders) && { deal_context: dealContext } ),
+        deal_context: buildDealContext(),
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
           who_you_are: profile?.who_you_are || undefined,
@@ -106,13 +133,14 @@ export function NewAnalysis() {
         status: 'complete',
       }).eq('id', conv.id);
 
-      // Step 5 — Create or update deal state
+      // Step 5 — Create deal state
       await supabase.from('deal_state').insert({
         deal_id: deal.id,
         user_id: user.id,
         current_status: review.deal_status.status,
         confidence: review.deal_status.confidence,
         highest_priority_risk: review.highest_priority_risk.risk,
+        highest_priority_risk_full: review.highest_priority_risk,
         what_youre_missing: review.what_youre_missing,
         next_move: review.next_move,
         next_question: review.next_question,
@@ -127,7 +155,6 @@ export function NewAnalysis() {
         updated_at: new Date().toISOString(),
       }).eq('id', deal.id);
 
-      // Navigate to deal review
       navigate(`/app/deals/${deal.id}`);
 
     } catch (err: any) {
@@ -146,7 +173,6 @@ export function NewAnalysis() {
 
   return (
     <div className="animate-fade-in max-w-xl">
-      {/* Header */}
       <div className="mb-8">
         {step === 'transcript' && (
           <button
@@ -156,6 +182,7 @@ export function NewAnalysis() {
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
         )}
+
         <div className="flex items-center gap-3 mb-4">
           <div className="flex items-center gap-2">
             <div className={cn(
@@ -191,19 +218,18 @@ export function NewAnalysis() {
         </h1>
         <p className="text-textSecondary text-sm">
           {step === 'deal'
-            ? 'Start by naming the deal. The transcript comes next.'
+            ? 'Name the deal. Add context to improve analysis quality.'
             : 'Paste the call transcript. Kairo will review the deal and identify what matters most.'
           }
         </p>
       </div>
 
-      {/* Step 1 — Deal Info */}
       {step === 'deal' && (
         <form onSubmit={handleDealContinue} className="space-y-4">
           <div className="card p-6 space-y-4">
             <div>
               <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                Deal Name
+                Deal Name <span className="text-red-400">*</span>
               </label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
@@ -221,7 +247,7 @@ export function NewAnalysis() {
 
             <div>
               <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                Company Name
+                Company Name <span className="text-red-400">*</span>
               </label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
@@ -234,6 +260,73 @@ export function NewAnalysis() {
                   required
                 />
               </div>
+            </div>
+
+            <div className="border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={() => setContextOpen(!contextOpen)}
+                className="flex items-center justify-between w-full text-left"
+              >
+                <div>
+                  <p className="text-xs font-medium text-textSecondary">Deal Context</p>
+                  <p className="text-xs text-textMuted mt-0.5">Optional — improves analysis quality</p>
+                </div>
+                {contextOpen
+                  ? <ChevronUp className="w-4 h-4 text-textMuted" />
+                  : <ChevronDown className="w-4 h-4 text-textMuted" />
+                }
+              </button>
+
+              {contextOpen && (
+                <div className="mt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Value (ACV)</label>
+                      <input
+                        type="text"
+                        value={acv}
+                        onChange={e => setAcv(e.target.value)}
+                        placeholder="e.g. $24,000/yr"
+                        className="input-field"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
+                      <select
+                        value={stage}
+                        onChange={e => setStage(e.target.value)}
+                        className="input-field bg-surfaceHigh"
+                      >
+                        <option value="">Select stage</option>
+                        {DEAL_STAGES.map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Industry</label>
+                    <input
+                      type="text"
+                      value={industry}
+                      onChange={e => setIndustry(e.target.value)}
+                      placeholder="e.g. SaaS, Healthcare, Financial Services"
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Known Stakeholders</label>
+                    <input
+                      type="text"
+                      value={stakeholders}
+                      onChange={e => setStakeholders(e.target.value)}
+                      placeholder="e.g. Sarah (champion), Mike (CFO — not yet met)"
+                      className="input-field"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -249,17 +342,20 @@ export function NewAnalysis() {
         </form>
       )}
 
-      {/* Step 2 — Transcript */}
       {step === 'transcript' && (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="card p-6 space-y-4">
             <div className="flex items-center gap-3 pb-4 border-b border-border">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
                 <Building2 className="w-4 h-4 text-accent" />
               </div>
-              <div>
-                <p className="text-white text-sm font-medium">{dealName}</p>
-                <p className="text-textMuted text-xs">{companyName}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-medium truncate">{dealName}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-textMuted text-xs">{companyName}</p>
+                  {stage && <span className="text-textMuted text-xs">· {stage}</span>}
+                  {acv && <span className="text-textMuted text-xs">· {acv}</span>}
+                </div>
               </div>
             </div>
 
@@ -277,9 +373,7 @@ export function NewAnalysis() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                Transcript
-              </label>
+              <label className="block text-xs font-medium text-textSecondary mb-1.5">Transcript</label>
               <textarea
                 value={transcript}
                 onChange={e => setTranscript(e.target.value)}
@@ -316,4 +410,4 @@ export function NewAnalysis() {
       )}
     </div>
   );
-} 
+}
