@@ -14,11 +14,12 @@ interface DealWithState extends Deal {
 export function Patterns() {
   const { user } = useAuth();
   const [deals, setDeals] = useState<DealWithState[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
     fetchDeals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   async function fetchDeals() {

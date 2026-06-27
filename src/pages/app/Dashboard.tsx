@@ -22,6 +22,7 @@ export function Dashboard() {
   useEffect(() => {
     if (!user) return;
     fetchDeals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   async function fetchDeals() {

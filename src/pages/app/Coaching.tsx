@@ -5,7 +5,6 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, DealState } from '../../types';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { cn } from '../../lib/utils';
 
 interface DealWithState extends Deal {
   deal_state: DealState | null;

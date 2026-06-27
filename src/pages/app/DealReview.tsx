@@ -4,7 +4,7 @@ import { ArrowLeft, Plus, AlertTriangle, CheckCircle, Clock, TrendingDown, Chevr
 import { supabase } from '../../lib/supabase';
 import { reviewDeal, getRiskLevel, getStatusBg } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
-import { Deal, DealState, Conversation, DealReview as DealReviewType } from '../../types';
+import { Deal, DealState, Conversation } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -28,6 +28,7 @@ export function DealReview() {
   useEffect(() => {
     if (!dealId) return;
     fetchDealData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
 
   async function fetchDealData() {

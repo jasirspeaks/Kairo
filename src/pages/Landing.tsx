@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Zap, TrendingUp, Brain, Shield, BarChart3 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../hooks/useAuth';
-import { cn } from '../lib/utils';
 
 const FEATURES = [
   { icon: Shield, title: 'Deal Intelligence', desc: 'Kairo reviews your deals — not your conversations. The transcript is evidence. The deal is what matters.' },
