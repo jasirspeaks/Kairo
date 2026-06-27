@@ -4,7 +4,12 @@ import { DealReview } from '../types';
 interface DealContext {
   deal_name: string;
   company_name: string;
-  previous_review?: DealReview | null;
+  previous_review?: DealReviewType | null;
+  deal_context?: Record<string, string>;
+  seller_context?: {
+    what_you_sell?: string;
+    who_you_are?: string;
+  };
 }
 
 export async function reviewDeal(
@@ -25,7 +30,7 @@ export async function reviewDeal(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ transcript, deal_context }),
+      body: JSON.stringify({ transcript, deal_context, seller_context }),
     }
   );
 

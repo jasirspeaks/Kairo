@@ -7,6 +7,7 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { Landing } from './pages/Landing';
 import { SignIn } from './pages/auth/SignIn';
 import { SignUp } from './pages/auth/SignUp';
+import { Onboarding } from './pages/onboarding/Onboarding';
 import { Dashboard } from './pages/app/Dashboard';
 import { NewAnalysis } from './pages/app/NewAnalysis';
 import { DealReview } from './pages/app/DealReview';
@@ -29,6 +30,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <ErrorBoundary>{children}</ErrorBoundary>;
 }
 
+function OnboardingRoute({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/signin" replace />;
+  if (profile?.onboarding_complete) return <Navigate to="/app/dashboard" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -37,6 +46,7 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/signin" element={<SignIn />} />
         <Route path="/signup" element={<SignUp />} />
+        <Route path="/onboarding" element={<OnboardingRoute><Onboarding /></OnboardingRoute>} />
 
         {/* App */}
         <Route path="/app/*" element={

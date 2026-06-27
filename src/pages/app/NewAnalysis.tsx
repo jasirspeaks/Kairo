@@ -93,6 +93,11 @@ export function NewAnalysis() {
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
         previous_review: null,
+        ...( (acv || stage || industry || stakeholders) && { deal_context: dealContext } ),
+        seller_context: {
+          what_you_sell: profile?.what_you_sell || undefined,
+          who_you_are: profile?.who_you_are || undefined,
+        },
       });
 
       // Step 4 — Update conversation with review
@@ -311,4 +316,4 @@ export function NewAnalysis() {
       )}
     </div>
   );
-}
+} 
