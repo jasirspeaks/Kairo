@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowLeft, Building2, FileText, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Building2, FileText, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewDeal, getRiskLevel } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
@@ -10,36 +10,14 @@ import { cn } from '../../lib/utils';
 
 type Step = 'deal' | 'transcript';
 
-const DEAL_STAGES = [
-  'Prospecting',
-  'Discovery',
-  'Evaluation',
-  'Proposal',
-  'Negotiation',
-  'Closed Won',
-  'Closed Lost',
-];
-
 export function NewAnalysis() {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [step, setStep] = useState<Step>('deal');
-
-  // Deal fields
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
-
-  // Optional context
-  const [contextOpen, setContextOpen] = useState(false);
-  const [acv, setAcv] = useState('');
-  const [stage, setStage] = useState('');
-  const [industry, setIndustry] = useState('');
-  const [stakeholders, setStakeholders] = useState('');
-
-  // Transcript fields
   const [transcript, setTranscript] = useState('');
   const [conversationTitle, setConversationTitle] = useState('');
-
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
 
@@ -49,42 +27,20 @@ export function NewAnalysis() {
     setStep('transcript');
   }
 
-  function buildDealContext(): Record<string, string> {
-    const context: Record<string, string> = {
-      deal_name: dealName.trim(),
-      company_name: companyName.trim(),
-    };
-    if (acv) context.acv = acv;
-    if (stage) context.stage = stage;
-    if (industry) context.industry = industry;
-    if (stakeholders) context.known_stakeholders = stakeholders;
-    return context;
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
 
     const text = transcript.trim();
 
-    if (!text) {
-      setError('Please paste a transcript before reviewing.');
-      return;
-    }
-    if (text.length < 100) {
-      setError('Transcript is too short. Please provide a more complete conversation.');
-      return;
-    }
-    if (text.length > 50000) {
-      setError('Transcript is too long. Please trim it to under 50,000 characters.');
-      return;
-    }
+    if (!text) { setError('Please paste a transcript before reviewing.'); return; }
+    if (text.length < 100) { setError('Transcript is too short.'); return; }
+    if (text.length > 50000) { setError('Transcript is too long.'); return; }
 
     setAnalyzing(true);
     setError('');
 
     try {
-      // Step 1 — Create the deal
       const { data: deal, error: dealError } = await supabase
         .from('deals')
         .insert({
@@ -99,7 +55,6 @@ export function NewAnalysis() {
 
       if (dealError || !deal) throw new Error('Failed to create deal.');
 
-      // Step 2 — Create conversation record
       const { data: conv, error: convError } = await supabase
         .from('conversations')
         .insert({
@@ -115,25 +70,17 @@ export function NewAnalysis() {
 
       if (convError || !conv) throw new Error('Failed to create conversation record.');
 
-      // Step 3 — Run deal review
       const review = await reviewDeal(text, {
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
         previous_review: null,
-        deal_context: buildDealContext(),
-        seller_context: {
-          what_you_sell: profile?.what_you_sell || undefined,
-          who_you_are: profile?.who_you_are || undefined,
-        },
       });
 
-      // Step 4 — Update conversation with review
       await supabase.from('conversations').update({
         analysis_json: review,
         status: 'complete',
       }).eq('id', conv.id);
 
-      // Step 5 — Create deal state
       await supabase.from('deal_state').insert({
         deal_id: deal.id,
         user_id: user.id,
@@ -149,7 +96,6 @@ export function NewAnalysis() {
         last_review_summary: review.deal_status.reason,
       });
 
-      // Step 6 — Update deal risk level
       await supabase.from('deals').update({
         risk_level: getRiskLevel(review.deal_status.status),
         updated_at: new Date().toISOString(),
@@ -187,9 +133,7 @@ export function NewAnalysis() {
           <div className="flex items-center gap-2">
             <div className={cn(
               'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all',
-              step === 'deal'
-                ? 'bg-primary border-primary text-white'
-                : 'bg-primary/20 border-primary/40 text-accent'
+              step === 'deal' ? 'bg-primary border-primary text-white' : 'bg-primary/20 border-primary/40 text-accent'
             )}>
               {step === 'deal' ? '1' : '✓'}
             </div>
@@ -201,9 +145,7 @@ export function NewAnalysis() {
           <div className="flex items-center gap-2">
             <div className={cn(
               'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all',
-              step === 'transcript'
-                ? 'bg-primary border-primary text-white'
-                : 'bg-surfaceHigh border-border text-textMuted'
+              step === 'transcript' ? 'bg-primary border-primary text-white' : 'bg-surfaceHigh border-border text-textMuted'
             )}>
               2
             </div>
@@ -218,7 +160,7 @@ export function NewAnalysis() {
         </h1>
         <p className="text-textSecondary text-sm">
           {step === 'deal'
-            ? 'Name the deal. Add context to improve analysis quality.'
+            ? 'Start by naming the deal. The transcript comes next.'
             : 'Paste the call transcript. Kairo will review the deal and identify what matters most.'
           }
         </p>
@@ -261,73 +203,6 @@ export function NewAnalysis() {
                 />
               </div>
             </div>
-
-            <div className="border-t border-border pt-4">
-              <button
-                type="button"
-                onClick={() => setContextOpen(!contextOpen)}
-                className="flex items-center justify-between w-full text-left"
-              >
-                <div>
-                  <p className="text-xs font-medium text-textSecondary">Deal Context</p>
-                  <p className="text-xs text-textMuted mt-0.5">Optional — improves analysis quality</p>
-                </div>
-                {contextOpen
-                  ? <ChevronUp className="w-4 h-4 text-textMuted" />
-                  : <ChevronDown className="w-4 h-4 text-textMuted" />
-                }
-              </button>
-
-              {contextOpen && (
-                <div className="mt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Value (ACV)</label>
-                      <input
-                        type="text"
-                        value={acv}
-                        onChange={e => setAcv(e.target.value)}
-                        placeholder="e.g. $24,000/yr"
-                        className="input-field"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
-                      <select
-                        value={stage}
-                        onChange={e => setStage(e.target.value)}
-                        className="input-field bg-surfaceHigh"
-                      >
-                        <option value="">Select stage</option>
-                        {DEAL_STAGES.map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Industry</label>
-                    <input
-                      type="text"
-                      value={industry}
-                      onChange={e => setIndustry(e.target.value)}
-                      placeholder="e.g. SaaS, Healthcare, Financial Services"
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Known Stakeholders</label>
-                    <input
-                      type="text"
-                      value={stakeholders}
-                      onChange={e => setStakeholders(e.target.value)}
-                      placeholder="e.g. Sarah (champion), Mike (CFO — not yet met)"
-                      className="input-field"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
 
           <Button
@@ -351,11 +226,7 @@ export function NewAnalysis() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-medium truncate">{dealName}</p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-textMuted text-xs">{companyName}</p>
-                  {stage && <span className="text-textMuted text-xs">· {stage}</span>}
-                  {acv && <span className="text-textMuted text-xs">· {acv}</span>}
-                </div>
+                <p className="text-textMuted text-xs">{companyName}</p>
               </div>
             </div>
 
@@ -377,7 +248,7 @@ export function NewAnalysis() {
               <textarea
                 value={transcript}
                 onChange={e => setTranscript(e.target.value)}
-                placeholder={`Paste your call transcript here.\n\nRep: Thanks for taking the time today...\nProspect: Of course, we've been looking at a few options...\n\nInclude speaker labels for better analysis.`}
+                placeholder={`Paste your call transcript here.\n\nRep: Thanks for taking the time today...\nProspect: Of course...\n\nInclude speaker labels for better analysis.`}
                 className="input-field min-h-64 resize-y font-mono text-xs leading-relaxed"
                 autoFocus
               />
@@ -397,12 +268,7 @@ export function NewAnalysis() {
             </div>
           )}
 
-          <Button
-            type="submit"
-            size="lg"
-            className="w-full"
-            disabled={!transcript.trim()}
-          >
+          <Button type="submit" size="lg" className="w-full" disabled={!transcript.trim()}>
             <FileText className="w-4 h-4" />
             Review Deal
           </Button>
