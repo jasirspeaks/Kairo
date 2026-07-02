@@ -17,7 +17,6 @@ export function Review() {
   const { user } = useAuth();
 
   const hideAddCall = searchParams.get('source') === 'risk-center';
-  const fromWorkspace = searchParams.get('source') === 'workspace';
 
   const [deal, setDeal] = useState<Deal | null>(null);
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -140,8 +139,11 @@ export function Review() {
   }
 
   function handleBack() {
-    if (fromWorkspace || callId) {
+    const source = searchParams.get('source');
+    if (source === 'workspace') {
       navigate(`/app/workspace/deals/${dealId}`);
+    } else if (source === 'risk-center') {
+      navigate('/app/risk-center');
     } else {
       navigate('/app/dashboard');
     }
