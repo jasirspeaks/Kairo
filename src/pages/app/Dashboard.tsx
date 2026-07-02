@@ -1,16 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, AlertTriangle, CheckCircle, Clock, TrendingDown, ArrowRight, Building2 } from 'lucide-react';
+import { Plus, Building2, ArrowRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, DealState } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { getStatusBg } from '../../lib/kairo';
 import { cn } from '../../lib/utils';
 
 interface DealWithState extends Deal {
   deal_state: DealState | null;
+}
+
+function RiskDot({ riskLevel }: { riskLevel: string }) {
+  return (
+    <div className={cn(
+      'w-2.5 h-2.5 rounded-full flex-shrink-0',
+      riskLevel === 'high' ? 'bg-red-400' :
+      riskLevel === 'medium' ? 'bg-amber-400' :
+      riskLevel === 'low' ? 'bg-emerald-400' :
+      'bg-border'
+    )} />
+  );
 }
 
 export function Dashboard() {
@@ -46,7 +57,6 @@ export function Dashboard() {
       })
     );
 
-    // Sort by risk — At Risk and Lost Momentum first
     const sorted = dealsWithState.sort((a, b) => {
       const order: Record<string, number> = { high: 0, medium: 1, low: 2, none: 3 };
       return (order[a.risk_level] ?? 3) - (order[b.risk_level] ?? 3);
@@ -56,16 +66,6 @@ export function Dashboard() {
     setLoading(false);
   }
 
-  function getStatusIcon(status: string | null) {
-    switch (status) {
-      case 'Healthy': return <CheckCircle className="w-4 h-4 text-emerald-400" />;
-      case 'Open': return <Clock className="w-4 h-4 text-amber-400" />;
-      case 'At Risk': return <AlertTriangle className="w-4 h-4 text-red-400" />;
-      case 'Lost Momentum': return <TrendingDown className="w-4 h-4 text-textMuted" />;
-      default: return <Clock className="w-4 h-4 text-textMuted" />;
-    }
-  }
-
   const greeting = new Date().getHours() < 12
     ? 'Good morning'
     : new Date().getHours() < 17
@@ -73,22 +73,21 @@ export function Dashboard() {
     : 'Good evening';
 
   const atRiskCount = deals.filter(d => d.risk_level === 'high').length;
-  const activeCount = deals.length;
 
   return (
     <div className="animate-fade-in">
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-display font-bold text-white mb-1">
+          <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
             {greeting}, {profile?.name?.split(' ')[0] || 'there'}
           </h1>
           <p className="text-textSecondary text-sm">
-            {activeCount === 0
+            {deals.length === 0
               ? 'No active deals yet. Add your first deal to get started.'
               : atRiskCount > 0
               ? `${atRiskCount} deal${atRiskCount !== 1 ? 's' : ''} require${atRiskCount === 1 ? 's' : ''} your attention.`
-              : `${activeCount} active deal${activeCount !== 1 ? 's' : ''} — all looking good.`
+              : `${deals.length} active deal${deals.length !== 1 ? 's' : ''} — all looking good.`
             }
           </p>
         </div>
@@ -98,38 +97,14 @@ export function Dashboard() {
         </Button>
       </div>
 
-      {/* Stats */}
-      {deals.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="card p-4">
-            <p className="section-label mb-1">Active Deals</p>
-            <p className="text-2xl font-display font-bold text-white">{activeCount}</p>
-          </div>
-          <div className="card p-4">
-            <p className="section-label mb-1">Require Attention</p>
-            <p className={cn('text-2xl font-display font-bold', atRiskCount > 0 ? 'text-red-400' : 'text-white')}>
-              {atRiskCount}
-            </p>
-          </div>
-          <div className="card p-4">
-            <p className="section-label mb-1">Healthy</p>
-            <p className="text-2xl font-display font-bold text-emerald-400">
-              {deals.filter(d => d.deal_state?.current_status === 'Healthy').length}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Deals list */}
       <div>
-        <h2 className="section-label mb-4">
-          {atRiskCount > 0 ? 'Deals Requiring Attention' : 'Active Deals'}
-        </h2>
+        <h2 className="section-label mb-4">Active Deals</h2>
 
         {loading ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {[1, 2, 3].map(i => (
-              <div key={i} className="card h-20 animate-pulse" />
+              <div key={i} className="card h-14 animate-pulse" />
             ))}
           </div>
         ) : deals.length === 0 ? (
@@ -145,52 +120,25 @@ export function Dashboard() {
             }
           />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {deals.map(deal => (
               <button
                 key={deal.id}
                 onClick={() => navigate(`/app/deals/${deal.id}`)}
-                className="card-hover w-full flex items-center gap-4 p-4 text-left group"
+                className="card-hover w-full flex items-center gap-4 px-5 py-4 text-left group"
               >
-                {/* Status icon */}
-                <div className="flex-shrink-0">
-                  {getStatusIcon(deal.deal_state?.current_status || null)}
-                </div>
+                <RiskDot riskLevel={deal.risk_level} />
 
-                {/* Deal info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-white text-sm font-medium truncate">{deal.deal_name}</p>
-                    {deal.deal_state?.current_status && (
-                      <span className={cn(
-                        'text-xs px-2 py-0.5 rounded-full border flex-shrink-0',
-                        getStatusBg(deal.deal_state.current_status)
-                      )}>
-                        {deal.deal_state.current_status}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-textMuted text-xs">{deal.company_name}</p>
-                    {deal.deal_state?.highest_priority_risk && (
-                      <>
-                        <span className="text-textMuted text-xs">·</span>
-                        <p className="text-textMuted text-xs truncate max-w-xs">
-                          {deal.deal_state.highest_priority_risk}
-                        </p>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Manager note preview */}
-                {deal.deal_state?.manager_note && (
-                  <div className="hidden lg:block max-w-48 flex-shrink-0">
-                    <p className="text-xs text-textSecondary italic truncate">
-                      "{deal.deal_state.manager_note}"
+                  <p className="text-textPrimary text-sm font-medium truncate">{deal.deal_name}</p>
+                  {deal.deal_state?.highest_priority_risk ? (
+                    <p className="text-textMuted text-xs truncate mt-0.5">
+                      {deal.deal_state.highest_priority_risk}
                     </p>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-textMuted text-xs mt-0.5">{deal.company_name}</p>
+                  )}
+                </div>
 
                 <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-accent transition-colors flex-shrink-0" />
               </button>

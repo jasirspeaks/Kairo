@@ -16,22 +16,6 @@ export interface Deal {
   updated_at: string;
 }
 
-export interface DealState {
-  id: string;
-  deal_id: string;
-  user_id: string;
-  current_status: DealHealthStatus | null;
-  confidence: DealConfidence | null;
-  highest_priority_risk: string | null;
-  what_youre_missing: MissingInfo[] | null;
-  next_move: string | null;
-  next_question: string | null;
-  manager_note: string | null;
-  supporting_evidence: string[] | null;
-  last_review_summary: string | null;
-  updated_at: string;
-}
-
 export interface MissingInfo {
   gap: string;
   question_to_answer: string;
@@ -51,10 +35,25 @@ export interface DealReview {
   };
   highest_priority_risk: HighestPriorityRisk;
   what_youre_missing: MissingInfo[];
-  next_move: string;
-  next_question: string;
+  key_follow_up_message: string;
   manager_note: string;
   supporting_evidence: string[];
+}
+
+export interface DealState {
+  id: string;
+  deal_id: string;
+  user_id: string;
+  current_status: DealHealthStatus | null;
+  confidence: DealConfidence | null;
+  highest_priority_risk: string | null;
+  highest_priority_risk_full: HighestPriorityRisk | null;
+  what_youre_missing: MissingInfo[] | null;
+  key_follow_up_message: string | null;
+  manager_note: string | null;
+  supporting_evidence: string[] | null;
+  last_review_summary: string | null;
+  updated_at: string;
 }
 
 export interface Profile {
@@ -62,8 +61,6 @@ export interface Profile {
   name: string | null;
   email: string | null;
   onboarding_complete: boolean;
-  what_you_sell: string | null;
-  who_you_are: string | null;
   created_at: string;
 }
 

@@ -2,25 +2,28 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
+
+// Pages
 import { Landing } from './pages/Landing';
 import { SignIn } from './pages/auth/SignIn';
 import { SignUp } from './pages/auth/SignUp';
 import { Dashboard } from './pages/app/Dashboard';
-import { NewAnalysis } from './pages/app/NewAnalysis';
-import { DealReview } from './pages/app/DealReview';
-import { History } from './pages/app/History';
-import { Patterns } from './pages/app/Patterns';
-import { Coaching } from './pages/app/Coaching';
+import { NewDeal } from './pages/app/NewDeal';
+import { Review } from './pages/app/Review';
+import { DealWorkspace } from './pages/app/DealWorkspace';
+import { RiskCenter } from './pages/app/RiskCenter';
 import { Settings } from './pages/app/Settings';
 import { AppLayout } from './components/layout/AppLayout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+
   if (loading) return (
     <div className="min-h-screen bg-bg flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-t-accent border-border rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
     </div>
   );
+
   if (!user) return <Navigate to="/signin" replace />;
   return <ErrorBoundary>{children}</ErrorBoundary>;
 }
@@ -29,20 +32,22 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public */}
         <Route path="/" element={<Landing />} />
         <Route path="/signin" element={<SignIn />} />
         <Route path="/signup" element={<SignUp />} />
 
+        {/* App */}
         <Route path="/app/*" element={
           <ProtectedRoute>
             <AppLayout>
               <Routes>
                 <Route path="dashboard" element={<Dashboard />} />
-                <Route path="new" element={<NewAnalysis />} />
-                <Route path="deals/:dealId" element={<DealReview />} />
-                <Route path="history" element={<History />} />
-                <Route path="patterns" element={<Patterns />} />
-                <Route path="coaching" element={<Coaching />} />
+                <Route path="new" element={<NewDeal />} />
+                <Route path="deals/:dealId/calls/:callId" element={<Review />} />
+                <Route path="workspace" element={<DealWorkspace />} />
+                <Route path="workspace/deals/:dealId" element={<DealWorkspace />} />
+                <Route path="risk-center" element={<RiskCenter />} />
                 <Route path="settings" element={<Settings />} />
               </Routes>
             </AppLayout>

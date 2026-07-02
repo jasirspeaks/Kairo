@@ -1,17 +1,10 @@
 import { supabase } from './supabase';
 import { DealReview } from '../types';
 
-interface SellerContext {
-  what_you_sell?: string;
-  who_you_are?: string;
-}
-
 interface DealContext {
   deal_name: string;
   company_name: string;
   previous_review?: DealReview | null;
-  deal_context?: Record<string, string>;
-  seller_context?: SellerContext;
 }
 
 export async function reviewDeal(
@@ -24,8 +17,6 @@ export async function reviewDeal(
     throw new Error('You must be signed in to review a deal.');
   }
 
-  const seller_context = deal_context?.seller_context;
-
   const response = await fetch(
     `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/analyze-conversation`,
     {
@@ -34,11 +25,7 @@ export async function reviewDeal(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({
-        transcript,
-        deal_context,
-        seller_context,
-      }),
+      body: JSON.stringify({ transcript, deal_context }),
     }
   );
 
@@ -53,9 +40,9 @@ export async function reviewDeal(
 
 export function getStatusColor(status: string): string {
   switch (status) {
-    case 'Healthy': return 'text-emerald-400';
-    case 'Open': return 'text-amber-400';
-    case 'At Risk': return 'text-red-400';
+    case 'Healthy': return 'text-emerald-600';
+    case 'Open': return 'text-amber-600';
+    case 'At Risk': return 'text-red-600';
     case 'Lost Momentum': return 'text-textMuted';
     default: return 'text-textSecondary';
   }
@@ -63,9 +50,9 @@ export function getStatusColor(status: string): string {
 
 export function getStatusBg(status: string): string {
   switch (status) {
-    case 'Healthy': return 'bg-emerald-400/10 border-emerald-400/30 text-emerald-400';
-    case 'Open': return 'bg-amber-400/10 border-amber-400/30 text-amber-400';
-    case 'At Risk': return 'bg-red-400/10 border-red-400/30 text-red-400';
+    case 'Healthy': return 'bg-emerald-50 border-emerald-200 text-emerald-700';
+    case 'Open': return 'bg-amber-50 border-amber-200 text-amber-700';
+    case 'At Risk': return 'bg-red-50 border-red-200 text-red-700';
     case 'Lost Momentum': return 'bg-surfaceHigh border-border text-textMuted';
     default: return 'bg-surfaceHigh border-border text-textSecondary';
   }

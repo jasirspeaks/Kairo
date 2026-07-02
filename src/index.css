@@ -9,8 +9,8 @@
 }
 
 body {
-  background-color: #0A0A0C;
-  color: #FFFFFF;
+  background-color: #F6F0FF;
+  color: #331A47;
   font-family: 'DM Sans', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -20,14 +20,14 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0A0A0C;
+  background: #F6F0FF;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2A2A35;
+  background: #E5D6FF;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #6B21A8;
+  background: #8266B3;
 }
 
 @layer components {
@@ -35,22 +35,22 @@ body {
     @apply bg-primary hover:bg-primaryLight text-white font-medium px-5 py-2.5 rounded-lg transition-all duration-200 hover:shadow-purple-glow active:scale-95 text-sm;
   }
   .btn-secondary {
-    @apply bg-surface border border-border hover:border-accent text-textSecondary hover:text-white font-medium px-5 py-2.5 rounded-lg transition-all duration-200 text-sm;
+    @apply bg-surface border border-border hover:border-accent text-textSecondary hover:text-textPrimary font-medium px-5 py-2.5 rounded-lg transition-all duration-200 text-sm;
   }
   .card {
     @apply bg-surface border border-border rounded-xl shadow-card;
   }
   .card-hover {
-    @apply card hover:border-accent/40 hover:shadow-purple-glow-sm transition-all duration-200;
+    @apply card hover:border-accent/40 hover:shadow-card-hover transition-all duration-200 cursor-pointer;
   }
   .input-field {
-    @apply bg-surfaceHigh border border-border rounded-lg px-4 py-3 text-white placeholder-textMuted focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30 transition-all duration-200 w-full text-sm;
+    @apply bg-surfaceHigh border border-border rounded-lg px-4 py-3 text-textPrimary placeholder-textMuted focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20 transition-all duration-200 w-full text-sm;
   }
   .sidebar-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-textSecondary hover:text-white hover:bg-surfaceHigh transition-all duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh transition-all duration-200 cursor-pointer;
   }
   .sidebar-item-active {
-    @apply sidebar-item text-white bg-primary/20 border border-primary/30 shadow-purple-glow-sm;
+    @apply sidebar-item text-primary bg-primary/10 border border-primary/20;
   }
   .section-label {
     @apply text-xs font-semibold uppercase tracking-widest text-textMuted;

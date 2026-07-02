@@ -13,7 +13,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-accent mb-5">
         {icon}
       </div>
-      <h3 className="text-lg font-semibold font-display text-white mb-2">{title}</h3>
+      <h3 className="text-lg font-semibold font-display text-textPrimary mb-2">{title}</h3>
       <p className="text-textSecondary text-sm max-w-sm leading-relaxed mb-6">{description}</p>
       {action}
     </div>

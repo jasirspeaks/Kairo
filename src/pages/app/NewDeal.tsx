@@ -10,7 +10,7 @@ import { cn } from '../../lib/utils';
 
 type Step = 'deal' | 'transcript';
 
-export function NewAnalysis() {
+export function NewDeal() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [step, setStep] = useState<Step>('deal');
@@ -40,6 +40,8 @@ export function NewAnalysis() {
     setAnalyzing(true);
     setError('');
 
+    let dealId: string | null = null;
+
     try {
       const { data: deal, error: dealError } = await supabase
         .from('deals')
@@ -54,6 +56,13 @@ export function NewAnalysis() {
         .single();
 
       if (dealError || !deal) throw new Error('Failed to create deal.');
+      dealId = deal.id;
+
+      const review = await reviewDeal(text, {
+        deal_name: dealName.trim(),
+        company_name: companyName.trim(),
+        previous_review: null,
+      });
 
       const { data: conv, error: convError } = await supabase
         .from('conversations')
@@ -63,23 +72,13 @@ export function NewAnalysis() {
           title: conversationTitle.trim() || `Call 1 — ${new Date().toLocaleDateString()}`,
           input_type: 'transcript',
           transcript: text,
-          status: 'analyzing',
+          status: 'complete',
+          analysis_json: review,
         })
         .select()
         .single();
 
-      if (convError || !conv) throw new Error('Failed to create conversation record.');
-
-      const review = await reviewDeal(text, {
-        deal_name: dealName.trim(),
-        company_name: companyName.trim(),
-        previous_review: null,
-      });
-
-      await supabase.from('conversations').update({
-        analysis_json: review,
-        status: 'complete',
-      }).eq('id', conv.id);
+      if (convError || !conv) throw new Error('Failed to save conversation.');
 
       await supabase.from('deal_state').insert({
         deal_id: deal.id,
@@ -89,8 +88,7 @@ export function NewAnalysis() {
         highest_priority_risk: review.highest_priority_risk.risk,
         highest_priority_risk_full: review.highest_priority_risk,
         what_youre_missing: review.what_youre_missing,
-        next_move: review.next_move,
-        next_question: review.next_question,
+        key_follow_up_message: review.key_follow_up_message,
         manager_note: review.manager_note,
         supporting_evidence: review.supporting_evidence,
         last_review_summary: review.deal_status.reason,
@@ -101,9 +99,12 @@ export function NewAnalysis() {
         updated_at: new Date().toISOString(),
       }).eq('id', deal.id);
 
-      navigate(`/app/deals/${deal.id}`);
+      navigate(`/app/deals/${deal.id}/calls/${conv.id}`);
 
     } catch (err: any) {
+      if (dealId) {
+        await supabase.from('deals').delete().eq('id', dealId);
+      }
       setError(err.message || 'Something went wrong. Please try again.');
       setAnalyzing(false);
     }
@@ -123,7 +124,7 @@ export function NewAnalysis() {
         {step === 'transcript' && (
           <button
             onClick={() => setStep('deal')}
-            className="flex items-center gap-1.5 text-textMuted hover:text-white text-xs mb-4 transition-colors"
+            className="flex items-center gap-1.5 text-textMuted hover:text-textPrimary text-xs mb-4 transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
@@ -133,11 +134,11 @@ export function NewAnalysis() {
           <div className="flex items-center gap-2">
             <div className={cn(
               'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all',
-              step === 'deal' ? 'bg-primary border-primary text-white' : 'bg-primary/20 border-primary/40 text-accent'
+              step === 'deal' ? 'bg-primary border-primary text-white' : 'bg-primary/10 border-primary/30 text-primary'
             )}>
               {step === 'deal' ? '1' : '✓'}
             </div>
-            <span className={cn('text-xs font-medium', step === 'deal' ? 'text-white' : 'text-accent')}>
+            <span className={cn('text-xs font-medium', step === 'deal' ? 'text-textPrimary' : 'text-primary')}>
               Deal Info
             </span>
           </div>
@@ -149,13 +150,13 @@ export function NewAnalysis() {
             )}>
               2
             </div>
-            <span className={cn('text-xs font-medium', step === 'transcript' ? 'text-white' : 'text-textMuted')}>
+            <span className={cn('text-xs font-medium', step === 'transcript' ? 'text-textPrimary' : 'text-textMuted')}>
               Transcript
             </span>
           </div>
         </div>
 
-        <h1 className="text-2xl font-display font-bold text-white mb-1">
+        <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
           {step === 'deal' ? 'New Deal' : 'Add Transcript'}
         </h1>
         <p className="text-textSecondary text-sm">
@@ -171,7 +172,7 @@ export function NewAnalysis() {
           <div className="card p-6 space-y-4">
             <div>
               <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                Deal Name <span className="text-red-400">*</span>
+                Deal Name <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
@@ -189,7 +190,7 @@ export function NewAnalysis() {
 
             <div>
               <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                Company Name <span className="text-red-400">*</span>
+                Company Name <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
@@ -221,11 +222,11 @@ export function NewAnalysis() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="card p-6 space-y-4">
             <div className="flex items-center gap-3 pb-4 border-b border-border">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
-                <Building2 className="w-4 h-4 text-accent" />
+              <div className="w-8 h-8 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
+                <Building2 className="w-4 h-4 text-primary" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium truncate">{dealName}</p>
+                <p className="text-textPrimary text-sm font-medium truncate">{dealName}</p>
                 <p className="text-textMuted text-xs">{companyName}</p>
               </div>
             </div>
@@ -262,9 +263,9 @@ export function NewAnalysis() {
           </div>
 
           {error && (
-            <div className="flex gap-2 bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-3">
-              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-red-400 text-xs">{error}</p>
+            <div className="flex gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+              <p className="text-red-600 text-xs">{error}</p>
             </div>
           )}
 

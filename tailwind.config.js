@@ -4,17 +4,17 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        bg: '#0A0A0C',
-        surface: '#141418',
-        surfaceHigh: '#18181F',
-        border: '#2A2A35',
-        primary: '#6B21A8',
-        primaryLight: '#7C3AED',
-        accent: '#C4B5FD',
-        accentSoft: '#DDD6FE',
-        textPrimary: '#FFFFFF',
-        textSecondary: '#A09EB5',
-        textMuted: '#6B6880',
+        bg: '#F6F0FF',
+        surface: '#FFFFFF',
+        surfaceHigh: '#F1E8FF',
+        border: '#E5D6FF',
+        primary: '#8266B3',
+        primaryLight: '#9580C2',
+        accent: '#8266B3',
+        accentSoft: '#E5D6FF',
+        textPrimary: '#331A47',
+        textSecondary: '#5C4470',
+        textMuted: '#8B7A9C',
       },
       fontFamily: {
         sans: ['DM Sans', 'system-ui', 'sans-serif'],
@@ -22,9 +22,10 @@ module.exports = {
         mono: ['JetBrains Mono', 'monospace'],
       },
       boxShadow: {
-        'purple-glow': '0 0 20px rgba(107, 33, 168, 0.3)',
-        'purple-glow-sm': '0 0 10px rgba(107, 33, 168, 0.2)',
-        'card': '0 4px 24px rgba(0,0,0,0.4)',
+        'purple-glow': '0 0 24px rgba(229, 214, 255, 0.8)',
+        'purple-glow-sm': '0 0 12px rgba(229, 214, 255, 0.6)',
+        'card': '0 2px 12px rgba(51, 26, 71, 0.06)',
+        'card-hover': '0 4px 20px rgba(51, 26, 71, 0.1)',
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out',
