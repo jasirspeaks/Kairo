@@ -36,7 +36,7 @@ export interface DealReview {
   what_changed_since_last_call?: {
     resolved: string[];
     persists: string[];
-    new_risks: string[];
+    new: string[];
   };
   highest_priority_risk: HighestPriorityRisk;
   what_youre_missing: MissingInfo[];
