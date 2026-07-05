@@ -33,6 +33,11 @@ export interface DealReview {
     confidence: DealConfidence;
     reason: string;
   };
+  what_changed_since_last_call?: {
+    resolved: string[];
+    persists: string[];
+    new: string[];
+  };
   highest_priority_risk: HighestPriorityRisk;
   what_youre_missing: MissingInfo[];
   key_follow_up_message: string;

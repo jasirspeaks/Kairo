@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Plus, AlertTriangle, CheckCircle, Clock, TrendingDown, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import {
+  ArrowLeft, Plus, AlertTriangle, CheckCircle, Clock,
+  TrendingDown, ChevronDown, ChevronUp, Copy, Check
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewDeal, getRiskLevel, getStatusBg } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
@@ -16,7 +19,8 @@ export function Review() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const hideAddCall = searchParams.get('source') === 'risk-center';
+  const source = searchParams.get('source');
+  const hideAddCall = source === 'risk-center';
 
   const [deal, setDeal] = useState<Deal | null>(null);
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -51,19 +55,30 @@ export function Review() {
       .eq('deal_id', dealId)
       .order('created_at', { ascending: true });
 
+    const calls = callsData || [];
     setDeal(dealData);
-    setAllCalls(callsData || []);
+    setAllCalls(calls);
 
-    // If callId is provided, show that specific call. Otherwise show the latest.
     const targetCall = callId
-      ? (callsData || []).find(c => c.id === callId)
-      : (callsData || [])[callsData!.length - 1];
+      ? calls.find(c => c.id === callId)
+      : calls[calls.length - 1];
 
     setConv(targetCall || null);
     setLoading(false);
   }
 
-  const isLatestCall = conv && allCalls.length > 0 && conv.id === allCalls[allCalls.length - 1].id;
+  const isLatestCall = conv && allCalls.length > 0 &&
+    conv.id === allCalls[allCalls.length - 1].id;
+
+  function handleBack() {
+    if (source === 'workspace') {
+      navigate(`/app/workspace/deals/${dealId}`);
+    } else if (source === 'risk-center') {
+      navigate('/app/risk-center');
+    } else {
+      navigate('/app/dashboard');
+    }
+  }
 
   async function handleAddCall(e: React.FormEvent) {
     e.preventDefault();
@@ -138,17 +153,6 @@ export function Review() {
     }
   }
 
-  function handleBack() {
-    const source = searchParams.get('source');
-    if (source === 'workspace') {
-      navigate(`/app/workspace/deals/${dealId}`);
-    } else if (source === 'risk-center') {
-      navigate('/app/risk-center');
-    } else {
-      navigate('/app/dashboard');
-    }
-  }
-
   function copyMessage() {
     if (!conv?.analysis_json?.key_follow_up_message) return;
     navigator.clipboard.writeText(conv.analysis_json.key_follow_up_message);
@@ -168,7 +172,7 @@ export function Review() {
 
   if (loading) return (
     <div className="flex items-center justify-center py-32">
-      <div className="w-8 h-8 border-2 border-t-accent border-border rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
     </div>
   );
 
@@ -191,6 +195,7 @@ export function Review() {
 
   return (
     <div className="animate-fade-in space-y-5 max-w-2xl">
+
       {/* Header */}
       <div>
         <button
@@ -201,7 +206,9 @@ export function Review() {
         </button>
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">{deal.deal_name}</h1>
+            <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
+              {deal.deal_name}
+            </h1>
             <p className="text-textSecondary text-sm">
               {deal.company_name} · {conv.title || formatDate(conv.created_at)}
             </p>
@@ -232,7 +239,7 @@ export function Review() {
             )}>
               {r.deal_status.status}
             </span>
-            <span className="text-xs text-textMuted border border-border px-2 py-1 rounded-full">
+            <span className="text-xs text-textMuted border border-border px-2 py-1 rounded-full bg-surfaceHigh">
               {r.deal_status.confidence} Confidence
             </span>
           </div>
@@ -240,27 +247,81 @@ export function Review() {
         <p className="text-textSecondary text-sm leading-relaxed">{r.deal_status.reason}</p>
       </div>
 
-      {/* Section 2 — Highest Priority Risk */}
+      {/* Section 2 — What Changed Since Last Call (call 2+ only) */}
+      {r.what_changed_since_last_call && (
+        <div className="card p-6">
+          <h2 className="section-label mb-4">What Changed Since Last Call</h2>
+          <div className="space-y-4">
+            {r.what_changed_since_last_call.resolved.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-emerald-600 mb-2 uppercase tracking-wide">Resolved</p>
+                <div className="space-y-1.5">
+                  {r.what_changed_since_last_call.resolved.map((item, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 mt-1.5" />
+                      <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {r.what_changed_since_last_call.persists.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-600 mb-2 uppercase tracking-wide">Still Open</p>
+                <div className="space-y-1.5">
+                  {r.what_changed_since_last_call.persists.map((item, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5" />
+                      <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {r.what_changed_since_last_call.new.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">New Risks</p>
+                <div className="space-y-1.5">
+                  {r.what_changed_since_last_call.new.map((item, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
+                      <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Section 3 — Highest Priority Risk */}
       {r.highest_priority_risk?.risk && (
         <div className="card p-6 border border-red-200">
           <h2 className="section-label mb-4">Highest Priority Risk</h2>
-          <p className="text-textPrimary text-sm font-semibold mb-3">{r.highest_priority_risk.risk}</p>
+          <p className="text-textPrimary text-sm font-semibold mb-3">
+            {r.highest_priority_risk.risk}
+          </p>
           {r.highest_priority_risk.why_it_matters && (
             <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
               <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
-              <p className="text-textSecondary text-xs leading-relaxed">{r.highest_priority_risk.why_it_matters}</p>
+              <p className="text-textSecondary text-xs leading-relaxed">
+                {r.highest_priority_risk.why_it_matters}
+              </p>
             </div>
           )}
           {r.highest_priority_risk.evidence && (
             <div className="bg-surfaceHigh border border-border rounded-lg p-3">
               <p className="text-xs text-textMuted font-medium mb-1">Evidence</p>
-              <p className="text-textSecondary text-xs leading-relaxed italic">"{r.highest_priority_risk.evidence}"</p>
+              <p className="text-textSecondary text-xs leading-relaxed italic">
+                "{r.highest_priority_risk.evidence}"
+              </p>
             </div>
           )}
         </div>
       )}
 
-      {/* Section 3 — What You're Missing */}
+      {/* Section 4 — What You're Missing */}
       {r.what_youre_missing && r.what_youre_missing.length > 0 && (
         <div className="card p-6">
           <h2 className="section-label mb-4">What You're Missing</h2>
@@ -282,26 +343,30 @@ export function Review() {
         </div>
       )}
 
-      {/* Section 4 — Key Follow-up Message */}
+      {/* Section 5 — Key Follow-up Message */}
       {r.key_follow_up_message && (
         <div className="card p-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="section-label">Key Follow-up Message</h2>
             <button
               onClick={copyMessage}
-              className="flex items-center gap-1.5 text-xs text-primary hover:text-textPrimary transition-colors"
+              className="flex items-center gap-1.5 text-xs text-primary hover:text-textPrimary transition-colors font-medium"
             >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied' : 'Copy'}
+              {copied
+                ? <><Check className="w-3.5 h-3.5" /> Copied</>
+                : <><Copy className="w-3.5 h-3.5" /> Copy</>
+              }
             </button>
           </div>
           <div className="bg-surfaceHigh border border-border rounded-lg p-4">
-            <p className="text-textSecondary text-sm leading-relaxed whitespace-pre-line">{r.key_follow_up_message}</p>
+            <p className="text-textSecondary text-sm leading-relaxed whitespace-pre-line">
+              {r.key_follow_up_message}
+            </p>
           </div>
         </div>
       )}
 
-      {/* Section 5 — Manager Note */}
+      {/* Section 6 — Manager Note */}
       {r.manager_note && (
         <div className="bg-primary/8 border border-primary/15 rounded-xl px-5 py-4">
           <p className="text-xs text-primary font-semibold mb-1">Manager Note</p>
@@ -309,12 +374,12 @@ export function Review() {
         </div>
       )}
 
-      {/* Section 6 — Evidence */}
+      {/* Section 7 — Supporting Evidence (collapsed) */}
       {r.supporting_evidence && r.supporting_evidence.length > 0 && (
         <div className="card overflow-hidden">
           <button
             onClick={() => setEvidenceOpen(!evidenceOpen)}
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-surfaceHigh/60 transition-colors"
+            className="w-full flex items-center justify-between px-6 py-4 hover:bg-surfaceHigh transition-colors"
           >
             <span className="text-sm font-medium text-textSecondary">Supporting Evidence</span>
             {evidenceOpen
@@ -335,14 +400,14 @@ export function Review() {
         </div>
       )}
 
-      {/* Add Call Panel */}
+      {/* Add Call Modal */}
       {addingCall && (
         <div className="fixed inset-0 bg-textPrimary/20 backdrop-blur-sm z-50 flex items-center justify-center px-4">
           <div className="card w-full max-w-lg p-6 animate-slide-up">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-display font-bold text-textPrimary">Add Call Transcript</h2>
               <button
-                onClick={() => { setAddingCall(false); setError(''); setNewTranscript(''); }}
+                onClick={() => { setAddingCall(false); setError(''); setNewTranscript(''); setNewCallTitle(''); }}
                 className="text-textMuted hover:text-textPrimary transition-colors text-sm"
               >
                 Cancel
@@ -362,7 +427,9 @@ export function Review() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-textSecondary mb-1.5">Transcript</label>
+                <label className="block text-xs font-medium text-textSecondary mb-1.5">
+                  Transcript
+                </label>
                 <textarea
                   value={newTranscript}
                   onChange={e => setNewTranscript(e.target.value)}
@@ -376,7 +443,11 @@ export function Review() {
                   <p className="text-red-600 text-xs">{error}</p>
                 </div>
               )}
-              <Button type="submit" className="w-full" disabled={!newTranscript.trim()}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={!newTranscript.trim()}
+              >
                 Review This Call
               </Button>
             </form>
