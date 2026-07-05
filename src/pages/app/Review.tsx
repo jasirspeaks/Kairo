@@ -278,11 +278,11 @@ export function Review() {
                 </div>
               </div>
             )}
-            {r.what_changed_since_last_call.new.length > 0 && (
+            {r.what_changed_since_last_call.new_risks.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">New Risks</p>
                 <div className="space-y-1.5">
-                  {r.what_changed_since_last_call.new.map((item, i) => (
+                  {r.what_changed_since_last_call.new_risks.map((item, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
                       <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
