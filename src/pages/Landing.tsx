@@ -61,9 +61,9 @@ export function Landing() {
         </div>
 
         <h1 className="text-5xl font-display font-bold text-textPrimary mb-5 leading-tight max-w-3xl mx-auto">
-          Stop losing deals because you{' '}
+          Stop losing{' '}
           <span className="text-primary">
-            missed something
+            winnable deals
           </span>
         </h1>
 
@@ -172,7 +172,7 @@ export function Landing() {
 
       {/* Footer */}
       <div className="border-t border-border px-8 py-6 text-center bg-surface">
-        <p className="text-textMuted text-xs">© 2025 Kairo. Deal intelligence for serious sales professionals.</p>
+        <p className="text-textMuted text-xs">© 2025 Kairo. Deal intelligence for founders and full-cycle sellers.</p>
       </div>
     </div>
   );
