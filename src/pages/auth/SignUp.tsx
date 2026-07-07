@@ -27,14 +27,14 @@ export function SignUp() {
       setError(error.message);
       setLoading(false);
     } else {
-      navigate('/app/dashboard');
+      navigate('/onboarding');
     }
   }
 
   async function handleGoogleSignUp() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/app/dashboard` }
+      options: { redirectTo: `${window.location.origin}/onboarding` }
     });
   }
 
