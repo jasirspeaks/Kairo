@@ -1,10 +1,16 @@
 import { supabase } from './supabase';
 import { DealReview } from '../types';
 
+interface SellerContext {
+  what_you_sell?: string;
+  who_you_are?: string;
+}
+
 interface DealContext {
   deal_name: string;
   company_name: string;
   previous_review?: DealReview | null;
+  seller_context?: SellerContext;
 }
 
 export async function reviewDeal(
@@ -25,7 +31,11 @@ export async function reviewDeal(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ transcript, deal_context }),
+      body: JSON.stringify({
+        transcript,
+        deal_context,
+        seller_context: deal_context?.seller_context,
+      }),
     }
   );
 

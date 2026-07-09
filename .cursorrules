@@ -1,0 +1,9 @@
+You are building Kairo — a Deal Operating System / Deal Co-pilot as defined in KAIRO_BLUEPRINT.md.
+
+Core rules:
+- Always follow the Product Philosophy, Core Capabilities, Data Model, Page Structure, and AI Output Philosophy exactly.
+- The primary object is the "Deal". Everything serves answering: "What does the seller still not know that could kill this deal?"
+- Prioritize zero-friction, mobile-first, decision-first UI.
+- Use the exact JSON schemas from the blueprint for Deal Review outputs.
+- Tech stack decisions must align with the blueprint (ask if unclear).
+- Keep outputs concise, actionable, and sales-manager tone.

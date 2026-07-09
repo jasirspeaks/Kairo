@@ -17,7 +17,7 @@ export function Review() {
   const { dealId, callId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const source = searchParams.get('source');
   const hideAddCall = source === 'risk-center';
@@ -99,6 +99,10 @@ export function Review() {
         deal_name: deal.deal_name,
         company_name: deal.company_name,
         previous_review: previousReview,
+        seller_context: {
+          what_you_sell: profile?.what_you_sell || undefined,
+          who_you_are: profile?.who_you_are || undefined,
+        },
       });
 
       const { data: newConv, error: convError } = await supabase

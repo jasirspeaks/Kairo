@@ -17,7 +17,7 @@ interface DealWithState extends Deal {
 
 export function DealWorkspace() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [deals, setDeals] = useState<DealWithState[]>([]);
   const [selectedDeal, setSelectedDeal] = useState<DealWithState | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -108,6 +108,10 @@ export function DealWorkspace() {
         deal_name: selectedDeal.deal_name,
         company_name: selectedDeal.company_name,
         previous_review: previousReview,
+        seller_context: {
+          what_you_sell: profile?.what_you_sell || undefined,
+          who_you_are: profile?.who_you_are || undefined,
+        },
       });
 
       const { data: newConv, error: convError } = await supabase

@@ -66,6 +66,8 @@ export interface Profile {
   name: string | null;
   email: string | null;
   onboarding_complete: boolean;
+  what_you_sell: string | null;
+  who_you_are: string | null;
   created_at: string;
 }
 

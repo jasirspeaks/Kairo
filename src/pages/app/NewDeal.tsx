@@ -12,7 +12,7 @@ type Step = 'deal' | 'transcript';
 
 export function NewDeal() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [step, setStep] = useState<Step>('deal');
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -62,6 +62,10 @@ export function NewDeal() {
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
         previous_review: null,
+        seller_context: {
+          what_you_sell: profile?.what_you_sell || undefined,
+          who_you_are: profile?.who_you_are || undefined,
+        },
       });
 
       const { data: conv, error: convError } = await supabase
