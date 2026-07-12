@@ -1,29 +1,71 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, TrendingUp, Brain, Shield, BarChart3 } from 'lucide-react';
+import { Zap, ShieldAlert, GitBranch, Brain, ArrowRight, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../hooks/useAuth';
+import { cn } from '../lib/utils';
 
 const FEATURES = [
-  { icon: Shield, title: 'Deal Intelligence', desc: 'Kairo reviews your deals — not your conversations. The transcript is evidence. The deal is what matters.' },
-  { icon: TrendingUp, title: 'Risk Detection', desc: 'Identifies the single risk most likely to prevent your deal from progressing — and what to do about it.' },
-  { icon: Brain, title: 'Missing Information', desc: 'Surfaces what you still don\'t know that could kill the deal before it\'s too late to act.' },
-  { icon: BarChart3, title: 'Multi-Call Intelligence', desc: 'Tracks how risks evolve across every call. What was unknown in call 1. What got resolved. What emerged.' },
+  { icon: GitBranch, title: 'Multi-Call Intelligence', desc: 'Kairo tracks how risks evolve across every call on a deal — what got resolved, what persists, what\'s new. This is the view a single transcript summary can\'t give you.' },
+  { icon: ShieldAlert, title: 'Risk Center', desc: 'Every active deal, ranked by severity, in one place. Know which three deals need you this week before you open your inbox.' },
+  { icon: Brain, title: 'Missing Information', desc: 'Surfaces what you still don\'t know that could kill the deal — before it\'s too late to act on it.' },
+  { icon: Zap, title: 'Deal Reviews', desc: 'A focused review after every call: status, biggest risk, what to ask next, and a ready-to-send follow-up.' },
 ];
 
-const DEMO_DEAL = {
-  status: 'At Risk',
-  confidence: 'Medium',
-  reason: 'Budget authority has not been confirmed. The champion is engaged but has not indicated whether they have sign-off power or need to escalate.',
-  highest_priority_risk: 'No confirmation of who approves the purchase',
-  missing: [
-    { gap: 'Budget authority', question: 'Who needs to approve a purchase at this size?' },
-    { gap: 'Decision timeline', question: 'When does a decision need to be made, and why?' },
-    { gap: 'Competing options', question: 'Are you evaluating any other solutions right now?' },
+// Risk Center demo — pipeline-wide view, ranked by severity
+const RISK_CENTER_DEMO = [
+  {
+    name: 'Acme Corp — Enterprise Plan',
+    company: 'Acme Corp',
+    status: 'At Risk',
+    risk: 'No confirmation of who approves the purchase',
+  },
+  {
+    name: 'Northwind — Team Rollout',
+    company: 'Northwind Logistics',
+    status: 'Open',
+    risk: 'Decision timeline still unconfirmed after 2 calls',
+  },
+  {
+    name: 'Fenwick Labs — Pilot',
+    company: 'Fenwick Labs',
+    status: 'Healthy',
+    risk: 'Champion confirmed budget, next step scheduled',
+  },
+];
+
+// Multi-call evolution demo — the "what changed since last call" moment
+const EVOLUTION_DEMO = {
+  dealName: 'Acme Corp — Enterprise Plan',
+  callLabel: 'Call 3 — Negotiation',
+  resolved: [
+    'Champion confirmed team size and rollout timeline',
   ],
-  next_move: 'Send a follow-up email requesting a brief call with the economic buyer before moving to proposal.',
-  manager_note: 'Don\'t send pricing until you know who approves it.',
+  persists: [
+    'Economic buyer still not identified',
+  ],
+  new_risks: [
+    'Buyer mentioned evaluating a second vendor for the first time',
+  ],
 };
+
+function statusBadgeClasses(status: string) {
+  switch (status) {
+    case 'At Risk': return 'bg-red-50 border-red-200 text-red-600';
+    case 'Open': return 'bg-amber-50 border-amber-200 text-amber-700';
+    case 'Healthy': return 'bg-emerald-50 border-emerald-200 text-emerald-700';
+    default: return 'bg-surfaceHigh border-border text-textMuted';
+  }
+}
+
+function riskDotClasses(status: string) {
+  switch (status) {
+    case 'At Risk': return 'bg-red-400';
+    case 'Open': return 'bg-amber-400';
+    case 'Healthy': return 'bg-emerald-400';
+    default: return 'bg-border';
+  }
+}
 
 export function Landing() {
   const navigate = useNavigate();
@@ -57,23 +99,24 @@ export function Landing() {
 
         <div className="inline-flex items-center gap-2 bg-primary/8 border border-primary/15 rounded-full px-4 py-1.5 mb-6">
           <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-          <span className="text-xs text-primary font-medium">Deal Intelligence Platform</span>
+          <span className="text-xs text-primary font-medium">Deal Operating System</span>
         </div>
 
         <h1 className="text-5xl font-display font-bold text-textPrimary mb-5 leading-tight max-w-3xl mx-auto">
-          Stop losing{' '}
+          Never lose a{' '}
           <span className="text-primary">
-            winnable deals
+            winnable deal
           </span>
+          {' '}to something you didn't see
         </h1>
 
         <p className="text-textSecondary text-lg max-w-xl mx-auto mb-8 leading-relaxed">
-          Kairo reviews your sales conversations and identifies the unanswered questions, hidden risks, and missing information most likely to determine whether the deal closes or dies.
+          Kairo is the central workspace where every deal lives with memory, risk tracking, and clear next actions — so you run your pipeline with confidence instead of hope.
         </p>
 
         <div className="flex gap-3 justify-center">
           <Button onClick={() => navigate('/signup')} size="lg">
-            Review My First Deal
+            Start Free — Review Your First Deal
           </Button>
           <Button onClick={() => navigate('/signin')} variant="secondary" size="lg">
             Sign In
@@ -81,55 +124,111 @@ export function Landing() {
         </div>
       </div>
 
-      {/* Demo Deal Review */}
-      <div className="max-w-2xl mx-auto px-8 pb-20">
-        <div className="text-center mb-6">
-          <span className="text-xs text-textMuted uppercase tracking-widest">Live Demo — Deal Review</span>
+      {/* Demo: Risk Center + Multi-Call Evolution */}
+      <div className="max-w-5xl mx-auto px-8 pb-20">
+        <div className="text-center mb-8">
+          <span className="text-xs text-textMuted uppercase tracking-widest">Live Demo</span>
+          <h2 className="text-2xl font-display font-bold text-textPrimary mt-2">
+            Your whole pipeline. One glance.
+          </h2>
         </div>
-        <div className="card p-6 space-y-5 shadow-card-hover">
-          {/* Verdict */}
-          <div className="border-l-4 border-red-400 pl-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full border bg-red-50 border-red-200 text-red-600">
-                {DEMO_DEAL.status}
-              </span>
-              <span className="text-xs text-textMuted border border-border px-2 py-1 rounded-full bg-surfaceHigh">
-                {DEMO_DEAL.confidence} Confidence
-              </span>
-            </div>
-            <p className="text-textSecondary text-sm leading-relaxed">{DEMO_DEAL.reason}</p>
-          </div>
 
-          {/* What You're Missing */}
-          <div>
-            <p className="section-label mb-3">What You're Missing</p>
-            <div className="space-y-2">
-              {DEMO_DEAL.missing.map((item, i) => (
-                <div key={i} className="bg-surfaceHigh border border-border rounded-lg p-3 flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
-                    <span className="text-amber-600 text-xs font-bold">{i + 1}</span>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+          {/* Risk Center panel */}
+          <div className="lg:col-span-2 card p-6 shadow-card-hover flex flex-col">
+            <div className="flex items-center gap-2 mb-4">
+              <ShieldAlert className="w-4 h-4 text-primary" />
+              <p className="section-label">Risk Center</p>
+            </div>
+            <div className="space-y-2 flex-1">
+              {RISK_CENTER_DEMO.map((deal) => (
+                <div
+                  key={deal.name}
+                  className="border border-border rounded-lg px-4 py-3 bg-surfaceHigh/60"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className={cn('w-2 h-2 rounded-full flex-shrink-0', riskDotClasses(deal.status))} />
+                    <p className="text-textPrimary text-xs font-medium truncate flex-1">{deal.name}</p>
                   </div>
-                  <div>
-                    <p className="text-textPrimary text-xs font-medium mb-1">{item.gap}</p>
-                    <p className="text-primary text-xs">Ask: "{item.question}"</p>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full border', statusBadgeClasses(deal.status))}>
+                      {deal.status}
+                    </span>
                   </div>
+                  <p className="text-textMuted text-xs leading-snug">{deal.risk}</p>
                 </div>
               ))}
             </div>
+            <p className="text-textMuted text-xs mt-4 leading-relaxed">
+              Every active deal, ranked by severity — so you know exactly where to spend the next 20 minutes.
+            </p>
           </div>
 
-          {/* Next Move + Manager Note */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-surfaceHigh border border-border rounded-lg p-3">
-              <p className="section-label mb-1.5">Next Move</p>
-              <p className="text-textPrimary text-xs leading-relaxed">{DEMO_DEAL.next_move}</p>
+          {/* Multi-call evolution panel */}
+          <div className="lg:col-span-3 card p-6 shadow-card-hover">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <GitBranch className="w-4 h-4 text-primary" />
+                <p className="section-label">What Changed Since Last Call</p>
+              </div>
             </div>
-            <div className="bg-primary/5 border border-primary/15 rounded-lg p-3">
-              <p className="section-label mb-1.5">Manager Note</p>
-              <p className="text-textPrimary text-xs font-medium">{DEMO_DEAL.manager_note}</p>
+            <p className="text-textPrimary text-sm font-medium mb-4">
+              {EVOLUTION_DEMO.dealName} <span className="text-textMuted font-normal">· {EVOLUTION_DEMO.callLabel}</span>
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                  <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Resolved</p>
+                </div>
+                {EVOLUTION_DEMO.resolved.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 mb-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 mt-1.5" />
+                    <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-500" />
+                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">Still Open</p>
+                </div>
+                {EVOLUTION_DEMO.persists.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 mb-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5" />
+                    <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                  <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">New Risk</p>
+                </div>
+                {EVOLUTION_DEMO.new_risks.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 mb-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
+                    <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-border bg-primary/5 -mx-6 -mb-6 px-6 py-4 rounded-b-xl">
+              <p className="text-xs text-primary font-semibold mb-1">Manager Note</p>
+              <p className="text-textPrimary text-sm font-medium">
+                A second vendor just entered the picture. Get to the economic buyer before pricing goes out.
+              </p>
             </div>
           </div>
         </div>
+
+        <p className="text-center text-textMuted text-xs mt-5 max-w-lg mx-auto leading-relaxed">
+          This evolving view — not a one-off transcript summary — is what a free tool can't give you. Kairo remembers every call on the deal.
+        </p>
       </div>
 
       {/* Features */}
@@ -165,7 +264,8 @@ export function Landing() {
             Paste a transcript. Get a deal review in under 30 seconds.
           </p>
           <Button onClick={() => navigate('/signup')} size="lg" className="w-full">
-            Review My First Deal
+            Start Free — Review Your First Deal
+            <ArrowRight className="w-4 h-4" />
           </Button>
         </div>
       </div>
