@@ -85,3 +85,18 @@ export interface Conversation {
   status: ConversationStatus;
   created_at: string;
 }
+
+export interface PendingCall {
+  id: string;
+  user_id: string;
+  source: string;
+  external_id: string | null;
+  title: string | null;
+  transcript: string;
+  participants: any | null;
+  meeting_date: string | null;
+  status: 'unmatched' | 'matched' | 'discarded';
+  matched_deal_id: string | null;
+  matched_conversation_id: string | null;
+  created_at: string;
+}

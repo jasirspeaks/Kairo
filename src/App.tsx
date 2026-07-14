@@ -15,6 +15,7 @@ import { DealWorkspace } from './pages/app/DealWorkspace';
 import { RiskCenter } from './pages/app/RiskCenter';
 import { Settings } from './pages/app/Settings';
 import { AppLayout } from './components/layout/AppLayout';
+import { Inbox } from './pages/app/Inbox';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ export default function App() {
             <AppLayout>
               <Routes>
                 <Route path="dashboard" element={<Dashboard />} />
+                <Route path="inbox" element={<Inbox />} />
                 <Route path="new" element={<NewDeal />} />
                 <Route path="deals/:dealId/calls/:callId" element={<Review />} />
                 <Route path="workspace" element={<DealWorkspace />} />

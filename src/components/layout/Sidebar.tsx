@@ -1,13 +1,14 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Plus, FolderOpen, ShieldAlert, Settings, LogOut, Zap
+  LayoutDashboard, Plus, FolderOpen, ShieldAlert, Settings, LogOut, Zap, Inbox
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
 
 const NAV_ITEMS = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/app/inbox', label: 'Inbox', icon: Inbox },
   { path: '/app/new', label: 'New Deal', icon: Plus },
   { path: '/app/workspace', label: 'Deal Workspace', icon: FolderOpen },
   { path: '/app/risk-center', label: 'Risk Center', icon: ShieldAlert },
