@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, ArrowLeft, Building2, FileText, AlertCircle } from 'lucide-react';
+import { ArrowRight, Building2, FileText, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewDeal, getRiskLevel } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
+import { TopBar } from '../../components/layout/TopBar';
 import { cn } from '../../lib/utils';
 
 type Step = 'deal' | 'transcript';
@@ -124,46 +125,69 @@ export function NewDeal() {
 
   return (
     <div className="animate-fade-in max-w-xl">
-      <div className="mb-8">
-        {step === 'transcript' && (
-          <button
-            onClick={() => setStep('deal')}
-            className="flex items-center gap-1.5 text-textMuted hover:text-textPrimary text-xs mb-4 transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back
-          </button>
-        )}
+      {/* Mobile: TopBar handles back nav + title */}
+      <div className="-mx-4 md:hidden">
+        <TopBar
+          title={step === 'deal' ? 'New Deal' : 'Add Transcript'}
+          onBack={step === 'transcript' ? () => setStep('deal') : () => navigate(-1)}
+        />
+      </div>
 
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <div className={cn(
-              'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all',
-              step === 'deal' ? 'bg-primary border-primary text-white' : 'bg-primary/10 border-primary/30 text-primary'
-            )}>
-              {step === 'deal' ? '1' : '✓'}
+      <div className="mb-6 md:mb-8">
+        {/* Desktop-only back button + step indicator */}
+        <div className="hidden md:block">
+          {step === 'transcript' && (
+            <button
+              onClick={() => setStep('deal')}
+              className="flex items-center gap-1.5 text-textMuted hover:text-textPrimary text-xs mb-4 transition-colors"
+            >
+              <ArrowRight className="w-3.5 h-3.5 rotate-180" /> Back
+            </button>
+          )}
+
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all',
+                step === 'deal' ? 'bg-primary border-primary text-white' : 'bg-primary/10 border-primary/30 text-primary'
+              )}>
+                {step === 'deal' ? '1' : '✓'}
+              </div>
+              <span className={cn('text-xs font-medium', step === 'deal' ? 'text-textPrimary' : 'text-primary')}>
+                Deal Info
+              </span>
             </div>
-            <span className={cn('text-xs font-medium', step === 'deal' ? 'text-textPrimary' : 'text-primary')}>
-              Deal Info
-            </span>
-          </div>
-          <div className="w-8 h-px bg-border" />
-          <div className="flex items-center gap-2">
-            <div className={cn(
-              'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all',
-              step === 'transcript' ? 'bg-primary border-primary text-white' : 'bg-surfaceHigh border-border text-textMuted'
-            )}>
-              2
+            <div className="w-8 h-px bg-border" />
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all',
+                step === 'transcript' ? 'bg-primary border-primary text-white' : 'bg-surfaceHigh border-border text-textMuted'
+              )}>
+                2
+              </div>
+              <span className={cn('text-xs font-medium', step === 'transcript' ? 'text-textPrimary' : 'text-textMuted')}>
+                Transcript
+              </span>
             </div>
-            <span className={cn('text-xs font-medium', step === 'transcript' ? 'text-textPrimary' : 'text-textMuted')}>
-              Transcript
-            </span>
           </div>
+
+          <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
+            {step === 'deal' ? 'New Deal' : 'Add Transcript'}
+          </h1>
+          <p className="text-textSecondary text-sm">
+            {step === 'deal'
+              ? 'Start by naming the deal. The transcript comes next.'
+              : 'Paste the call transcript. Kairo will review the deal and identify what matters most.'
+            }
+          </p>
         </div>
 
-        <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
-          {step === 'deal' ? 'New Deal' : 'Add Transcript'}
-        </h1>
-        <p className="text-textSecondary text-sm">
+        {/* Mobile: compact step dots only */}
+        <div className="flex items-center gap-1.5 mt-3 md:hidden">
+          <div className={cn('h-1 rounded-full flex-1', step === 'deal' ? 'bg-primary' : 'bg-primary/40')} />
+          <div className={cn('h-1 rounded-full flex-1', step === 'transcript' ? 'bg-primary' : 'bg-border')} />
+        </div>
+        <p className="text-textSecondary text-sm mt-3 md:hidden">
           {step === 'deal'
             ? 'Start by naming the deal. The transcript comes next.'
             : 'Paste the call transcript. Kairo will review the deal and identify what matters most.'
@@ -173,7 +197,7 @@ export function NewDeal() {
 
       {step === 'deal' && (
         <form onSubmit={handleDealContinue} className="space-y-4">
-          <div className="card p-6 space-y-4">
+          <div className="card p-4 md:p-6 space-y-4">
             <div>
               <label className="block text-xs font-medium text-textSecondary mb-1.5">
                 Deal Name <span className="text-red-500">*</span>
@@ -224,7 +248,7 @@ export function NewDeal() {
 
       {step === 'transcript' && (
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="card p-6 space-y-4">
+          <div className="card p-4 md:p-6 space-y-4">
             <div className="flex items-center gap-3 pb-4 border-b border-border">
               <div className="w-8 h-8 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
                 <Building2 className="w-4 h-4 text-primary" />
@@ -254,7 +278,7 @@ export function NewDeal() {
                 value={transcript}
                 onChange={e => setTranscript(e.target.value)}
                 placeholder={`Paste your call transcript here.\n\nRep: Thanks for taking the time today...\nProspect: Of course...\n\nInclude speaker labels for better analysis.`}
-                className="input-field min-h-64 resize-y font-mono text-xs leading-relaxed"
+                className="input-field min-h-56 md:min-h-64 resize-y font-mono text-xs leading-relaxed"
                 autoFocus
               />
               <p className="text-xs text-textMuted mt-1.5">

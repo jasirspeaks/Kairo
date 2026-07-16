@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft, Plus, AlertTriangle, CheckCircle, Clock,
-  TrendingDown, ChevronDown, ChevronUp, Copy, Check
+  Plus, AlertTriangle, CheckCircle, Clock,
+  TrendingDown, Copy, Check
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewDeal, getRiskLevel, getStatusBg } from '../../lib/kairo';
@@ -11,6 +11,9 @@ import { Deal, Conversation } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { TopBar } from '../../components/layout/TopBar';
+import { BottomSheet } from '../../components/ui/BottomSheet';
+import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { formatDate, cn } from '../../lib/utils';
 
 export function Review() {
@@ -26,7 +29,6 @@ export function Review() {
   const [conv, setConv] = useState<Conversation | null>(null);
   const [allCalls, setAllCalls] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [addingCall, setAddingCall] = useState(false);
   const [newTranscript, setNewTranscript] = useState('');
@@ -196,203 +198,200 @@ export function Review() {
   );
 
   const r = conv.analysis_json;
+  const borderColor =
+    r.deal_status.status === 'Healthy' ? 'border-emerald-400' :
+    r.deal_status.status === 'Open' ? 'border-amber-400' :
+    r.deal_status.status === 'At Risk' ? 'border-red-400' :
+    'border-textMuted';
 
   return (
-    <div className="animate-fade-in space-y-5 max-w-2xl">
+    <div className="animate-fade-in max-w-2xl">
 
-      {/* Header */}
-      <div>
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-1.5 text-textMuted hover:text-textPrimary text-xs mb-4 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
-        </button>
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
-              {deal.deal_name}
-            </h1>
-            <p className="text-textSecondary text-sm">
-              {deal.company_name} · {conv.title || formatDate(conv.created_at)}
-            </p>
-          </div>
-          {!hideAddCall && isLatestCall && (
-            <Button onClick={() => setAddingCall(true)} size="sm" variant="secondary">
-              <Plus className="w-3.5 h-3.5" />
-              Add Call
-            </Button>
-          )}
-        </div>
+      {/* Mobile: sticky top bar with deal name + Add Call action */}
+      <div className="-mx-4 md:hidden">
+        <TopBar
+          title={deal.deal_name}
+          onBack={handleBack}
+          action={
+            !hideAddCall && isLatestCall ? (
+              <button
+                onClick={() => setAddingCall(true)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            ) : undefined
+          }
+        />
       </div>
 
-      {/* Section 1 — Verdict */}
+      {/* Sticky verdict header - stays visible while scrolling on mobile */}
       <div className={cn(
-        'card p-6 border-l-4',
-        r.deal_status.status === 'Healthy' ? 'border-emerald-400' :
-        r.deal_status.status === 'Open' ? 'border-amber-400' :
-        r.deal_status.status === 'At Risk' ? 'border-red-400' :
-        'border-textMuted'
+        'sticky top-0 md:static z-20 -mx-4 px-4 md:mx-0 md:px-0 bg-bg pt-2 md:pt-0 pb-2 md:pb-0'
       )}>
-        <div className="flex items-center gap-3 mb-3">
-          {getStatusIcon(r.deal_status.status)}
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              'text-sm font-bold px-2.5 py-1 rounded-full border',
-              getStatusBg(r.deal_status.status)
-            )}>
-              {r.deal_status.status}
-            </span>
-            <span className="text-xs text-textMuted border border-border px-2 py-1 rounded-full bg-surfaceHigh">
-              {r.deal_status.confidence} Confidence
-            </span>
-          </div>
+        <div className="hidden md:block mb-4">
+          <p className="text-textSecondary text-sm">
+            {deal.company_name} · {conv.title || formatDate(conv.created_at)}
+          </p>
+          {!hideAddCall && isLatestCall && (
+            <div className="flex justify-end -mt-6">
+              <Button onClick={() => setAddingCall(true)} size="sm" variant="secondary">
+                <Plus className="w-3.5 h-3.5" /> Add Call
+              </Button>
+            </div>
+          )}
         </div>
-        <p className="text-textSecondary text-sm leading-relaxed">{r.deal_status.reason}</p>
+
+        <div className={cn('card p-4 md:p-6 border-l-4', borderColor)}>
+          <div className="flex items-center gap-3 mb-2 md:mb-3">
+            {getStatusIcon(r.deal_status.status)}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={cn(
+                'text-sm font-bold px-2.5 py-1 rounded-full border',
+                getStatusBg(r.deal_status.status)
+              )}>
+                {r.deal_status.status}
+              </span>
+              <span className="text-xs text-textMuted border border-border px-2 py-1 rounded-full bg-surfaceHigh">
+                {r.deal_status.confidence} Confidence
+              </span>
+            </div>
+          </div>
+          <p className="text-textSecondary text-sm leading-relaxed">{r.deal_status.reason}</p>
+        </div>
       </div>
 
-      {/* Section 2 — What Changed Since Last Call (call 2+ only) */}
-      {r.what_changed_since_last_call && (
-        <div className="card p-6">
-          <h2 className="section-label mb-4">What Changed Since Last Call</h2>
-          <div className="space-y-4">
-            {r.what_changed_since_last_call.resolved.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-emerald-600 mb-2 uppercase tracking-wide">Resolved</p>
-                <div className="space-y-1.5">
-                  {r.what_changed_since_last_call.resolved.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 mt-1.5" />
-                      <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {r.what_changed_since_last_call.persists.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-amber-600 mb-2 uppercase tracking-wide">Still Open</p>
-                <div className="space-y-1.5">
-                  {r.what_changed_since_last_call.persists.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5" />
-                      <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {r.what_changed_since_last_call.new_risks.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">New Risks</p>
-                <div className="space-y-1.5">
-                  {r.what_changed_since_last_call.new_risks.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
-                      <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <div className="space-y-3 md:space-y-5 mt-3 md:mt-5">
 
-      {/* Section 3 — Highest Priority Risk */}
-      {r.highest_priority_risk?.risk && (
-        <div className="card p-6 border border-red-200">
-          <h2 className="section-label mb-4">Highest Priority Risk</h2>
-          <p className="text-textPrimary text-sm font-semibold mb-3">
-            {r.highest_priority_risk.risk}
-          </p>
-          {r.highest_priority_risk.why_it_matters && (
-            <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
-              <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
-              <p className="text-textSecondary text-xs leading-relaxed">
-                {r.highest_priority_risk.why_it_matters}
-              </p>
-            </div>
-          )}
-          {r.highest_priority_risk.evidence && (
-            <div className="bg-surfaceHigh border border-border rounded-lg p-3">
-              <p className="text-xs text-textMuted font-medium mb-1">Evidence</p>
-              <p className="text-textSecondary text-xs leading-relaxed italic">
-                "{r.highest_priority_risk.evidence}"
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Section 4 — What You're Missing */}
-      {r.what_youre_missing && r.what_youre_missing.length > 0 && (
-        <div className="card p-6">
-          <h2 className="section-label mb-4">What You're Missing</h2>
-          <div className="space-y-3">
-            {r.what_youre_missing.map((item, i) => (
-              <div key={i} className="bg-surfaceHigh border border-border rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-amber-700 text-xs font-bold">{i + 1}</span>
-                  </div>
-                  <div>
-                    <p className="text-textPrimary text-xs font-medium mb-1.5">{item.gap}</p>
-                    <p className="text-primary text-xs">Ask: "{item.question_to_answer}"</p>
+        {/* What Changed - open by default, it's the multi-call moment */}
+        {r.what_changed_since_last_call && (
+          <CollapsibleSection title="What Changed Since Last Call" defaultOpen>
+            <div className="space-y-4 pt-4">
+              {r.what_changed_since_last_call.resolved.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-emerald-600 mb-2 uppercase tracking-wide">Resolved</p>
+                  <div className="space-y-1.5">
+                    {r.what_changed_since_last_call.resolved.map((item, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 mt-1.5" />
+                        <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+              )}
+              {r.what_changed_since_last_call.persists.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-amber-600 mb-2 uppercase tracking-wide">Still Open</p>
+                  <div className="space-y-1.5">
+                    {r.what_changed_since_last_call.persists.map((item, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5" />
+                        <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {r.what_changed_since_last_call.new_risks.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">New Risks</p>
+                  <div className="space-y-1.5">
+                    {r.what_changed_since_last_call.new_risks.map((item, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
+                        <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
+        )}
 
-      {/* Section 5 — Key Follow-up Message */}
-      {r.key_follow_up_message && (
-        <div className="card p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="section-label">Key Follow-up Message</h2>
-            <button
-              onClick={copyMessage}
-              className="flex items-center gap-1.5 text-xs text-primary hover:text-textPrimary transition-colors font-medium"
-            >
-              {copied
-                ? <><Check className="w-3.5 h-3.5" /> Copied</>
-                : <><Copy className="w-3.5 h-3.5" /> Copy</>
-              }
-            </button>
-          </div>
-          <div className="bg-surfaceHigh border border-border rounded-lg p-4">
-            <p className="text-textSecondary text-sm leading-relaxed whitespace-pre-line">
-              {r.key_follow_up_message}
+        {/* Highest Priority Risk - always open, this is the headline */}
+        {r.highest_priority_risk?.risk && (
+          <div className="card p-4 md:p-6 border border-red-200">
+            <h2 className="section-label mb-3">Highest Priority Risk</h2>
+            <p className="text-textPrimary text-sm font-semibold mb-3">
+              {r.highest_priority_risk.risk}
             </p>
+            {r.highest_priority_risk.why_it_matters && (
+              <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
+                <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
+                <p className="text-textSecondary text-xs leading-relaxed">
+                  {r.highest_priority_risk.why_it_matters}
+                </p>
+              </div>
+            )}
+            {r.highest_priority_risk.evidence && (
+              <div className="bg-surfaceHigh border border-border rounded-lg p-3">
+                <p className="text-xs text-textMuted font-medium mb-1">Evidence</p>
+                <p className="text-textSecondary text-xs leading-relaxed italic">
+                  "{r.highest_priority_risk.evidence}"
+                </p>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Section 6 — Manager Note */}
-      {r.manager_note && (
-        <div className="bg-primary/8 border border-primary/15 rounded-xl px-5 py-4">
-          <p className="text-xs text-primary font-semibold mb-1">Manager Note</p>
-          <p className="text-textPrimary text-sm font-medium">{r.manager_note}</p>
-        </div>
-      )}
+        {/* What You're Missing - collapsed by default */}
+        {r.what_youre_missing && r.what_youre_missing.length > 0 && (
+          <CollapsibleSection title="What You're Missing" count={r.what_youre_missing.length}>
+            <div className="space-y-3 pt-4">
+              {r.what_youre_missing.map((item, i) => (
+                <div key={i} className="bg-surfaceHigh border border-border rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-amber-700 text-xs font-bold">{i + 1}</span>
+                    </div>
+                    <div>
+                      <p className="text-textPrimary text-xs font-medium mb-1.5">{item.gap}</p>
+                      <p className="text-primary text-xs">Ask: "{item.question_to_answer}"</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CollapsibleSection>
+        )}
 
-      {/* Section 7 — Supporting Evidence (collapsed) */}
-      {r.supporting_evidence && r.supporting_evidence.length > 0 && (
-        <div className="card overflow-hidden">
-          <button
-            onClick={() => setEvidenceOpen(!evidenceOpen)}
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-surfaceHigh transition-colors"
-          >
-            <span className="text-sm font-medium text-textSecondary">Supporting Evidence</span>
-            {evidenceOpen
-              ? <ChevronUp className="w-4 h-4 text-textMuted" />
-              : <ChevronDown className="w-4 h-4 text-textMuted" />
-            }
-          </button>
-          {evidenceOpen && (
-            <div className="px-6 pb-6 border-t border-border space-y-2 pt-4">
+        {/* Key Follow-up Message - always visible, high-frequency action */}
+        {r.key_follow_up_message && (
+          <div className="card p-4 md:p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="section-label">Key Follow-up Message</h2>
+              <button
+                onClick={copyMessage}
+                className="flex items-center gap-1.5 text-xs text-primary font-medium min-h-[32px] px-1"
+              >
+                {copied
+                  ? <><Check className="w-3.5 h-3.5" /> Copied</>
+                  : <><Copy className="w-3.5 h-3.5" /> Copy</>
+                }
+              </button>
+            </div>
+            <div className="bg-surfaceHigh border border-border rounded-lg p-4">
+              <p className="text-textSecondary text-sm leading-relaxed whitespace-pre-line">
+                {r.key_follow_up_message}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Manager Note - always visible, short */}
+        {r.manager_note && (
+          <div className="bg-primary/8 border border-primary/15 rounded-xl px-5 py-4">
+            <p className="text-xs text-primary font-semibold mb-1">Manager Note</p>
+            <p className="text-textPrimary text-sm font-medium">{r.manager_note}</p>
+          </div>
+        )}
+
+        {/* Supporting Evidence - collapsed by default */}
+        {r.supporting_evidence && r.supporting_evidence.length > 0 && (
+          <CollapsibleSection title="Supporting Evidence">
+            <div className="space-y-2 pt-4">
               {r.supporting_evidence.map((item, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <div className="w-1 h-1 rounded-full bg-textMuted flex-shrink-0 mt-2" />
@@ -400,64 +399,52 @@ export function Review() {
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      )}
+          </CollapsibleSection>
+        )}
+      </div>
 
-      {/* Add Call Modal */}
-      {addingCall && (
-        <div className="fixed inset-0 bg-textPrimary/20 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-          <div className="card w-full max-w-lg p-6 animate-slide-up">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-display font-bold text-textPrimary">Add Call Transcript</h2>
-              <button
-                onClick={() => { setAddingCall(false); setError(''); setNewTranscript(''); setNewCallTitle(''); }}
-                className="text-textMuted hover:text-textPrimary transition-colors text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-            <form onSubmit={handleAddCall} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                  Call Title <span className="text-textMuted">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={newCallTitle}
-                  onChange={e => setNewCallTitle(e.target.value)}
-                  placeholder="e.g. Follow Up, Demo, Negotiation"
-                  className="input-field"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                  Transcript
-                </label>
-                <textarea
-                  value={newTranscript}
-                  onChange={e => setNewTranscript(e.target.value)}
-                  placeholder="Paste the call transcript here..."
-                  className="input-field min-h-48 font-mono text-xs resize-y"
-                  autoFocus
-                />
-              </div>
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  <p className="text-red-600 text-xs">{error}</p>
-                </div>
-              )}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={!newTranscript.trim()}
-              >
-                Review This Call
-              </Button>
-            </form>
+      {/* Add Call - bottom sheet on mobile, centered dialog on desktop */}
+      <BottomSheet open={addingCall} onClose={() => { setAddingCall(false); setError(''); setNewTranscript(''); setNewCallTitle(''); }} title="Add Call Transcript">
+        <form onSubmit={handleAddCall} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-textSecondary mb-1.5">
+              Call Title <span className="text-textMuted">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={newCallTitle}
+              onChange={e => setNewCallTitle(e.target.value)}
+              placeholder="e.g. Follow Up, Demo, Negotiation"
+              className="input-field"
+            />
           </div>
-        </div>
-      )}
+          <div>
+            <label className="block text-xs font-medium text-textSecondary mb-1.5">
+              Transcript
+            </label>
+            <textarea
+              value={newTranscript}
+              onChange={e => setNewTranscript(e.target.value)}
+              placeholder="Paste the call transcript here..."
+              className="input-field min-h-40 font-mono text-xs resize-y"
+              autoFocus
+            />
+          </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              <p className="text-red-600 text-xs">{error}</p>
+            </div>
+          )}
+          <Button
+            type="submit"
+            className="w-full"
+            size="lg"
+            disabled={!newTranscript.trim()}
+          >
+            Review This Call
+          </Button>
+        </form>
+      </BottomSheet>
     </div>
   );
 }

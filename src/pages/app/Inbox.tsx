@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Inbox as InboxIcon, Building2, ArrowRight, X } from 'lucide-react';
+import { Inbox as InboxIcon, Building2, ArrowRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { reviewDeal, getRiskLevel } from '../../lib/kairo';
@@ -8,7 +8,9 @@ import { Deal, Conversation, PendingCall } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { formatDate } from '../../lib/utils';
+import { TopBar } from '../../components/layout/TopBar';
+import { BottomSheet } from '../../components/ui/BottomSheet';
+import { formatDate, cn } from '../../lib/utils';
 
 export function Inbox() {
   const navigate = useNavigate();
@@ -189,62 +191,63 @@ export function Inbox() {
   );
 
   return (
-    <div className="animate-fade-in">
-      <div className="mb-8">
-        <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">Inbox</h1>
-        <p className="text-textSecondary text-sm">
-          Calls pulled in automatically, waiting to be assigned to a deal.
-        </p>
+    <>
+      <div className="-mx-4 md:hidden">
+        <TopBar title="Inbox" />
       </div>
 
-      {loading ? (
-        <div className="space-y-2">
-          {[1, 2, 3].map(i => <div key={i} className="card h-20 animate-pulse" />)}
+      <div className="animate-fade-in">
+        <div className="mb-6 hidden md:block">
+          <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">Inbox</h1>
+          <p className="text-textSecondary text-sm">
+            Calls pulled in automatically, waiting to be assigned to a deal.
+          </p>
         </div>
-      ) : pendingCalls.length === 0 ? (
-        <EmptyState
-          icon={<InboxIcon className="w-6 h-6" />}
-          title="Inbox is empty"
-          description="New calls pulled in automatically will show up here for you to assign to a deal."
-        />
-      ) : (
-        <div className="space-y-2">
-          {pendingCalls.map(call => (
-            <button
-              key={call.id}
-              onClick={() => openCall(call)}
-              className="card-hover w-full flex items-center gap-4 px-5 py-4 text-left group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
-                <InboxIcon className="w-4 h-4 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-textPrimary text-sm font-medium truncate">
-                  {call.title || 'Untitled Call'}
-                </p>
-                <p className="text-textMuted text-xs mt-0.5">
-                  {call.meeting_date ? formatDate(call.meeting_date) : formatDate(call.created_at)}
-                </p>
-              </div>
-              <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-primary transition-colors flex-shrink-0" />
-            </button>
-          ))}
-        </div>
-      )}
 
-      {selected && (
-        <div className="fixed inset-0 bg-textPrimary/20 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-          <div className="card w-full max-w-lg p-6 animate-slide-up">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-display font-bold text-textPrimary">Assign Call</h2>
+        {loading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map(i => <div key={i} className="card h-20 animate-pulse" />)}
+          </div>
+        ) : pendingCalls.length === 0 ? (
+          <EmptyState
+            icon={<InboxIcon className="w-6 h-6" />}
+            title="Inbox is empty"
+            description="New calls pulled in automatically will show up here for you to assign to a deal."
+          />
+        ) : (
+          <div className="space-y-2">
+            {pendingCalls.map(call => (
               <button
-                onClick={() => setSelected(null)}
-                className="text-textMuted hover:text-textPrimary transition-colors"
+                key={call.id}
+                onClick={() => openCall(call)}
+                className="card-hover w-full flex items-center gap-3 px-4 py-3 text-left group min-h-[64px]"
               >
-                <X className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
+                  <InboxIcon className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-textPrimary text-sm font-medium truncate">
+                    {call.title || 'Untitled Call'}
+                  </p>
+                  <p className="text-textMuted text-xs mt-0.5">
+                    {call.meeting_date ? formatDate(call.meeting_date) : formatDate(call.created_at)}
+                  </p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-primary transition-colors flex-shrink-0" />
               </button>
-            </div>
+            ))}
+          </div>
+        )}
+      </div>
 
+      {/* Assign Call - bottom sheet */}
+      <BottomSheet
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        title="Assign Call"
+      >
+        {selected && (
+          <>
             <p className="text-textSecondary text-sm mb-4 truncate">
               {selected.title || 'Untitled Call'}
             </p>
@@ -253,22 +256,24 @@ export function Inbox() {
               <button
                 type="button"
                 onClick={() => setMode('existing')}
-                className={`flex-1 text-xs font-medium px-3 py-2 rounded-lg border transition-colors ${
+                className={cn(
+                  'flex-1 text-xs font-medium px-3 py-2.5 rounded-lg border transition-colors min-h-[44px]',
                   mode === 'existing'
                     ? 'bg-primary/8 border-primary/30 text-primary'
                     : 'border-border text-textMuted'
-                }`}
+                )}
               >
                 Existing Deal
               </button>
               <button
                 type="button"
                 onClick={() => setMode('new')}
-                className={`flex-1 text-xs font-medium px-3 py-2 rounded-lg border transition-colors ${
+                className={cn(
+                  'flex-1 text-xs font-medium px-3 py-2.5 rounded-lg border transition-colors min-h-[44px]',
                   mode === 'new'
                     ? 'bg-primary/8 border-primary/30 text-primary'
                     : 'border-border text-textMuted'
-                }`}
+                )}
               >
                 New Deal
               </button>
@@ -332,13 +337,13 @@ export function Inbox() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="w-full" size="lg">
                 Review This Call
               </Button>
             </form>
-          </div>
-        </div>
-      )}
-    </div>
+          </>
+        )}
+      </BottomSheet>
+    </>
   );
 }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
+import { TopBar } from '../../components/layout/TopBar';
 
 export function Settings() {
   const { user, profile } = useAuth();
@@ -29,14 +30,18 @@ export function Settings() {
 
   return (
     <div className="animate-fade-in max-w-lg">
-      <div className="mb-8">
+      <div className="-mx-4 md:hidden">
+        <TopBar title="Settings" />
+      </div>
+
+      <div className="mb-6 md:mb-8 hidden md:block">
         <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">Settings</h1>
         <p className="text-textSecondary text-sm">Manage your account and selling context.</p>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-5">
+      <form onSubmit={handleSave} className="space-y-5 mt-4 md:mt-0">
         {/* Profile */}
-        <div className="card p-6">
+        <div className="card p-4 md:p-6">
           <h2 className="text-sm font-semibold text-textPrimary mb-4">Profile</h2>
           <div className="space-y-4">
             <div>
@@ -62,7 +67,7 @@ export function Settings() {
         </div>
 
         {/* Selling Context */}
-        <div className="card p-6">
+        <div className="card p-4 md:p-6">
           <h2 className="text-sm font-semibold text-textPrimary mb-1">Selling Context</h2>
           <p className="text-textMuted text-xs mb-4">
             Kairo uses this to frame deal reviews more accurately for your specific situation.

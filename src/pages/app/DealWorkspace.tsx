@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Building2, Phone, Plus, AlertCircle } from 'lucide-react';
+import { ArrowRight, Building2, Phone, Plus, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { reviewDeal, getRiskLevel, getStatusBg } from '../../lib/kairo';
@@ -8,6 +8,8 @@ import { Deal, DealState, Conversation } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { TopBar } from '../../components/layout/TopBar';
+import { BottomSheet } from '../../components/ui/BottomSheet';
 import { formatDate, cn } from '../../lib/utils';
 
 interface DealWithState extends Deal {
@@ -155,7 +157,6 @@ export function DealWorkspace() {
       setNewCallTitle('');
       setAddingCall(false);
 
-      // Navigate to the new call's review
       navigate(`/app/deals/${selectedDeal.id}/calls/${newConv.id}?source=workspace`);
 
     } catch (err: any) {
@@ -177,88 +178,97 @@ export function DealWorkspace() {
   // Deal list view
   if (!selectedDeal) {
     return (
-      <div className="animate-fade-in">
-        <div className="mb-8">
-          <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">Deal Workspace</h1>
-          <p className="text-textSecondary text-sm">All your deals and their call history.</p>
+      <>
+        <div className="-mx-4 md:hidden">
+          <TopBar title="Deal Workspace" />
         </div>
 
-        {loading ? (
-          <div className="space-y-2">
-            {[1, 2, 3].map(i => <div key={i} className="card h-20 animate-pulse" />)}
+        <div className="animate-fade-in">
+          <div className="mb-6 hidden md:block">
+            <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">Deal Workspace</h1>
+            <p className="text-textSecondary text-sm">All your deals and their call history.</p>
           </div>
-        ) : deals.length === 0 ? (
-          <EmptyState
-            icon={<Building2 className="w-6 h-6" />}
-            title="No deals yet"
-            description="Create your first deal to start tracking calls and risk evolution."
-          />
-        ) : (
-          <div className="space-y-2">
-            {deals.map(deal => (
-              <button
-                key={deal.id}
-                onClick={() => handleSelectDeal(deal)}
-                className="card-hover w-full flex items-center gap-4 px-5 py-4 text-left group"
-              >
-                <div className={cn(
-                  'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                  deal.risk_level === 'high' ? 'bg-red-400' :
-                  deal.risk_level === 'medium' ? 'bg-amber-400' :
-                  deal.risk_level === 'low' ? 'bg-emerald-400' :
-                  'bg-border'
-                )} />
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-textPrimary text-sm font-medium truncate">{deal.deal_name}</p>
-                    {deal.deal_state?.current_status && (
-                      <span className={cn(
-                        'text-xs px-2 py-0.5 rounded-full border flex-shrink-0',
-                        getStatusBg(deal.deal_state.current_status)
-                      )}>
-                        {deal.deal_state.current_status}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-textMuted text-xs">{deal.company_name}</p>
-                    {deal.deal_state?.highest_priority_risk && (
-                      <>
-                        <span className="text-textMuted text-xs">·</span>
-                        <p className="text-textMuted text-xs truncate max-w-xs">
-                          {deal.deal_state.highest_priority_risk}
-                        </p>
-                      </>
-                    )}
-                  </div>
-                  {deal.last_call_date && (
-                    <p className="text-textMuted text-xs mt-1">
-                      Last call: {formatDate(deal.last_call_date)}
-                    </p>
-                  )}
-                </div>
+          {loading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <div key={i} className="card h-20 animate-pulse" />)}
+            </div>
+          ) : deals.length === 0 ? (
+            <EmptyState
+              icon={<Building2 className="w-6 h-6" />}
+              title="No deals yet"
+              description="Tap the + button below to create your first deal."
+            />
+          ) : (
+            <div className="space-y-2">
+              {deals.map(deal => (
+                <button
+                  key={deal.id}
+                  onClick={() => handleSelectDeal(deal)}
+                  className="card-hover w-full flex items-stretch gap-3 pl-0 pr-4 py-3 text-left group min-h-[64px] overflow-hidden"
+                >
+                  <div className={cn(
+                    'w-1 self-stretch rounded-full flex-shrink-0',
+                    deal.risk_level === 'high' ? 'bg-red-400' :
+                    deal.risk_level === 'medium' ? 'bg-amber-400' :
+                    deal.risk_level === 'low' ? 'bg-emerald-400' :
+                    'bg-border'
+                  )} />
 
-                <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-primary transition-colors flex-shrink-0" />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+                  <div className="flex-1 min-w-0 flex flex-col justify-center py-0.5">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="text-textPrimary text-sm font-medium truncate">{deal.deal_name}</p>
+                      {deal.deal_state?.current_status && (
+                        <span className={cn(
+                          'text-[10px] px-1.5 py-0.5 rounded-full border flex-shrink-0',
+                          getStatusBg(deal.deal_state.current_status)
+                        )}>
+                          {deal.deal_state.current_status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-textMuted text-xs truncate">{deal.company_name}</p>
+                      {deal.deal_state?.highest_priority_risk && (
+                        <>
+                          <span className="text-textMuted text-xs hidden sm:inline">·</span>
+                          <p className="text-textMuted text-xs truncate hidden sm:block">
+                            {deal.deal_state.highest_priority_risk}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-primary transition-colors flex-shrink-0 self-center" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
     );
   }
 
   // Call list view
   return (
     <div className="animate-fade-in">
-      <div className="mb-8">
-        <button
-          onClick={() => { setSelectedDeal(null); setConversations([]); }}
-          className="flex items-center gap-1.5 text-textMuted hover:text-textPrimary text-xs mb-4 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> All Deals
-        </button>
+      <div className="-mx-4 md:hidden">
+        <TopBar
+          title={selectedDeal.deal_name}
+          onBack={() => { setSelectedDeal(null); setConversations([]); }}
+          action={
+            <button
+              onClick={() => setAddingCall(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          }
+        />
+      </div>
 
+      <div className="mb-6 hidden md:block">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
@@ -276,15 +286,24 @@ export function DealWorkspace() {
               )}
             </div>
           </div>
-          <Button
-            onClick={() => setAddingCall(true)}
-            size="sm"
-            variant="secondary"
-          >
+          <Button onClick={() => setAddingCall(true)} size="sm" variant="secondary">
             <Plus className="w-3.5 h-3.5" />
             Add Call
           </Button>
         </div>
+      </div>
+
+      {/* Mobile-only company/status subheader */}
+      <div className="flex items-center gap-2 mb-4 md:hidden">
+        <p className="text-textSecondary text-sm">{selectedDeal.company_name}</p>
+        {selectedDeal.deal_state?.current_status && (
+          <span className={cn(
+            'text-xs px-2 py-0.5 rounded-full border',
+            getStatusBg(selectedDeal.deal_state.current_status)
+          )}>
+            {selectedDeal.deal_state.current_status}
+          </span>
+        )}
       </div>
 
       {loadingCalls ? (
@@ -311,32 +330,32 @@ export function DealWorkspace() {
               <button
                 key={conv.id}
                 onClick={() => navigate(`/app/deals/${selectedDeal.id}/calls/${conv.id}?source=workspace`)}
-                className="card-hover w-full flex items-center gap-4 px-5 py-4 text-left group"
+                className="card-hover w-full flex items-center gap-3 px-4 py-3 text-left group min-h-[64px]"
               >
                 <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
                   {i + 1}
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-0.5">
                     <p className="text-textPrimary text-sm font-medium truncate">
                       {conv.title || `Call ${i + 1}`}
                     </p>
                     {review?.deal_status?.status && (
                       <span className={cn(
-                        'text-xs px-2 py-0.5 rounded-full border flex-shrink-0',
+                        'text-[10px] px-1.5 py-0.5 rounded-full border flex-shrink-0',
                         getStatusBg(review.deal_status.status)
                       )}>
                         {review.deal_status.status}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <p className="text-textMuted text-xs">{formatDate(conv.created_at)}</p>
                     {review?.highest_priority_risk?.risk && (
                       <>
-                        <span className="text-textMuted text-xs">·</span>
-                        <p className="text-textMuted text-xs truncate max-w-xs">
+                        <span className="text-textMuted text-xs hidden sm:inline">·</span>
+                        <p className="text-textMuted text-xs truncate hidden sm:block">
                           {review.highest_priority_risk.risk}
                         </p>
                       </>
@@ -351,55 +370,46 @@ export function DealWorkspace() {
         </div>
       )}
 
-      {/* Add Call Panel */}
-      {addingCall && (
-        <div className="fixed inset-0 bg-textPrimary/20 backdrop-blur-sm z-50 flex items-center justify-center px-4">
-          <div className="card w-full max-w-lg p-6 animate-slide-up">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-display font-bold text-textPrimary">Add Call Transcript</h2>
-              <button
-                onClick={() => { setAddingCall(false); setError(''); setNewTranscript(''); }}
-                className="text-textMuted hover:text-textPrimary transition-colors text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-            <form onSubmit={handleAddCall} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                  Call Title <span className="text-textMuted">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={newCallTitle}
-                  onChange={e => setNewCallTitle(e.target.value)}
-                  placeholder="e.g. Follow Up, Demo, Negotiation"
-                  className="input-field"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-textSecondary mb-1.5">Transcript</label>
-                <textarea
-                  value={newTranscript}
-                  onChange={e => setNewTranscript(e.target.value)}
-                  placeholder="Paste the call transcript here..."
-                  className="input-field min-h-48 font-mono text-xs resize-y"
-                  autoFocus
-                />
-              </div>
-              {error && (
-                <div className="flex gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-red-600 text-xs">{error}</p>
-                </div>
-              )}
-              <Button type="submit" className="w-full" disabled={!newTranscript.trim()}>
-                Review This Call
-              </Button>
-            </form>
+      {/* Add Call - bottom sheet */}
+      <BottomSheet
+        open={addingCall}
+        onClose={() => { setAddingCall(false); setError(''); setNewTranscript(''); }}
+        title="Add Call Transcript"
+      >
+        <form onSubmit={handleAddCall} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-textSecondary mb-1.5">
+              Call Title <span className="text-textMuted">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={newCallTitle}
+              onChange={e => setNewCallTitle(e.target.value)}
+              placeholder="e.g. Follow Up, Demo, Negotiation"
+              className="input-field"
+            />
           </div>
-        </div>
-      )}
+          <div>
+            <label className="block text-xs font-medium text-textSecondary mb-1.5">Transcript</label>
+            <textarea
+              value={newTranscript}
+              onChange={e => setNewTranscript(e.target.value)}
+              placeholder="Paste the call transcript here..."
+              className="input-field min-h-40 font-mono text-xs resize-y"
+              autoFocus
+            />
+          </div>
+          {error && (
+            <div className="flex gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+              <p className="text-red-600 text-xs">{error}</p>
+            </div>
+          )}
+          <Button type="submit" className="w-full" size="lg" disabled={!newTranscript.trim()}>
+            Review This Call
+          </Button>
+        </form>
+      </BottomSheet>
     </div>
   );
 }

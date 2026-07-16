@@ -26,15 +26,24 @@ module.exports = {
         'purple-glow-sm': '0 0 12px rgba(229, 214, 255, 0.6)',
         'card': '0 2px 12px rgba(51, 26, 71, 0.06)',
         'card-hover': '0 4px 20px rgba(51, 26, 71, 0.1)',
+        'nav': '0 -2px 16px rgba(51, 26, 71, 0.08)',
+        'sheet': '0 -8px 30px rgba(51, 26, 71, 0.15)',
+      },
+      spacing: {
+        'safe-b': 'env(safe-area-inset-bottom, 0px)',
+        'safe-t': 'env(safe-area-inset-top, 0px)',
+        'nav': '64px',
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out',
         'slide-up': 'slideUp 0.5s ease-out',
+        'sheet-up': 'sheetUp 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
         slideUp: { '0%': { opacity: '0', transform: 'translateY(16px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+        sheetUp: { '0%': { transform: 'translateY(100%)' }, '100%': { transform: 'translateY(0)' } },
         pulseSoft: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.5' } },
       }
     },
