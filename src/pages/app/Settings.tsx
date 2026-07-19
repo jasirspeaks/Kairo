@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Copy, Check, Zap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Copy, Check, Zap, Calendar, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
@@ -7,16 +8,65 @@ import { TopBar } from '../../components/layout/TopBar';
 
 export function Settings() {
   const { user, profile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [name, setName] = useState(profile?.name || '');
   const [whatYouSell, setWhatYouSell] = useState('');
   const [whoYouAre, setWhoYouAre] = useState('');
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [checkingCalendar, setCheckingCalendar] = useState(true);
+  const [calendarBanner, setCalendarBanner] = useState<'connected' | 'error' | null>(null);
 
   const webhookUrl = user
     ? `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-webhook?user_id=${user.id}`
     : '';
+
+  const calendarConnectUrl = user
+    ? `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-connect?user_id=${user.id}`
+    : '';
+
+  useEffect(() => {
+    if (!user) return;
+    checkCalendarConnection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  useEffect(() => {
+    const calendarParam = searchParams.get('calendar');
+    if (calendarParam === 'connected' || calendarParam === 'error') {
+      setCalendarBanner(calendarParam);
+      if (calendarParam === 'connected') setCalendarConnected(true);
+      searchParams.delete('calendar');
+      setSearchParams(searchParams, { replace: true });
+      setTimeout(() => setCalendarBanner(null), 4000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function checkCalendarConnection() {
+    if (!user) return;
+    setCheckingCalendar(true);
+    const { data } = await supabase
+      .from('calendar_connections')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('provider', 'google')
+      .single();
+    setCalendarConnected(!!data);
+    setCheckingCalendar(false);
+  }
+
+  async function handleDisconnectCalendar() {
+    if (!user) return;
+    await supabase
+      .from('calendar_connections')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('provider', 'google');
+    setCalendarConnected(false);
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +101,18 @@ export function Settings() {
         <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">Settings</h1>
         <p className="text-textSecondary text-sm">Manage your account and selling context.</p>
       </div>
+
+      {calendarBanner && (
+        <div className={`rounded-lg px-4 py-3 mb-5 text-xs font-medium border ${
+          calendarBanner === 'connected'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : 'bg-red-50 border-red-200 text-red-600'
+        }`}>
+          {calendarBanner === 'connected'
+            ? 'Calendar connected successfully.'
+            : 'Something went wrong connecting your calendar. Please try again.'}
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="space-y-5 mt-4 md:mt-0">
         {/* Profile */}
@@ -125,6 +187,42 @@ export function Settings() {
         </Button>
       </form>
 
+      {/* Calendar Integration */}
+      <div className="card p-4 md:p-6 mt-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Calendar className="w-4 h-4 text-primary" />
+          <h2 className="text-sm font-semibold text-textPrimary">Calendar</h2>
+        </div>
+        <p className="text-textMuted text-xs mb-4">
+          Connect your calendar so upcoming meetings show up in your Inbox — assign them to a deal before the call happens, and Kairo reviews the call automatically once it's done.
+        </p>
+
+        {checkingCalendar ? (
+          <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
+        ) : calendarConnected ? (
+          <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span className="text-emerald-700 text-xs font-medium">Google Calendar connected</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleDisconnectCalendar}
+              className="text-xs text-textMuted hover:text-red-500 transition-colors"
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : (
+          <a href={calendarConnectUrl}>
+            <Button type="button" variant="secondary" className="w-full">
+              <Calendar className="w-4 h-4" />
+              Connect Google Calendar
+            </Button>
+          </a>
+        )}
+      </div>
+
       {/* Fireflies Integration */}
       <div className="card p-4 md:p-6 mt-5">
         <div className="flex items-center gap-2 mb-1">
@@ -132,7 +230,7 @@ export function Settings() {
           <h2 className="text-sm font-semibold text-textPrimary">Fireflies Integration</h2>
         </div>
         <p className="text-textMuted text-xs mb-4">
-          Connect Fireflies so new call transcripts land automatically in your Inbox — no manual pasting.
+          Connect Fireflies so call recordings are transcribed and reviewed automatically once the meeting happens.
         </p>
 
         <label className="block text-xs font-medium text-textSecondary mb-1.5">Your webhook URL</label>
@@ -162,7 +260,7 @@ export function Settings() {
             <li>Paste the URL above into the <span className="font-medium">Webhook URL</span> field.</li>
             <li>In the secret key field, type in the shared secret exactly as given to you — do not click "generate," since that creates a different secret Kairo won't recognize.</li>
             <li>Under events to send, select <span className="font-medium">Transcription Completed</span>.</li>
-            <li>Click Save. New calls will now appear automatically in your Inbox once Fireflies finishes processing them.</li>
+            <li>Click Save. New calls will now be reviewed automatically once Fireflies finishes processing them.</li>
           </ol>
         </div>
       </div>
