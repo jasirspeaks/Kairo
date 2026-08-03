@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus, AlertTriangle, CheckCircle, Clock,
-  TrendingDown, Copy, Check
+  TrendingDown, Copy, Check, Activity
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewDeal, getRiskLevel, getStatusBg } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, Conversation } from '../../types';
 import { Button } from '../../components/ui/Button';
@@ -16,14 +16,32 @@ import { BottomSheet } from '../../components/ui/BottomSheet';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { formatDate, cn } from '../../lib/utils';
 
+// Call Status icons -- distinct from Deal Status, this describes only how
+// THIS call went, not the deal's overall condition.
+function getCallStatusIcon(status: string) {
+  switch (status) {
+    case 'On Track': return <CheckCircle className="w-5 h-5" style={{ color: '#3DD68C' }} />;
+    case 'Needs Attention': return <Clock className="w-5 h-5" style={{ color: '#F6B23E' }} />;
+    case 'At Risk': return <AlertTriangle className="w-5 h-5" style={{ color: '#FF667A' }} />;
+    case 'Stalled': return <TrendingDown className="w-5 h-5" style={{ color: '#C97A2B' }} />;
+    default: return <Activity className="w-5 h-5 text-textMuted" />;
+  }
+}
+
+function getCallStatusBorder(status: string): string {
+  switch (status) {
+    case 'On Track': return 'border-emerald-400';
+    case 'Needs Attention': return 'border-amber-400';
+    case 'At Risk': return 'border-red-400';
+    case 'Stalled': return 'border-orange-400';
+    default: return 'border-textMuted';
+  }
+}
+
 export function Review() {
   const { dealId, callId } = useParams();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-
-  const source = searchParams.get('source');
-  const hideAddCall = source === 'risk-center';
 
   const [deal, setDeal] = useState<Deal | null>(null);
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -73,10 +91,8 @@ export function Review() {
     conv.id === allCalls[allCalls.length - 1].id;
 
   function handleBack() {
-    if (source === 'workspace') {
-      navigate(`/app/workspace/deals/${dealId}`);
-    } else if (source === 'risk-center') {
-      navigate('/app/risk-center');
+    if (dealId) {
+      navigate(`/app/deals/${dealId}`);
     } else {
       navigate('/app/dashboard');
     }
@@ -97,9 +113,10 @@ export function Review() {
     try {
       const previousReview = conv?.analysis_json || null;
 
-      const review = await reviewDeal(text, {
+      const review = await reviewCall(text, {
         deal_name: deal.deal_name,
         company_name: deal.company_name,
+        deal_stage: deal.deal_stage,
         previous_review: previousReview,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
@@ -124,23 +141,14 @@ export function Review() {
       if (convError || !newConv) throw new Error('Failed to save conversation.');
       convId = newConv.id;
 
-      await supabase.from('deal_state').upsert({
-        deal_id: deal.id,
-        user_id: user.id,
-        current_status: review.deal_status.status,
-        confidence: review.deal_status.confidence,
-        highest_priority_risk: review.highest_priority_risk.risk,
-        highest_priority_risk_full: review.highest_priority_risk,
-        what_youre_missing: review.what_youre_missing,
-        key_follow_up_message: review.key_follow_up_message,
-        manager_note: review.manager_note,
-        supporting_evidence: review.supporting_evidence,
-        last_review_summary: review.deal_status.reason,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'deal_id' });
+      // review.deal is already the deal's complete current-state assessment
+      // -- computed with the full prior history as context. Write directly,
+      // no aggregation step.
+      await saveDealState(deal.id, user.id, review);
+      await saveStakeholders(deal.id, user.id, review);
 
       await supabase.from('deals').update({
-        risk_level: getRiskLevel(review.deal_status.status),
+        risk_level: getRiskLevel(review.deal.status),
         updated_at: new Date().toISOString(),
       }).eq('id', deal.id);
 
@@ -160,20 +168,10 @@ export function Review() {
   }
 
   function copyMessage() {
-    if (!conv?.analysis_json?.key_follow_up_message) return;
-    navigator.clipboard.writeText(conv.analysis_json.key_follow_up_message);
+    if (!conv?.analysis_json?.call?.key_follow_up_message) return;
+    navigator.clipboard.writeText(conv.analysis_json.call.key_follow_up_message);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }
-
-  function getStatusIcon(status: string) {
-    switch (status) {
-      case 'Healthy': return <CheckCircle className="w-5 h-5 text-emerald-600" />;
-      case 'Open': return <Clock className="w-5 h-5 text-amber-600" />;
-      case 'At Risk': return <AlertTriangle className="w-5 h-5 text-red-600" />;
-      case 'Lost Momentum': return <TrendingDown className="w-5 h-5 text-textMuted" />;
-      default: return null;
-    }
   }
 
   if (loading) return (
@@ -197,12 +195,11 @@ export function Review() {
     />
   );
 
-  const r = conv.analysis_json;
-  const borderColor =
-    r.deal_status.status === 'Healthy' ? 'border-emerald-400' :
-    r.deal_status.status === 'Open' ? 'border-amber-400' :
-    r.deal_status.status === 'At Risk' ? 'border-red-400' :
-    'border-textMuted';
+  // Call Review displays the CALL-scoped half of the extraction. Deal facts
+  // (name, company, stage) come from the deals table, not re-extracted.
+  const c = conv.analysis_json.call;
+  const changed = conv.analysis_json.what_changed_since_last_call;
+  const borderColor = getCallStatusBorder(c.call_status);
 
   return (
     <div className="animate-fade-in max-w-2xl">
@@ -213,7 +210,7 @@ export function Review() {
           title={deal.deal_name}
           onBack={handleBack}
           action={
-            !hideAddCall && isLatestCall ? (
+            isLatestCall ? (
               <button
                 onClick={() => setAddingCall(true)}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary"
@@ -226,14 +223,12 @@ export function Review() {
       </div>
 
       {/* Sticky verdict header - stays visible while scrolling on mobile */}
-      <div className={cn(
-        'sticky top-0 md:static z-20 -mx-4 px-4 md:mx-0 md:px-0 bg-bg pt-2 md:pt-0 pb-2 md:pb-0'
-      )}>
+      <div className="sticky top-0 md:static z-20 -mx-4 px-4 md:mx-0 md:px-0 bg-bg pt-2 md:pt-0 pb-2 md:pb-0">
         <div className="hidden md:block mb-4">
           <p className="text-textSecondary text-sm">
-            {deal.company_name} · {conv.title || formatDate(conv.created_at)}
+            {deal.company_name} · {deal.deal_stage} · {conv.title || formatDate(conv.created_at)}
           </p>
-          {!hideAddCall && isLatestCall && (
+          {isLatestCall && (
             <div className="flex justify-end -mt-6">
               <Button onClick={() => setAddingCall(true)} size="sm" variant="secondary">
                 <Plus className="w-3.5 h-3.5" /> Add Call
@@ -244,34 +239,31 @@ export function Review() {
 
         <div className={cn('card p-4 md:p-6 border-l-4', borderColor)}>
           <div className="flex items-center gap-3 mb-2 md:mb-3">
-            {getStatusIcon(r.deal_status.status)}
+            {getCallStatusIcon(c.call_status)}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className={cn(
-                'text-sm font-bold px-2.5 py-1 rounded-full border',
-                getStatusBg(r.deal_status.status)
-              )}>
-                {r.deal_status.status}
-              </span>
-              <span className="text-xs text-textMuted border border-border px-2 py-1 rounded-full bg-surfaceHigh">
-                {r.deal_status.confidence} Confidence
+              <span className="text-sm font-bold px-2.5 py-1 rounded-full border" style={getStatusStyle(c.call_status)}>
+                {c.call_status}
               </span>
             </div>
           </div>
-          <p className="text-textSecondary text-sm leading-relaxed">{r.deal_status.reason}</p>
+          <p className="text-textPrimary text-sm font-semibold mb-1">{c.verdict}</p>
+          {c.reason && (
+            <p className="text-textSecondary text-sm leading-relaxed">{c.reason}</p>
+          )}
         </div>
       </div>
 
       <div className="space-y-3 md:space-y-5 mt-3 md:mt-5">
 
         {/* What Changed - open by default, it's the multi-call moment */}
-        {r.what_changed_since_last_call && (
+        {changed && (
           <CollapsibleSection title="What Changed Since Last Call" defaultOpen>
             <div className="space-y-4 pt-4">
-              {r.what_changed_since_last_call.resolved.length > 0 && (
+              {changed.resolved.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-emerald-600 mb-2 uppercase tracking-wide">Resolved</p>
                   <div className="space-y-1.5">
-                    {r.what_changed_since_last_call.resolved.map((item, i) => (
+                    {changed.resolved.map((item, i) => (
                       <div key={i} className="flex items-start gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 mt-1.5" />
                         <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
@@ -280,11 +272,11 @@ export function Review() {
                   </div>
                 </div>
               )}
-              {r.what_changed_since_last_call.persists.length > 0 && (
+              {changed.persists.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-amber-600 mb-2 uppercase tracking-wide">Still Open</p>
                   <div className="space-y-1.5">
-                    {r.what_changed_since_last_call.persists.map((item, i) => (
+                    {changed.persists.map((item, i) => (
                       <div key={i} className="flex items-start gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5" />
                         <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
@@ -293,11 +285,11 @@ export function Review() {
                   </div>
                 </div>
               )}
-              {r.what_changed_since_last_call.new_risks.length > 0 && (
+              {changed.new_risks.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">New Risks</p>
                   <div className="space-y-1.5">
-                    {r.what_changed_since_last_call.new_risks.map((item, i) => (
+                    {changed.new_risks.map((item, i) => (
                       <div key={i} className="flex items-start gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
                         <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
@@ -310,37 +302,37 @@ export function Review() {
           </CollapsibleSection>
         )}
 
-        {/* Highest Priority Risk - always open, this is the headline */}
-        {r.highest_priority_risk?.risk && (
+        {/* Highest Priority Risk (this call) - always open, headline */}
+        {c.highest_priority_risk?.risk && (
           <div className="card p-4 md:p-6 border border-red-200">
             <h2 className="section-label mb-3">Highest Priority Risk</h2>
             <p className="text-textPrimary text-sm font-semibold mb-3">
-              {r.highest_priority_risk.risk}
+              {c.highest_priority_risk.risk}
             </p>
-            {r.highest_priority_risk.why_it_matters && (
+            {c.highest_priority_risk.why_it_matters && (
               <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
                 <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
                 <p className="text-textSecondary text-xs leading-relaxed">
-                  {r.highest_priority_risk.why_it_matters}
+                  {c.highest_priority_risk.why_it_matters}
                 </p>
               </div>
             )}
-            {r.highest_priority_risk.evidence && (
+            {c.highest_priority_risk.evidence && (
               <div className="bg-surfaceHigh border border-border rounded-lg p-3">
                 <p className="text-xs text-textMuted font-medium mb-1">Evidence</p>
                 <p className="text-textSecondary text-xs leading-relaxed italic">
-                  "{r.highest_priority_risk.evidence}"
+                  "{c.highest_priority_risk.evidence}"
                 </p>
               </div>
             )}
           </div>
         )}
 
-        {/* What You're Missing - collapsed by default */}
-        {r.what_youre_missing && r.what_youre_missing.length > 0 && (
-          <CollapsibleSection title="What You're Missing" count={r.what_youre_missing.length}>
+        {/* Missing Information (this call) - collapsed by default */}
+        {c.what_youre_missing && c.what_youre_missing.length > 0 && (
+          <CollapsibleSection title="Missing Information" count={c.what_youre_missing.length}>
             <div className="space-y-3 pt-4">
-              {r.what_youre_missing.map((item, i) => (
+              {c.what_youre_missing.map((item, i) => (
                 <div key={i} className="bg-surfaceHigh border border-border rounded-lg p-4">
                   <div className="flex items-start gap-3">
                     <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -357,8 +349,16 @@ export function Review() {
           </CollapsibleSection>
         )}
 
+        {/* Recommended Next Action (this call) - always visible */}
+        {c.recommended_next_action && (
+          <div className="card p-4 md:p-6">
+            <h2 className="section-label mb-2">Recommended Next Action</h2>
+            <p className="text-textPrimary text-sm leading-relaxed">{c.recommended_next_action}</p>
+          </div>
+        )}
+
         {/* Key Follow-up Message - always visible, high-frequency action */}
-        {r.key_follow_up_message && (
+        {c.key_follow_up_message && (
           <div className="card p-4 md:p-6">
             <div className="flex items-center justify-between mb-3">
               <h2 className="section-label">Key Follow-up Message</h2>
@@ -374,32 +374,18 @@ export function Review() {
             </div>
             <div className="bg-surfaceHigh border border-border rounded-lg p-4">
               <p className="text-textSecondary text-sm leading-relaxed whitespace-pre-line">
-                {r.key_follow_up_message}
+                {c.key_follow_up_message}
               </p>
             </div>
           </div>
         )}
 
-        {/* Manager Note - always visible, short */}
-        {r.manager_note && (
+        {/* Manager Note (this call) - always visible, short */}
+        {c.manager_note && (
           <div className="bg-primary/8 border border-primary/15 rounded-xl px-5 py-4">
             <p className="text-xs text-primary font-semibold mb-1">Manager Note</p>
-            <p className="text-textPrimary text-sm font-medium">{r.manager_note}</p>
+            <p className="text-textPrimary text-sm font-medium">{c.manager_note}</p>
           </div>
-        )}
-
-        {/* Supporting Evidence - collapsed by default */}
-        {r.supporting_evidence && r.supporting_evidence.length > 0 && (
-          <CollapsibleSection title="Supporting Evidence">
-            <div className="space-y-2 pt-4">
-              {r.supporting_evidence.map((item, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <div className="w-1 h-1 rounded-full bg-textMuted flex-shrink-0 mt-2" />
-                  <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
         )}
       </div>
 

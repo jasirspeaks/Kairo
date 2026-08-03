@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Inbox as InboxIcon, Building2, ArrowRight, CalendarClock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { reviewCall, refreshDealReview, getRiskLevel } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel } from '../../lib/kairo';
 import { Deal, Conversation, PendingCall } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
@@ -276,6 +276,7 @@ export function Inbox() {
       const review = await reviewCall(selectedCall.transcript, {
         deal_name: dealRow.deal_name,
         company_name: dealRow.company_name,
+        deal_stage: dealRow.deal_stage,
         previous_review: previousReview,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
@@ -299,12 +300,13 @@ export function Inbox() {
 
       if (convError || !newConv) throw new Error('Failed to save conversation.');
 
-      // Aggregation now lives in deal-review-refresh, not here — this keeps
-      // the rollup logic in one place instead of duplicated per call site.
-      await refreshDealReview(dealId);
+      // review.deal already IS the deal's current state -- computed with
+      // the full prior history as context. No aggregation function needed.
+      await saveDealState(dealId, user.id, review);
+      await saveStakeholders(dealId, user.id, review);
 
       await supabase.from('deals').update({
-        risk_level: getRiskLevel(review.deal_status.status),
+        risk_level: getRiskLevel(review.deal.status),
         updated_at: new Date().toISOString(),
       }).eq('id', dealId);
 
@@ -315,7 +317,7 @@ export function Inbox() {
         updated_at: new Date().toISOString(),
       }).eq('id', selectedCall.id);
 
-      navigate(`/app/deals/${dealId}/calls/${newConv.id}?source=workspace`);
+      navigate(`/app/deals/${dealId}/calls/${newConv.id}`);
 
     } catch (err: any) {
       if (createdDealId) {

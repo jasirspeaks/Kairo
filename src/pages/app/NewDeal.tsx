@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Building2, FileText, AlertCircle } from 'lucide-react';
+import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, User, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewDeal, getRiskLevel } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { TopBar } from '../../components/layout/TopBar';
 import { cn } from '../../lib/utils';
+import { DEAL_STAGES, DealStage } from '../../types';
 
 type Step = 'deal' | 'transcript';
 
@@ -17,6 +18,9 @@ export function NewDeal() {
   const [step, setStep] = useState<Step>('deal');
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [dealStage, setDealStage] = useState<DealStage>('Qualification');
+  const [champion, setChampion] = useState('');
+  const [dealValue, setDealValue] = useState('');
   const [transcript, setTranscript] = useState('');
   const [conversationTitle, setConversationTitle] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -44,12 +48,17 @@ export function NewDeal() {
     let dealId: string | null = null;
 
     try {
+      const parsedValue = dealValue.trim() ? Number(dealValue.replace(/[,$]/g, '')) : null;
+
       const { data: deal, error: dealError } = await supabase
         .from('deals')
         .insert({
           user_id: user.id,
           deal_name: dealName.trim(),
           company_name: companyName.trim(),
+          deal_stage: dealStage,
+          champion: champion.trim() || null,
+          deal_value: parsedValue,
           status: 'active',
           risk_level: 'none',
         })
@@ -59,9 +68,14 @@ export function NewDeal() {
       if (dealError || !deal) throw new Error('Failed to create deal.');
       dealId = deal.id;
 
-      const review = await reviewDeal(text, {
+      // First call for this deal: call-review still produces the full
+      // deal-shaped extraction (call + deal halves) -- there's no separate
+      // "first call" code path on the frontend, the AI handles that
+      // distinction internally based on previous_review being null.
+      const review = await reviewCall(text, {
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
+        deal_stage: dealStage,
         previous_review: null,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
@@ -85,22 +99,14 @@ export function NewDeal() {
 
       if (convError || !conv) throw new Error('Failed to save conversation.');
 
-      await supabase.from('deal_state').insert({
-        deal_id: deal.id,
-        user_id: user.id,
-        current_status: review.deal_status.status,
-        confidence: review.deal_status.confidence,
-        highest_priority_risk: review.highest_priority_risk.risk,
-        highest_priority_risk_full: review.highest_priority_risk,
-        what_youre_missing: review.what_youre_missing,
-        key_follow_up_message: review.key_follow_up_message,
-        manager_note: review.manager_note,
-        supporting_evidence: review.supporting_evidence,
-        last_review_summary: review.deal_status.reason,
-      });
+      // Deal Review needs data starting at call 1, not just call 2+.
+      // review.deal is already the complete current-state extraction --
+      // write it straight to deal_state, no aggregation step.
+      await saveDealState(deal.id, user.id, review);
+      await saveStakeholders(deal.id, user.id, review);
 
       await supabase.from('deals').update({
-        risk_level: getRiskLevel(review.deal_status.status),
+        risk_level: getRiskLevel(review.deal.status),
         updated_at: new Date().toISOString(),
       }).eq('id', deal.id);
 
@@ -232,6 +238,57 @@ export function NewDeal() {
                 />
               </div>
             </div>
+
+            <div>
+              <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
+              <div className="relative">
+                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
+                <select
+                  value={dealStage}
+                  onChange={e => setDealStage(e.target.value as DealStage)}
+                  className="input-field pl-10 appearance-none"
+                >
+                  {DEAL_STAGES.map(stage => (
+                    <option key={stage} value={stage}>{stage}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-textSecondary mb-1.5">
+                  Champion <span className="text-textMuted">(optional)</span>
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
+                  <input
+                    type="text"
+                    value={champion}
+                    onChange={e => setChampion(e.target.value)}
+                    placeholder="e.g. Jamie Lee"
+                    className="input-field pl-10"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-textSecondary mb-1.5">
+                  Deal Value <span className="text-textMuted">(optional)</span>
+                </label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={dealValue}
+                    onChange={e => setDealValue(e.target.value)}
+                    placeholder="e.g. 25000"
+                    className="input-field pl-10"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           <Button
@@ -255,7 +312,7 @@ export function NewDeal() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-textPrimary text-sm font-medium truncate">{dealName}</p>
-                <p className="text-textMuted text-xs">{companyName}</p>
+                <p className="text-textMuted text-xs">{companyName} · {dealStage}</p>
               </div>
             </div>
 

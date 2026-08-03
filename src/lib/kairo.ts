@@ -10,6 +10,7 @@ interface SellerContext {
 interface DealContext {
   deal_name: string;
   company_name: string;
+  deal_stage?: string;
   previous_review?: DealReview | null;
   seller_context?: SellerContext;
 }
@@ -49,33 +50,68 @@ export async function reviewCall(
   return data.review as DealReview;
 }
 
-// Aggregates every completed call-review for a deal into the deal_state
-// rollup (health score, current status, highest priority risk, etc).
-// Called automatically after a call review saves, and on-demand from the
-// Deal Review page's refresh action.
-export async function refreshDealReview(dealId: string): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession();
+// Writes the deal-level half of an extraction into deal_state. review.deal
+// already IS the deal's current state -- computed by call-review with the
+// full prior history as context. No aggregation function, no second AI
+// call. Call this right after every successful reviewCall().
+export async function saveDealState(dealId: string, userId: string, review: DealReview): Promise<void> {
+  const { data: existing } = await supabase
+    .from('deal_state')
+    .select('id')
+    .eq('deal_id', dealId)
+    .maybeSingle();
 
-  if (!session) {
-    throw new Error('You must be signed in to refresh a deal.');
+  const stateRow = {
+    deal_id: dealId,
+    user_id: userId,
+    current_status: review.deal.status,
+    confidence: review.deal.confidence,
+    deal_health_score: review.deal.health_score,
+    highest_priority_risk: review.deal.highest_priority_risk.risk,
+    highest_priority_risk_full: review.deal.highest_priority_risk,
+    what_youre_missing: review.deal.what_youre_missing,
+    key_follow_up_message: review.deal.recommended_next_action,
+    manager_note: review.deal.manager_note,
+    supporting_evidence: review.supporting_evidence ?? [],
+    last_review_summary: review.deal.status_reason,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    await supabase.from('deal_state').update(stateRow).eq('id', existing.id);
+  } else {
+    await supabase.from('deal_state').insert(stateRow);
   }
+}
 
-  const response = await fetch(
-    `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/deal-review-refresh`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ deal_id: dealId }),
+// Upserts stakeholders surfaced by a call, matched by (deal_id, name) so a
+// returning stakeholder updates their sentiment/role instead of duplicating.
+export async function saveStakeholders(dealId: string, userId: string, review: DealReview): Promise<void> {
+  if (!Array.isArray(review.stakeholder_signals) || review.stakeholder_signals.length === 0) return;
+
+  for (const s of review.stakeholder_signals) {
+    const { data: existing } = await supabase
+      .from('stakeholders')
+      .select('id')
+      .eq('deal_id', dealId)
+      .eq('name', s.name)
+      .maybeSingle();
+
+    const row = {
+      deal_id: dealId,
+      user_id: userId,
+      name: s.name,
+      role: s.role,
+      sentiment: s.sentiment,
+      notes: s.evidence || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existing) {
+      await supabase.from('stakeholders').update(row).eq('id', existing.id);
+    } else {
+      await supabase.from('stakeholders').insert(row);
     }
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Deal review refresh failed.');
   }
 }
 
