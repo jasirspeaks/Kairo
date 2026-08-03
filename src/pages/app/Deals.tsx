@@ -4,7 +4,7 @@ import { Search, SlidersHorizontal, Plus, Building2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
-import { Deal, DealState, DEAL_STAGES, DealStage, DealStatus } from '../../types';
+import { Deal, DEAL_STAGES, DealStage, DealStatus } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
