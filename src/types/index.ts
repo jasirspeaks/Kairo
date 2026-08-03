@@ -86,24 +86,54 @@ export interface HighestPriorityRisk {
 // Call Review's own verdict on this specific conversation.
 export type CallStatus = 'On Track' | 'Needs Attention' | 'At Risk' | 'Stalled';
 
-export interface DealReview {
-  deal_status: {
-    status: DealStatus;
-    confidence: DealConfidence;
-    reason: string;
-  };
-  deal_health_score: number; // 0-100
+export type StakeholderSentiment = 'champion' | 'supporter' | 'neutral' | 'skeptic' | 'blocker';
+
+export interface StakeholderSignal {
+  name: string;
+  role: string | null;
+  sentiment: StakeholderSentiment | null;
+  evidence: string;
+}
+
+// Call-scoped half of the extraction: describes THIS call alone.
+export interface CallLevelReview {
   call_status: CallStatus;
   verdict: string;
+  reason: string;
+  highest_priority_risk: HighestPriorityRisk;
+  what_youre_missing: MissingInfo[];
+  recommended_next_action: string;
+  key_follow_up_message: string;
+  manager_note: string;
+}
+
+// Deal-scoped half of the extraction: describes the deal's overall current
+// state, informed by this call plus everything before it. Independently
+// reasoned from the call-scoped half above -- not a mirror of it.
+export interface DealLevelReview {
+  status: DealStatus;
+  confidence: DealConfidence;
+  status_reason: string;
+  health_score: number; // 0-100
+  highest_priority_risk: HighestPriorityRisk;
+  what_youre_missing: MissingInfo[];
+  recommended_next_action: string;
+  manager_note: string;
+}
+
+// The full extraction call-review produces on every call, including the
+// first. Call Review displays `call` (+ deal facts read from the deals
+// table). Deal Review displays `deal` from the LATEST stored extraction,
+// plus history across all extractions for Timeline/Risk Evolution/Stakeholders.
+export interface DealReview {
+  call: CallLevelReview;
+  deal: DealLevelReview;
   what_changed_since_last_call?: {
     resolved: string[];
     persists: string[];
     new_risks: string[];
   };
-  highest_priority_risk: HighestPriorityRisk;
-  what_youre_missing: MissingInfo[];
-  key_follow_up_message: string;
-  manager_note: string;
+  stakeholder_signals: StakeholderSignal[];
   supporting_evidence: string[];
 }
 
@@ -163,8 +193,6 @@ export interface PendingCall {
   matched_conversation_id: string | null;
   created_at: string;
 }
-
-export type StakeholderSentiment = 'champion' | 'supporter' | 'neutral' | 'skeptic' | 'blocker';
 
 export interface Stakeholder {
   id: string;
