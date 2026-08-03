@@ -1,14 +1,14 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, ShieldAlert, FolderOpen, Inbox, Plus } from 'lucide-react';
+import { LayoutDashboard, Settings as SettingsIcon, FolderOpen, Inbox, Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const TABS = [
   { path: '/app/dashboard', label: 'Home', icon: LayoutDashboard },
-  { path: '/app/risk-center', label: 'Risks', icon: ShieldAlert },
+  { path: '/app/deals', label: 'Deals', icon: FolderOpen },
   { path: '/app/new', label: '', icon: Plus, isFab: true },
-  { path: '/app/workspace', label: 'Deals', icon: FolderOpen },
   { path: '/app/inbox', label: 'Inbox', icon: Inbox },
+  { path: '/app/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 export function BottomNav() {
@@ -16,7 +16,7 @@ export function BottomNav() {
   const location = useLocation();
 
   function isActive(path: string) {
-    if (path === '/app/workspace') return location.pathname.startsWith('/app/workspace');
+    if (path === '/app/deals') return location.pathname.startsWith('/app/deals');
     return location.pathname === path;
   }
 
@@ -35,7 +35,7 @@ export function BottomNav() {
                 className="relative -top-5 flex-shrink-0 self-center"
                 aria-label="New Deal"
               >
-                <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-purple-glow active:scale-95 transition-transform">
+                <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-purple-glow active:scale-95 transition-transform duration-150 ease-spring">
                   <Icon className="w-6 h-6 text-white" />
                 </div>
               </button>

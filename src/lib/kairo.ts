@@ -1,5 +1,6 @@
+import type { CSSProperties } from 'react';
 import { supabase } from './supabase';
-import { DealReview } from '../types';
+import { DealReview, DealStatus, DEAL_STATUS_COLORS } from '../types';
 
 interface SellerContext {
   what_you_sell?: string;
@@ -13,18 +14,18 @@ interface DealContext {
   seller_context?: SellerContext;
 }
 
-export async function reviewDeal(
+export async function reviewCall(
   transcript: string,
   deal_context?: DealContext
 ): Promise<DealReview> {
   const { data: { session } } = await supabase.auth.getSession();
 
   if (!session) {
-    throw new Error('You must be signed in to review a deal.');
+    throw new Error('You must be signed in to review a call.');
   }
 
   const response = await fetch(
-    `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/analyze-conversation`,
+    `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/call-review`,
     {
       method: 'POST',
       headers: {
@@ -42,38 +43,76 @@ export async function reviewDeal(
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.error || 'Deal review failed. Please try again.');
+    throw new Error(data.error || 'Call review failed. Please try again.');
   }
 
   return data.review as DealReview;
 }
 
-export function getStatusColor(status: string): string {
-  switch (status) {
-    case 'Healthy': return 'text-emerald-600';
-    case 'Open': return 'text-amber-600';
-    case 'At Risk': return 'text-red-600';
-    case 'Lost Momentum': return 'text-textMuted';
-    default: return 'text-textSecondary';
+// Aggregates every completed call-review for a deal into the deal_state
+// rollup (health score, current status, highest priority risk, etc).
+// Called automatically after a call review saves, and on-demand from the
+// Deal Review page's refresh action.
+export async function refreshDealReview(dealId: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    throw new Error('You must be signed in to refresh a deal.');
+  }
+
+  const response = await fetch(
+    `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/deal-review-refresh`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ deal_id: dealId }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Deal review refresh failed.');
   }
 }
 
-export function getStatusBg(status: string): string {
-  switch (status) {
-    case 'Healthy': return 'bg-emerald-50 border-emerald-200 text-emerald-700';
-    case 'Open': return 'bg-amber-50 border-amber-200 text-amber-700';
-    case 'At Risk': return 'bg-red-50 border-red-200 text-red-700';
-    case 'Lost Momentum': return 'bg-surfaceHigh border-border text-textMuted';
-    default: return 'bg-surfaceHigh border-border text-textSecondary';
-  }
+// Returns the exact Blueprint hex code for a Deal Status, for inline styles
+// (badges, risk-dots, chart legends) where a Tailwind utility class can't
+// express the precise color.
+export function getStatusColor(status: string): string {
+  return DEAL_STATUS_COLORS[status as DealStatus] || DEAL_STATUS_COLORS.Unknown;
+}
+
+// Returns an inline style object for a status badge/pill. Tailwind can't
+// express 9 arbitrary hex values via static className switches, so badges
+// use this directly: <span style={getStatusStyle(status)}>...</span>
+export function getStatusStyle(status: string): CSSProperties {
+  const color = getStatusColor(status);
+  return {
+    color,
+    backgroundColor: `${color}1A`, // ~10% opacity fill
+    borderColor: `${color}4D`,     // ~30% opacity border
+  };
 }
 
 export function getRiskLevel(status: string): 'high' | 'medium' | 'low' | 'none' {
-  switch (status) {
-    case 'At Risk': return 'high';
-    case 'Lost Momentum': return 'high';
-    case 'Open': return 'medium';
-    case 'Healthy': return 'low';
-    default: return 'none';
+  switch (status as DealStatus) {
+    case 'Critical':
+    case 'At Risk':
+      return 'high';
+    case 'Stalled':
+    case 'Recovering':
+      return 'medium';
+    case 'Healthy':
+    case 'Promising':
+    case 'Won':
+      return 'low';
+    case 'Lost':
+    case 'Unknown':
+    default:
+      return 'none';
   }
 }

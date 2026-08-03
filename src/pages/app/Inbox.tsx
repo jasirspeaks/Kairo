@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Inbox as InboxIcon, Building2, ArrowRight, CalendarClock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { reviewDeal, getRiskLevel } from '../../lib/kairo';
+import { reviewCall, refreshDealReview, getRiskLevel } from '../../lib/kairo';
 import { Deal, Conversation, PendingCall } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
@@ -273,7 +273,7 @@ export function Inbox() {
       const calls: Conversation[] = existingCalls || [];
       const previousReview = calls.length > 0 ? calls[calls.length - 1].analysis_json : null;
 
-      const review = await reviewDeal(selectedCall.transcript, {
+      const review = await reviewCall(selectedCall.transcript, {
         deal_name: dealRow.deal_name,
         company_name: dealRow.company_name,
         previous_review: previousReview,
@@ -299,20 +299,9 @@ export function Inbox() {
 
       if (convError || !newConv) throw new Error('Failed to save conversation.');
 
-      await supabase.from('deal_state').upsert({
-        deal_id: dealId,
-        user_id: user.id,
-        current_status: review.deal_status.status,
-        confidence: review.deal_status.confidence,
-        highest_priority_risk: review.highest_priority_risk.risk,
-        highest_priority_risk_full: review.highest_priority_risk,
-        what_youre_missing: review.what_youre_missing,
-        key_follow_up_message: review.key_follow_up_message,
-        manager_note: review.manager_note,
-        supporting_evidence: review.supporting_evidence,
-        last_review_summary: review.deal_status.reason,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'deal_id' });
+      // Aggregation now lives in deal-review-refresh, not here — this keeps
+      // the rollup logic in one place instead of duplicated per call site.
+      await refreshDealReview(dealId);
 
       await supabase.from('deals').update({
         risk_level: getRiskLevel(review.deal_status.status),

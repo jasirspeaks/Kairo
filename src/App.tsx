@@ -11,8 +11,8 @@ import { Onboarding } from './pages/onboarding/Onboarding';
 import { Dashboard } from './pages/app/Dashboard';
 import { NewDeal } from './pages/app/NewDeal';
 import { Review } from './pages/app/Review';
-import { DealWorkspace } from './pages/app/DealWorkspace';
-import { RiskCenter } from './pages/app/RiskCenter';
+import { Deals } from './pages/app/Deals';
+import { DealReview } from './pages/app/DealReview';
 import { Settings } from './pages/app/Settings';
 import { AppLayout } from './components/layout/AppLayout';
 import { Inbox } from './pages/app/Inbox';
@@ -56,10 +56,9 @@ export default function App() {
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="inbox" element={<Inbox />} />
                 <Route path="new" element={<NewDeal />} />
+                <Route path="deals" element={<Deals />} />
+                <Route path="deals/:dealId" element={<DealReview />} />
                 <Route path="deals/:dealId/calls/:callId" element={<Review />} />
-                <Route path="workspace" element={<DealWorkspace />} />
-                <Route path="workspace/deals/:dealId" element={<DealWorkspace />} />
-                <Route path="risk-center" element={<RiskCenter />} />
                 <Route path="settings" element={<Settings />} />
               </Routes>
             </AppLayout>

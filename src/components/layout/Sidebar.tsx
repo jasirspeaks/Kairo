@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Plus, FolderOpen, ShieldAlert, Settings, LogOut, Zap, Inbox
+  LayoutDashboard, Plus, FolderOpen, Settings, LogOut, Zap, Inbox
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
@@ -10,8 +10,7 @@ const NAV_ITEMS = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/app/inbox', label: 'Inbox', icon: Inbox },
   { path: '/app/new', label: 'New Deal', icon: Plus },
-  { path: '/app/workspace', label: 'Deal Workspace', icon: FolderOpen },
-  { path: '/app/risk-center', label: 'Risk Center', icon: ShieldAlert },
+  { path: '/app/deals', label: 'Deals', icon: FolderOpen },
   { path: '/app/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -21,8 +20,8 @@ export function Sidebar() {
   const { profile, signOut } = useAuth();
 
   function isActive(path: string) {
-    if (path === '/app/workspace') {
-      return location.pathname.startsWith('/app/workspace');
+    if (path === '/app/deals') {
+      return location.pathname.startsWith('/app/deals');
     }
     return location.pathname === path;
   }
