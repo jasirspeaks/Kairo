@@ -198,7 +198,6 @@ export function Review() {
   // Call Review displays the CALL-scoped half of the extraction. Deal facts
   // (name, company, stage) come from the deals table, not re-extracted.
   const c = conv.analysis_json.call;
-  const changed = conv.analysis_json.what_changed_since_last_call;
   const borderColor = getCallStatusBorder(c.call_status);
 
   return (
@@ -254,53 +253,6 @@ export function Review() {
       </div>
 
       <div className="space-y-3 md:space-y-5 mt-3 md:mt-5">
-
-        {/* What Changed - open by default, it's the multi-call moment */}
-        {changed && (
-          <CollapsibleSection title="What Changed Since Last Call" defaultOpen>
-            <div className="space-y-4 pt-4">
-              {changed.resolved.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-emerald-600 mb-2 uppercase tracking-wide">Resolved</p>
-                  <div className="space-y-1.5">
-                    {changed.resolved.map((item, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 mt-1.5" />
-                        <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {changed.persists.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-amber-600 mb-2 uppercase tracking-wide">Still Open</p>
-                  <div className="space-y-1.5">
-                    {changed.persists.map((item, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 mt-1.5" />
-                        <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {changed.new_risks.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-red-600 mb-2 uppercase tracking-wide">New Risks</p>
-                  <div className="space-y-1.5">
-                    {changed.new_risks.map((item, i) => (
-                      <div key={i} className="flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0 mt-1.5" />
-                        <p className="text-textSecondary text-xs leading-relaxed">{item}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </CollapsibleSection>
-        )}
 
         {/* Highest Priority Risk (this call) - always open, headline */}
         {c.highest_priority_risk?.risk && (
