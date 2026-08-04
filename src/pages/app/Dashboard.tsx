@@ -13,11 +13,6 @@ interface DealWithState extends Deal {
   deal_state: DealState | null;
 }
 
-function formatValue(value: number | null): string {
-  if (value === null || value === undefined) return '—';
-  return new Intl.NumberFormat('en-US', { notation: 'compact', style: 'currency', currency: 'USD' }).format(value);
-}
-
 function RiskDot({ riskLevel }: { riskLevel: string }) {
   return (
     <div className={cn(
