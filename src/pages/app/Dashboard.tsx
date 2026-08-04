@@ -156,7 +156,18 @@ export function Dashboard() {
         )
       : [];
 
-    setDeals(dealsWithState);
+    // Active Deals on the Dashboard means: lifecycle status active, not
+    // closed Won/Lost, and at least one call has actually been reviewed --
+    // deal_state only exists once a review has run, so its presence is the
+    // "has been reviewed" signal. A brand-new deal with only an upcoming,
+    // unreviewed meeting doesn't count as active yet.
+    const reviewedActiveDeals = dealsWithState.filter(d =>
+      d.deal_state !== null &&
+      d.deal_state.current_status !== 'Won' &&
+      d.deal_state.current_status !== 'Lost'
+    );
+
+    setDeals(reviewedActiveDeals);
 
     const { data: meetingsData } = await supabase
       .from('scheduled_meetings')

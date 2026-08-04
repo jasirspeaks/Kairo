@@ -17,6 +17,7 @@ interface DealRow extends Deal {
   current_status: DealStatus | null;
   last_contact: string | null;
   next_meeting: string | null;
+  has_reviewed_call: boolean;
 }
 
 function formatValue(value: number | null): string {
@@ -60,17 +61,19 @@ export function Deals() {
 
     const [{ data: states }, { data: lastCalls }, { data: meetings }] = await Promise.all([
       supabase.from('deal_state').select('deal_id, current_status').in('deal_id', dealIds),
-      supabase.from('conversations').select('deal_id, created_at').in('deal_id', dealIds).order('created_at', { ascending: false }),
+      supabase.from('conversations').select('deal_id, created_at, status').in('deal_id', dealIds).order('created_at', { ascending: false }),
       supabase.from('scheduled_meetings').select('deal_id, start_time')
         .in('deal_id', dealIds).eq('status', 'assigned')
         .gte('start_time', new Date().toISOString()).order('start_time', { ascending: true }),
     ]);
 
     const statusByDeal = new Map((states || []).map(s => [s.deal_id, s.current_status]));
+    const completedCalls = (lastCalls || []).filter(c => c.status === 'complete');
     const lastContactByDeal = new Map<string, string>();
-    (lastCalls || []).forEach(c => {
+    completedCalls.forEach(c => {
       if (!lastContactByDeal.has(c.deal_id)) lastContactByDeal.set(c.deal_id, c.created_at);
     });
+    const reviewedDealIds = new Set(completedCalls.map(c => c.deal_id));
     const nextMeetingByDeal = new Map<string, string>();
     (meetings || []).forEach(m => {
       if (!nextMeetingByDeal.has(m.deal_id)) nextMeetingByDeal.set(m.deal_id, m.start_time);
@@ -81,6 +84,7 @@ export function Deals() {
       current_status: statusByDeal.get(d.id) || null,
       last_contact: lastContactByDeal.get(d.id) || null,
       next_meeting: nextMeetingByDeal.get(d.id) || null,
+      has_reviewed_call: reviewedDealIds.has(d.id),
     })));
     setLoading(false);
   }
@@ -100,7 +104,12 @@ export function Deals() {
       if (stageFilter !== 'all' && d.deal_stage !== stageFilter) return false;
 
       if (statusFilter === 'active') {
+        // "Active" means: lifecycle status is active, it isn't closed
+        // won/lost, and it has at least one completed call review --
+        // deals with only an unreviewed/upcoming meeting don't count yet.
         if (d.status !== 'active') return false;
+        if (d.current_status === 'Won' || d.current_status === 'Lost') return false;
+        if (!d.has_reviewed_call) return false;
       } else if (statusFilter !== 'all') {
         if (d.current_status !== statusFilter) return false;
       }
