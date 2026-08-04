@@ -7,7 +7,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { Deal, DealState, ScheduledMeeting } from '../../types';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
-import { formatDate, cn } from '../../lib/utils';
+import { cn } from '../../lib/utils';
 
 interface DealWithState extends Deal {
   deal_state: DealState | null;
@@ -53,26 +53,35 @@ function DealRow({ deal, onClick }: { deal: DealWithState; onClick: () => void }
   );
 }
 
-// Upcoming meeting card — sized for horizontal scroll, not full width.
-function MeetingCard({ meeting, onClick }: { meeting: ScheduledMeeting & { deal_name?: string }; onClick: () => void }) {
+function formatMeetingTime(dateString: string | null): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const today = new Date();
+  const isToday = date.toDateString() === today.toDateString();
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (isToday) return time;
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const isTomorrow = date.toDateString() === tomorrow.toDateString();
+  const day = isTomorrow ? 'Tomorrow' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${day}, ${time}`;
+}
+
+// Upcoming meeting card — thin, informational only, not interactive.
+function MeetingCard({ meeting }: { meeting: ScheduledMeeting & { deal_name?: string } }) {
   return (
-    <button
-      onClick={onClick}
-      className="card-hover flex-shrink-0 w-64 p-4 text-left flex flex-col gap-3 snap-start"
-    >
-      <div className="w-9 h-9 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center">
-        <Clock className="w-4 h-4 text-primary" />
+    <div className="card flex-shrink-0 w-48 px-3.5 py-3 flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5 text-primary">
+        <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+        <span className="text-xs font-medium">{formatMeetingTime(meeting.start_time)}</span>
       </div>
-      <div className="min-w-0">
-        <p className="text-textPrimary text-sm font-medium truncate">
-          {meeting.title || meeting.deal_name || 'Scheduled call'}
-        </p>
-        <p className="text-textMuted text-xs mt-0.5 truncate">
-          {meeting.start_time ? formatDate(meeting.start_time) : ''}
-          {meeting.deal_name && meeting.title ? ` · ${meeting.deal_name}` : ''}
-        </p>
-      </div>
-    </button>
+      <p className="text-textPrimary text-sm font-medium truncate">
+        {meeting.title || meeting.deal_name || 'Scheduled call'}
+      </p>
+      {meeting.deal_name && meeting.title && (
+        <p className="text-textMuted text-xs truncate">{meeting.deal_name}</p>
+      )}
+    </div>
   );
 }
 
@@ -176,19 +185,17 @@ export function Dashboard() {
     d.deal_state?.current_status && ['At Risk', 'Critical', 'Stalled'].includes(d.deal_state.current_status)
   );
 
-  // Deals Requiring Attention: everything else with an open gap or missing
-  // info, even if not formally "at risk" -- distinct from atRisk so a
-  // Healthy deal with an unanswered question still surfaces here.
-  const needsAttention = deals.filter(d =>
+  // Deals Requiring Attention: deal-risk data only -- no meetings, no Inbox
+  // items. At-risk deals first, then deals with an open gap (missing info),
+  // then everything else by recency.
+  const missingInfo = deals.filter(d =>
     !atRisk.includes(d) &&
     d.deal_state?.what_youre_missing &&
     d.deal_state.what_youre_missing.length > 0
   );
 
-  // Priority-ranked: at-risk first, then needs-attention, then the rest by
-  // recency -- answers "which deals need my attention right now" directly.
-  const priorityRanked = [...atRisk, ...needsAttention, ...deals.filter(
-    d => !atRisk.includes(d) && !needsAttention.includes(d)
+  const priorityRanked = [...atRisk, ...missingInfo, ...deals.filter(
+    d => !atRisk.includes(d) && !missingInfo.includes(d)
   )].slice(0, 10);
 
   return (
@@ -241,13 +248,9 @@ export function Dashboard() {
                 <h2 className="section-label mb-3 flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5" /> Upcoming Meetings
                 </h2>
-                <div className="flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory -mx-4 px-4 pb-1">
+                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
                   {meetings.map(m => (
-                    <MeetingCard
-                      key={m.id}
-                      meeting={m}
-                      onClick={() => m.deal_id && navigate(`/app/deals/${m.deal_id}`)}
-                    />
+                    <MeetingCard key={m.id} meeting={m} />
                   ))}
                 </div>
               </div>
