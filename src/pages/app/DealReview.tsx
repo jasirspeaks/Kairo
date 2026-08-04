@@ -271,7 +271,7 @@ export function DealReview() {
                 >
                   <div className="min-w-0">
                     <p className="text-textPrimary text-xs font-medium truncate">
-                      {call.title || formatDate(call.created_at)}
+                      {call.deal_stage || 'Call'} · {formatDate(call.created_at)}
                     </p>
                     {callData?.verdict && (
                       <p className="text-textMuted text-xs truncate mt-0.5">{callData.verdict}</p>

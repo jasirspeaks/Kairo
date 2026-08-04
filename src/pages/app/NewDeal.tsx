@@ -22,7 +22,6 @@ export function NewDeal() {
   const [champion, setChampion] = useState('');
   const [dealValue, setDealValue] = useState('');
   const [transcript, setTranscript] = useState('');
-  const [conversationTitle, setConversationTitle] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
 
@@ -88,7 +87,7 @@ export function NewDeal() {
         .insert({
           user_id: user.id,
           deal_id: deal.id,
-          title: conversationTitle.trim() || `Call 1 — ${new Date().toLocaleDateString()}`,
+          deal_stage: dealStage,
           input_type: 'transcript',
           transcript: text,
           status: 'complete',
@@ -314,19 +313,6 @@ export function NewDeal() {
                 <p className="text-textPrimary text-sm font-medium truncate">{dealName}</p>
                 <p className="text-textMuted text-xs">{companyName} · {dealStage}</p>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                Call Title <span className="text-textMuted">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={conversationTitle}
-                onChange={e => setConversationTitle(e.target.value)}
-                placeholder="e.g. Discovery Call"
-                className="input-field"
-              />
             </div>
 
             <div>

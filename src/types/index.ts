@@ -169,6 +169,7 @@ export interface Conversation {
   user_id: string;
   deal_id: string | null;
   title: string | null;
+  deal_stage: DealStage | null;
   input_type: InputType;
   transcript: string | null;
   audio_url: string | null;

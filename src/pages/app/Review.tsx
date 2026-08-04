@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus, AlertTriangle, CheckCircle, Clock,
-  TrendingDown, Copy, Check, Activity
+  TrendingDown, Copy, Check, Activity, Layers
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
-import { Deal, Conversation } from '../../types';
+import { Deal, Conversation, DEAL_STAGES, DealStage } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -50,7 +50,7 @@ export function Review() {
   const [copied, setCopied] = useState(false);
   const [addingCall, setAddingCall] = useState(false);
   const [newTranscript, setNewTranscript] = useState('');
-  const [newCallTitle, setNewCallTitle] = useState('');
+  const [newDealStage, setNewDealStage] = useState<DealStage>('Qualification');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
 
@@ -78,6 +78,7 @@ export function Review() {
     const calls = callsData || [];
     setDeal(dealData);
     setAllCalls(calls);
+    if (dealData?.deal_stage) setNewDealStage(dealData.deal_stage);
 
     const targetCall = callId
       ? calls.find(c => c.id === callId)
@@ -116,7 +117,7 @@ export function Review() {
       const review = await reviewCall(text, {
         deal_name: deal.deal_name,
         company_name: deal.company_name,
-        deal_stage: deal.deal_stage,
+        deal_stage: newDealStage,
         previous_review: previousReview,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
@@ -129,7 +130,7 @@ export function Review() {
         .insert({
           user_id: user.id,
           deal_id: deal.id,
-          title: newCallTitle.trim() || `Call — ${new Date().toLocaleDateString()}`,
+          deal_stage: newDealStage,
           input_type: 'transcript',
           transcript: text,
           status: 'complete',
@@ -148,12 +149,12 @@ export function Review() {
       await saveStakeholders(deal.id, user.id, review);
 
       await supabase.from('deals').update({
+        deal_stage: newDealStage,
         risk_level: getRiskLevel(review.deal.status),
         updated_at: new Date().toISOString(),
       }).eq('id', deal.id);
 
       setNewTranscript('');
-      setNewCallTitle('');
       setAddingCall(false);
       navigate(`/app/deals/${deal.id}/calls/${newConv.id}`);
 
@@ -342,19 +343,22 @@ export function Review() {
       </div>
 
       {/* Add Call - bottom sheet on mobile, centered dialog on desktop */}
-      <BottomSheet open={addingCall} onClose={() => { setAddingCall(false); setError(''); setNewTranscript(''); setNewCallTitle(''); }} title="Add Call Transcript">
+      <BottomSheet open={addingCall} onClose={() => { setAddingCall(false); setError(''); setNewTranscript(''); }} title="Add Call Transcript">
         <form onSubmit={handleAddCall} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-textSecondary mb-1.5">
-              Call Title <span className="text-textMuted">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={newCallTitle}
-              onChange={e => setNewCallTitle(e.target.value)}
-              placeholder="e.g. Follow Up, Demo, Negotiation"
-              className="input-field"
-            />
+            <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
+            <div className="relative">
+              <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
+              <select
+                value={newDealStage}
+                onChange={e => setNewDealStage(e.target.value as DealStage)}
+                className="input-field pl-10 appearance-none"
+              >
+                {DEAL_STAGES.map(stage => (
+                  <option key={stage} value={stage}>{stage}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-textSecondary mb-1.5">
