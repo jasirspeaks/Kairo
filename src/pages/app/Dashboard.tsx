@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ArrowRight, Calendar, AlertTriangle, Clock } from 'lucide-react';
+import { Building2, ArrowRight, Calendar, AlertTriangle, Clock, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
@@ -11,6 +11,11 @@ import { formatDate, cn } from '../../lib/utils';
 
 interface DealWithState extends Deal {
   deal_state: DealState | null;
+}
+
+function formatValue(value: number | null): string {
+  if (value === null || value === undefined) return '—';
+  return new Intl.NumberFormat('en-US', { notation: 'compact', style: 'currency', currency: 'USD' }).format(value);
 }
 
 function RiskDot({ riskLevel }: { riskLevel: string }) {
@@ -49,6 +54,66 @@ function DealRow({ deal, onClick }: { deal: DealWithState; onClick: () => void }
         </span>
       )}
       <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-accent transition-colors flex-shrink-0 self-center" />
+    </button>
+  );
+}
+
+// Upcoming meeting card — sized for horizontal scroll, not full width.
+function MeetingCard({ meeting, onClick }: { meeting: ScheduledMeeting & { deal_name?: string }; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="card-hover flex-shrink-0 w-64 p-4 text-left flex flex-col gap-3 snap-start"
+    >
+      <div className="w-9 h-9 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center">
+        <Clock className="w-4 h-4 text-primary" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-textPrimary text-sm font-medium truncate">
+          {meeting.title || meeting.deal_name || 'Scheduled call'}
+        </p>
+        <p className="text-textMuted text-xs mt-0.5 truncate">
+          {meeting.start_time ? formatDate(meeting.start_time) : ''}
+          {meeting.deal_name && meeting.title ? ` · ${meeting.deal_name}` : ''}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+// Side-by-side summary tile — used for Active Deals and Deals At Risk.
+function StatCard({
+  label,
+  value,
+  icon,
+  tone = 'default',
+  onClick,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  tone?: 'default' | 'danger';
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="card-hover flex-1 p-4 text-left flex flex-col gap-3 min-w-0"
+    >
+      <div
+        className={cn(
+          'w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0',
+          tone === 'danger'
+            ? 'bg-red-400/8 border-red-400/20 text-red-400'
+            : 'bg-primary/8 border-primary/15 text-primary'
+        )}
+      >
+        {icon}
+      </div>
+      <div>
+        <p className="text-textPrimary text-2xl font-display font-bold leading-none">{value}</p>
+        <p className="text-textMuted text-xs mt-1.5">{label}</p>
+      </div>
     </button>
   );
 }
@@ -96,7 +161,7 @@ export function Dashboard() {
       .eq('status', 'assigned')
       .gte('start_time', new Date().toISOString())
       .order('start_time', { ascending: true })
-      .limit(5);
+      .limit(8);
 
     setMeetings(
       (meetingsData || []).map((m: any) => ({ ...m, deal_name: m.deals?.deal_name }))
@@ -129,7 +194,7 @@ export function Dashboard() {
   // recency -- answers "which deals need my attention right now" directly.
   const priorityRanked = [...atRisk, ...needsAttention, ...deals.filter(
     d => !atRisk.includes(d) && !needsAttention.includes(d)
-  )].slice(0, 8);
+  )].slice(0, 10);
 
   return (
     <>
@@ -138,6 +203,7 @@ export function Dashboard() {
       </div>
 
       <div className="animate-fade-in">
+        {/* Greeting */}
         <div className="mb-6">
           <h1 className="text-xl md:text-2xl font-display font-bold text-textPrimary mb-1">
             {greeting}, {profile?.name?.split(' ')[0] || 'there'}
@@ -153,8 +219,17 @@ export function Dashboard() {
         </div>
 
         {loading ? (
-          <div className="space-y-2">
-            {[1, 2, 3].map(i => <div key={i} className="card h-16 animate-pulse" />)}
+          <div className="space-y-6">
+            <div className="flex gap-3">
+              {[1, 2, 3].map(i => <div key={i} className="card h-28 w-64 flex-shrink-0 animate-pulse" />)}
+            </div>
+            <div className="flex gap-3">
+              <div className="card h-24 flex-1 animate-pulse" />
+              <div className="card h-24 flex-1 animate-pulse" />
+            </div>
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <div key={i} className="card h-16 animate-pulse" />)}
+            </div>
           </div>
         ) : deals.length === 0 && meetings.length === 0 ? (
           <EmptyState
@@ -165,59 +240,45 @@ export function Dashboard() {
         ) : (
           <div className="space-y-6">
 
+            {/* Upcoming Meetings — horizontally scrollable */}
             {meetings.length > 0 && (
               <div>
                 <h2 className="section-label mb-3 flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5" /> Upcoming Meetings
                 </h2>
-                <div className="space-y-2">
+                <div className="flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory -mx-4 px-4 pb-1">
                   {meetings.map(m => (
-                    <div key={m.id} className="card p-3.5 flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
-                        <Clock className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-textPrimary text-sm font-medium truncate">
-                          {m.title || m.deal_name || 'Scheduled call'}
-                        </p>
-                        <p className="text-textMuted text-xs">
-                          {m.start_time ? formatDate(m.start_time) : ''}
-                          {m.deal_name && m.title ? ` · ${m.deal_name}` : ''}
-                        </p>
-                      </div>
-                    </div>
+                    <MeetingCard
+                      key={m.id}
+                      meeting={m}
+                      onClick={() => m.deal_id && navigate(`/app/deals/${m.deal_id}`)}
+                    />
                   ))}
                 </div>
               </div>
             )}
 
-            {atRisk.length > 0 && (
-              <div>
-                <h2 className="section-label mb-3 flex items-center gap-1.5 text-red-500">
-                  <AlertTriangle className="w-3.5 h-3.5" /> Deals At Risk
-                </h2>
-                <div className="space-y-2">
-                  {atRisk.map(deal => (
-                    <DealRow key={deal.id} deal={deal} onClick={() => navigate(`/app/deals/${deal.id}`)} />
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Active Deals + Deals At Risk — side by side */}
+            <div className="flex gap-3">
+              <StatCard
+                label="Active Deals"
+                value={deals.length}
+                icon={<TrendingUp className="w-4 h-4" />}
+                onClick={() => navigate('/app/deals')}
+              />
+              <StatCard
+                label="Deals At Risk"
+                value={atRisk.length}
+                icon={<AlertTriangle className="w-4 h-4" />}
+                tone={atRisk.length > 0 ? 'danger' : 'default'}
+                onClick={() => navigate('/app/deals?status=at-risk')}
+              />
+            </div>
 
-            {needsAttention.length > 0 && (
-              <div>
-                <h2 className="section-label mb-3 text-amber-600">Deals Requiring Attention</h2>
-                <div className="space-y-2">
-                  {needsAttention.map(deal => (
-                    <DealRow key={deal.id} deal={deal} onClick={() => navigate(`/app/deals/${deal.id}`)} />
-                  ))}
-                </div>
-              </div>
-            )}
-
+            {/* Deals Requiring Attention — priority-ranked list */}
             <div>
-              <h2 className="section-label mb-3">Active Deals</h2>
-              {deals.length === 0 ? (
+              <h2 className="section-label mb-3">Deals Requiring Attention</h2>
+              {priorityRanked.length === 0 ? (
                 <EmptyState
                   icon={<Building2 className="w-6 h-6" />}
                   title="No active deals"
