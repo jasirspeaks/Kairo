@@ -1,36 +1,63 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Copy, Check, Zap, Calendar, CheckCircle2, AlertCircle, LogOut } from 'lucide-react';
+import {
+  Copy,
+  Check,
+  Zap,
+  Calendar,
+  CheckCircle2,
+  AlertCircle,
+  LogOut,
+  Loader2,
+  RefreshCw,
+} from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
 import { TopBar } from '../../components/layout/TopBar';
 
+type FirefliesStatus = 'pending' | 'active' | 'invalid' | 'disconnected';
+
+interface FirefliesConnectionState {
+  connected: boolean;
+  status?: FirefliesStatus;
+  email?: string | null;
+  last_webhook_received_at?: string | null;
+  last_error?: string | null;
+  webhook_url?: string;
+}
+
 export function Settings() {
   const { user, profile, signOut, refetchProfile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // --- Profile ---
   const [name, setName] = useState('');
   const [whatYouSell, setWhatYouSell] = useState('');
   const [whoYouAre, setWhoYouAre] = useState('');
-
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
 
+  // --- Calendar ---
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [checkingCalendar, setCheckingCalendar] = useState(true);
   const [calendarBanner, setCalendarBanner] = useState<'connected' | 'error' | null>(null);
   const [disconnectingCalendar, setDisconnectingCalendar] = useState(false);
 
-  const webhookUrl = user
-    ? `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-webhook?user_id=${user.id}`
-    : '';
-
   const calendarConnectUrl = user
     ? `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-connect?user_id=${user.id}`
     : '';
+
+  // --- Fireflies ---
+  const [fireflies, setFireflies] = useState<FirefliesConnectionState | null>(null);
+  const [checkingFireflies, setCheckingFireflies] = useState(true);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [connectingFireflies, setConnectingFireflies] = useState(false);
+  const [firefliesFormError, setFirefliesFormError] = useState<string | null>(null);
+  const [disconnectingFireflies, setDisconnectingFireflies] = useState(false);
+  const [revalidating, setRevalidating] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Hydrate the form from the loaded profile. Profile can arrive after
   // first render (it's fetched async in useAuth), so this needs to react
@@ -45,6 +72,7 @@ export function Settings() {
   useEffect(() => {
     if (!user) return;
     checkCalendarConnection();
+    checkFirefliesConnection();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -59,6 +87,8 @@ export function Settings() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // --- Calendar handlers ---
 
   async function checkCalendarConnection() {
     if (!user) return;
@@ -84,6 +114,107 @@ export function Settings() {
     setCalendarConnected(false);
     setDisconnectingCalendar(false);
   }
+
+  // --- Fireflies handlers ---
+  // fireflies-connect authenticates the caller itself (via the user's own
+  // session JWT, not a service-role/user_id query param like the webhook
+  // does), so every call here needs the Authorization header.
+
+  const firefliesAuthHeader = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    return { Authorization: `Bearer ${session.access_token}` };
+  }, []);
+
+  async function checkFirefliesConnection() {
+    setCheckingFireflies(true);
+    try {
+      const authHeader = await firefliesAuthHeader();
+      if (!authHeader) return;
+      const res = await fetch(
+        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect?action=status`,
+        { headers: authHeader }
+      );
+      const data = await res.json();
+      setFireflies(data);
+    } catch {
+      setFireflies(null);
+    } finally {
+      setCheckingFireflies(false);
+    }
+  }
+
+  async function handleConnectFireflies(e: React.FormEvent) {
+    e.preventDefault();
+    if (!apiKeyInput.trim()) return;
+    setConnectingFireflies(true);
+    setFirefliesFormError(null);
+
+    try {
+      const authHeader = await firefliesAuthHeader();
+      if (!authHeader) {
+        setFirefliesFormError('Your session expired — refresh the page and try again.');
+        return;
+      }
+      const res = await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({ api_key: apiKeyInput.trim() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setFirefliesFormError(data.error || 'Could not verify this Fireflies API key.');
+        return;
+      }
+
+      setApiKeyInput('');
+      await checkFirefliesConnection();
+    } catch {
+      setFirefliesFormError('Network error reaching Fireflies. Please try again.');
+    } finally {
+      setConnectingFireflies(false);
+    }
+  }
+
+  async function handleDisconnectFireflies() {
+    setDisconnectingFireflies(true);
+    try {
+      const authHeader = await firefliesAuthHeader();
+      if (!authHeader) return;
+      await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect?action=disconnect`, {
+        method: 'DELETE',
+        headers: authHeader,
+      });
+      setFireflies({ connected: false });
+    } finally {
+      setDisconnectingFireflies(false);
+    }
+  }
+
+  async function handleRevalidateFireflies() {
+    setRevalidating(true);
+    try {
+      const authHeader = await firefliesAuthHeader();
+      if (!authHeader) return;
+      await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect?action=revalidate`, {
+        method: 'POST',
+        headers: authHeader,
+      });
+      await checkFirefliesConnection();
+    } finally {
+      setRevalidating(false);
+    }
+  }
+
+  function copyWebhookUrl() {
+    if (!fireflies?.webhook_url) return;
+    navigator.clipboard.writeText(fireflies.webhook_url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  // --- Profile save ---
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -111,13 +242,6 @@ export function Settings() {
     refetchProfile();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }
-
-  function copyWebhookUrl() {
-    if (!webhookUrl) return;
-    navigator.clipboard.writeText(webhookUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -265,39 +389,150 @@ export function Settings() {
           <h2 className="text-sm font-semibold text-textPrimary">Fireflies Integration</h2>
         </div>
         <p className="text-textMuted text-xs mb-4">
-          Connect Fireflies so call recordings are transcribed and reviewed automatically once the meeting happens.
+          Connect your Fireflies account so calls are transcribed and reviewed automatically once the meeting happens.
         </p>
 
-        <label className="block text-xs font-medium text-textSecondary mb-1.5">Your webhook URL</label>
-        <div className="flex items-center gap-2 mb-4">
-          <input
-            type="text"
-            value={webhookUrl}
-            readOnly
-            className="input-field font-mono text-xs"
-            onFocus={e => e.target.select()}
-          />
-          <button
-            type="button"
-            onClick={copyWebhookUrl}
-            className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
-            aria-label="Copy webhook URL"
-          >
-            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-          </button>
-        </div>
+        {checkingFireflies ? (
+          <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
+        ) : fireflies?.connected ? (
+          <div className="space-y-4">
+            {/* Connection status */}
+            {fireflies.status === 'invalid' ? (
+              <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-red-400 text-xs font-medium">
+                    Fireflies rejected the stored key{fireflies.email ? ` for ${fireflies.email}` : ''}.
+                  </p>
+                  {fireflies.last_error && (
+                    <p className="text-textMuted text-xs mt-0.5">{fireflies.last_error}</p>
+                  )}
+                  <p className="text-textMuted text-xs mt-1.5">
+                    Reconnect below with a valid key, or recheck if you've fixed it on Fireflies' side.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <span className="text-emerald-400 text-xs font-medium truncate">
+                    Connected{fireflies.email ? ` as ${fireflies.email}` : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDisconnectFireflies}
+                  disabled={disconnectingFireflies}
+                  className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50 flex-shrink-0 ml-3"
+                >
+                  {disconnectingFireflies ? 'Disconnecting…' : 'Disconnect'}
+                </button>
+              </div>
+            )}
 
-        <div className="bg-surfaceHigh border border-border rounded-lg p-4 space-y-2">
-          <p className="text-textPrimary text-xs font-semibold">Setup steps</p>
-          <ol className="text-textSecondary text-xs leading-relaxed list-decimal list-inside space-y-1">
-            <li>Log into your Fireflies account and go to <span className="font-medium text-textPrimary">Settings → Developer Settings</span>.</li>
-            <li>Find the <span className="font-medium text-textPrimary">Webhook</span> section and click Configure.</li>
-            <li>Paste the URL above into the <span className="font-medium text-textPrimary">Webhook URL</span> field.</li>
-            <li>In the secret key field, type in the shared secret exactly as given to you — do not click "generate," since that creates a different secret Kairo won't recognize.</li>
-            <li>Under events to send, select <span className="font-medium text-textPrimary">Transcription Completed</span>.</li>
-            <li>Click Save. New calls will now be reviewed automatically once Fireflies finishes processing them.</li>
-          </ol>
-        </div>
+            {fireflies.status !== 'invalid' && (
+              <button
+                type="button"
+                onClick={handleRevalidateFireflies}
+                disabled={revalidating}
+                className="flex items-center gap-1.5 text-xs text-textMuted hover:text-textSecondary transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${revalidating ? 'animate-spin' : ''}`} />
+                {revalidating ? 'Checking…' : 'Recheck connection'}
+              </button>
+            )}
+
+            {/* Reconnect form — always available, required if invalid */}
+            {fireflies.status === 'invalid' && (
+              <form onSubmit={handleConnectFireflies} className="space-y-2">
+                <label className="block text-xs font-medium text-textSecondary">Fireflies API key</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={e => setApiKeyInput(e.target.value)}
+                    placeholder="Paste your Fireflies API key"
+                    className="input-field font-mono text-xs"
+                    autoComplete="off"
+                  />
+                  <Button type="submit" variant="secondary" loading={connectingFireflies} className="flex-shrink-0">
+                    Reconnect
+                  </Button>
+                </div>
+                {firefliesFormError && (
+                  <p className="text-red-400 text-xs flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    {firefliesFormError}
+                  </p>
+                )}
+              </form>
+            )}
+
+            {/* Webhook URL + setup steps */}
+            {fireflies.webhook_url && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-textSecondary mb-1.5">Your webhook URL</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={fireflies.webhook_url}
+                      readOnly
+                      className="input-field font-mono text-xs"
+                      onFocus={e => e.target.select()}
+                    />
+                    <button
+                      type="button"
+                      onClick={copyWebhookUrl}
+                      className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
+                      aria-label="Copy webhook URL"
+                    >
+                      {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-surfaceHigh border border-border rounded-lg p-4 space-y-2">
+                  <p className="text-textPrimary text-xs font-semibold">Setup steps</p>
+                  <ol className="text-textSecondary text-xs leading-relaxed list-decimal list-inside space-y-1">
+                    <li>Log into your Fireflies account and go to <span className="font-medium text-textPrimary">Settings → Developer Settings</span>.</li>
+                    <li>Find the <span className="font-medium text-textPrimary">Webhook</span> section and click Configure.</li>
+                    <li>Paste the URL above into the <span className="font-medium text-textPrimary">Webhook URL</span> field.</li>
+                    <li>Under events to send, select <span className="font-medium text-textPrimary">Transcription Completed</span>.</li>
+                    <li>Click Save. New calls will now be reviewed automatically once Fireflies finishes processing them.</li>
+                  </ol>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <form onSubmit={handleConnectFireflies} className="space-y-2">
+            <label className="block text-xs font-medium text-textSecondary">Fireflies API key</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={e => setApiKeyInput(e.target.value)}
+                placeholder="Paste your Fireflies API key"
+                className="input-field font-mono text-xs"
+                autoComplete="off"
+              />
+              <Button type="submit" variant="secondary" loading={connectingFireflies} className="flex-shrink-0">
+                {connectingFireflies ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
+              </Button>
+            </div>
+            {firefliesFormError && (
+              <p className="text-red-400 text-xs flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                {firefliesFormError}
+              </p>
+            )}
+            <p className="text-textMuted text-xs">
+              Find your API key in Fireflies under <span className="font-medium text-textSecondary">Settings → Developer Settings</span>. Kairo verifies it before saving.
+            </p>
+          </form>
+        )}
       </div>
 
       {/* Sign Out */}
