@@ -10,6 +10,9 @@ import {
   LogOut,
   Loader2,
   RefreshCw,
+  Eye,
+  EyeOff,
+  Clock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase';
@@ -25,6 +28,10 @@ interface FirefliesConnectionState {
   last_webhook_received_at?: string | null;
   last_error?: string | null;
   webhook_url?: string;
+  // Only present while setup is unconfirmed -- see shouldExposeSecret()
+  // in fireflies-connect. Absence of this field (vs. an empty string)
+  // means "already confirmed, nothing to show."
+  webhook_secret?: string;
 }
 
 export function Settings() {
@@ -57,7 +64,9 @@ export function Settings() {
   const [firefliesFormError, setFirefliesFormError] = useState<string | null>(null);
   const [disconnectingFireflies, setDisconnectingFireflies] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [secretRevealed, setSecretRevealed] = useState(false);
 
   // Hydrate the form from the loaded profile. Profile can arrive after
   // first render (it's fetched async in useAuth), so this needs to react
@@ -169,6 +178,7 @@ export function Settings() {
       }
 
       setApiKeyInput('');
+      setSecretRevealed(true); // fresh connect: show the secret by default, they need it right now
       await checkFirefliesConnection();
     } catch {
       setFirefliesFormError('Network error reaching Fireflies. Please try again.');
@@ -210,8 +220,15 @@ export function Settings() {
   function copyWebhookUrl() {
     if (!fireflies?.webhook_url) return;
     navigator.clipboard.writeText(fireflies.webhook_url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  }
+
+  function copyWebhookSecret() {
+    if (!fireflies?.webhook_secret) return;
+    navigator.clipboard.writeText(fireflies.webhook_secret);
+    setCopiedSecret(true);
+    setTimeout(() => setCopiedSecret(false), 2000);
   }
 
   // --- Profile save ---
@@ -469,11 +486,21 @@ export function Settings() {
               </form>
             )}
 
-            {/* Webhook URL + setup steps */}
+            {/* Waiting for first delivery — secret + URL still need to be pasted into Fireflies */}
+            {fireflies.status === 'pending' && (
+              <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3">
+                <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <p className="text-amber-400 text-xs">
+                  Waiting for the first call from Fireflies. Follow the setup steps below — this banner clears automatically once a webhook comes through.
+                </p>
+              </div>
+            )}
+
+            {/* Webhook URL + secret + setup steps */}
             {fireflies.webhook_url && (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-textSecondary mb-1.5">Your webhook URL</label>
+                  <label className="block text-xs font-medium text-textSecondary mb-1.5">Webhook URL</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -488,17 +515,59 @@ export function Settings() {
                       className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
                       aria-label="Copy webhook URL"
                     >
-                      {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      {copiedUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
+
+                {/* webhook_secret is only ever sent by the backend while
+                    setup is unconfirmed (see shouldExposeSecret in
+                    fireflies-connect) — once a delivery has succeeded once,
+                    this field is simply absent and there's nothing to
+                    re-paste, so the block disappears entirely. */}
+                {fireflies.webhook_secret && (
+                  <div>
+                    <label className="block text-xs font-medium text-textSecondary mb-1.5">
+                      Webhook secret
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type={secretRevealed ? 'text' : 'password'}
+                        value={fireflies.webhook_secret}
+                        readOnly
+                        className="input-field font-mono text-xs"
+                        onFocus={e => e.target.select()}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSecretRevealed(r => !r)}
+                        className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
+                        aria-label={secretRevealed ? 'Hide secret' : 'Reveal secret'}
+                      >
+                        {secretRevealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={copyWebhookSecret}
+                        className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
+                        aria-label="Copy webhook secret"
+                      >
+                        {copiedSecret ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-textMuted text-xs mt-1.5">
+                      This is shown only until your first call comes through — copy it now, you won't be able to view it again later.
+                    </p>
+                  </div>
+                )}
 
                 <div className="bg-surfaceHigh border border-border rounded-lg p-4 space-y-2">
                   <p className="text-textPrimary text-xs font-semibold">Setup steps</p>
                   <ol className="text-textSecondary text-xs leading-relaxed list-decimal list-inside space-y-1">
                     <li>Log into your Fireflies account and go to <span className="font-medium text-textPrimary">Settings → Developer Settings</span>.</li>
                     <li>Find the <span className="font-medium text-textPrimary">Webhook</span> section and click Configure.</li>
-                    <li>Paste the URL above into the <span className="font-medium text-textPrimary">Webhook URL</span> field.</li>
+                    <li>Paste the <span className="font-medium text-textPrimary">Webhook URL</span> above into the URL field.</li>
+                    <li>Paste the <span className="font-medium text-textPrimary">Webhook secret</span> above into the secret key field — do not click Fireflies' "generate" button, it will create a different secret Kairo won't recognize and every call will fail with a 401.</li>
                     <li>Under events to send, select <span className="font-medium text-textPrimary">Transcription Completed</span>.</li>
                     <li>Click Save. New calls will now be reviewed automatically once Fireflies finishes processing them.</li>
                   </ol>
