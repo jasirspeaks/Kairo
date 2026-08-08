@@ -34,7 +34,7 @@ export function SignUp() {
   async function handleGoogleSignUp() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/onboarding` }
+      options: { redirectTo: `${window.location.origin}/` }
     });
   }
 
