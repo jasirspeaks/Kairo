@@ -52,36 +52,6 @@ export function Onboarding() {
           <div className="animate-fade-in">
             <div className="text-center mb-8">
               <p className="text-xs text-primary font-medium mb-3 uppercase tracking-widest">Step 1 of 2</p>
-              <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">What are you selling?</h1>
-              <p className="text-textSecondary text-sm">Kairo uses this to frame deal reviews in the right context.</p>
-            </div>
-            <div className="card p-6 mb-4">
-              <textarea
-                value={whatYouSell}
-                onChange={e => setWhatYouSell(e.target.value)}
-                placeholder="e.g. SaaS product for HR teams, marketing agency services, B2B consulting for fintech companies..."
-                className="input-field min-h-28 resize-none"
-                autoFocus
-              />
-              <p className="text-textMuted text-xs mt-2">Be specific — the more context, the sharper the analysis.</p>
-            </div>
-            <Button onClick={() => setStep(2)} size="lg" className="w-full" disabled={!whatYouSell.trim()}>
-              Continue
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-            <button
-              onClick={() => setStep(2)}
-              className="w-full text-center text-xs text-textMuted hover:text-textSecondary mt-3 transition-colors"
-            >
-              Skip for now
-            </button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="animate-fade-in">
-            <div className="text-center mb-8">
-              <p className="text-xs text-primary font-medium mb-3 uppercase tracking-widest">Step 2 of 2</p>
               <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">Who are you?</h1>
               <p className="text-textSecondary text-sm">This shapes how Kairo talks to you about your deals.</p>
             </div>
@@ -115,16 +85,46 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
+            <Button onClick={() => setStep(2)} size="lg" className="w-full" disabled={!whoYouAre}>
+              Continue
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="animate-fade-in">
+            <div className="text-center mb-8">
+              <p className="text-xs text-primary font-medium mb-3 uppercase tracking-widest">Step 2 of 2</p>
+              <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">What are you selling?</h1>
+              <p className="text-textSecondary text-sm">Kairo uses this to frame deal reviews in the right context.</p>
+            </div>
+            <div className="card p-6 mb-4">
+              <textarea
+                value={whatYouSell}
+                onChange={e => setWhatYouSell(e.target.value)}
+                placeholder="e.g. SaaS product for HR teams, marketing agency services, B2B consulting for fintech companies..."
+                className="input-field min-h-28 resize-none"
+                autoFocus
+              />
+              <p className="text-textMuted text-xs mt-2">Be specific — the more context, the sharper the analysis.</p>
+            </div>
             <Button
               onClick={handleFinish}
               size="lg"
               className="w-full"
               loading={loading}
-              disabled={!whoYouAre}
+              disabled={!whatYouSell.trim()}
             >
               Go to Dashboard
               <ArrowRight className="w-4 h-4" />
             </Button>
+            <button
+              onClick={handleFinish}
+              className="w-full text-center text-xs text-textMuted hover:text-textSecondary mt-3 transition-colors"
+            >
+              Skip for now
+            </button>
           </div>
         )}
       </div>
