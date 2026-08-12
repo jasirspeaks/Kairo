@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, Phone, Calendar, TrendingUp, Users, Clock,
-  ChevronRight, Building2, DollarSign
+  AlertTriangle, Phone, Calendar, Users, Clock,
+  ChevronRight, Building2, DollarSign, UserPlus
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
@@ -46,6 +46,22 @@ function healthScoreColor(score: number): string {
   if (score >= 70) return '#3DD68C';
   if (score >= 40) return '#F6B23E';
   return '#FF667A';
+}
+
+// Deal Activity is a chronological read of what's already been captured
+// about this deal -- every call reviewed, plus every stakeholder Kairo has
+// identified -- not a separate log a user maintains by hand. No new table,
+// no write path: it's a merge-and-sort view over `calls` and `stakeholders`.
+type ActivityItem =
+  | { kind: 'call'; id: string; at: string; call: Conversation }
+  | { kind: 'stakeholder'; id: string; at: string; stakeholder: Stakeholder };
+
+function buildActivity(calls: Conversation[], stakeholders: Stakeholder[]): ActivityItem[] {
+  const items: ActivityItem[] = [
+    ...calls.map((call): ActivityItem => ({ kind: 'call', id: call.id, at: call.created_at, call })),
+    ...stakeholders.map((s): ActivityItem => ({ kind: 'stakeholder', id: s.id, at: s.created_at, stakeholder: s })),
+  ];
+  return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 }
 
 export function DealReview() {
@@ -121,6 +137,7 @@ export function DealReview() {
 
   const lastContact = calls[calls.length - 1]?.created_at;
   const healthColor = healthScoreColor(dealState.deal_health_score ?? 0);
+  const activity = buildActivity(calls, stakeholders);
 
   return (
     <div className="animate-fade-in max-w-2xl">
@@ -205,13 +222,13 @@ export function DealReview() {
       {/* Primary insight cards */}
       <div className="space-y-3 md:space-y-4 mb-5">
         {dealState.highest_priority_risk_full?.risk && (
-          <div className="card p-4 md:p-6 border border-red-200">
+          <div className="card p-4 md:p-6 border border-red-400/20">
             <h2 className="section-label mb-3">Highest Priority Risk</h2>
             <p className="text-textPrimary text-sm font-semibold mb-3">
               {dealState.highest_priority_risk_full.risk}
             </p>
             {dealState.highest_priority_risk_full.why_it_matters && (
-              <div className="bg-red-50 border border-red-100 rounded-lg p-3">
+              <div className="bg-red-400/10 border border-red-400/20 rounded-lg p-3">
                 <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
                 <p className="text-textSecondary text-xs leading-relaxed">
                   {dealState.highest_priority_risk_full.why_it_matters}
@@ -227,8 +244,8 @@ export function DealReview() {
             <div className="space-y-3">
               {dealState.what_youre_missing.map((item, i) => (
                 <div key={i} className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-amber-700 text-xs font-bold">{i + 1}</span>
+                  <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
                   </div>
                   <div>
                     <p className="text-textPrimary text-xs font-medium mb-1">{item.gap}</p>
@@ -316,13 +333,13 @@ export function DealReview() {
                     </p>
                     <div className="space-y-2">
                       {changed.resolved.map((item, i) => (
-                        <p key={`r-${i}`} className="text-xs text-emerald-600">✓ {item}</p>
+                        <p key={`r-${i}`} className="text-xs text-emerald-400">✓ {item}</p>
                       ))}
                       {changed.persists.map((item, i) => (
-                        <p key={`p-${i}`} className="text-xs text-amber-600">→ {item}</p>
+                        <p key={`p-${i}`} className="text-xs text-amber-400">→ {item}</p>
                       ))}
                       {changed.new_risks.map((item, i) => (
-                        <p key={`n-${i}`} className="text-xs text-red-600">! {item}</p>
+                        <p key={`n-${i}`} className="text-xs text-red-400">! {item}</p>
                       ))}
                     </div>
                   </div>
@@ -370,14 +387,67 @@ export function DealReview() {
         </CollapsibleSection>
       </div>
 
-      {/* Deal Activity */}
-      <div className="mt-5 flex flex-col sm:flex-row gap-3">
-        <Button variant="secondary" className="flex-1" onClick={() => navigate('/app/new')}>
-          <TrendingUp className="w-4 h-4" /> Log Activity
-        </Button>
-        <Button variant="secondary" className="flex-1" onClick={() => navigate('/app/inbox')}>
+      {/* Schedule Next Meeting */}
+      <div className="mt-5">
+        <Button variant="secondary" className="w-full" onClick={() => navigate('/app/inbox')}>
           <Calendar className="w-4 h-4" /> Schedule Next Meeting
         </Button>
+      </div>
+
+      {/* Deal Activity: full chronological history of this deal, newest first */}
+      <div className="mt-6">
+        <h2 className="section-label mb-3">Deal Activity</h2>
+        <div className="card divide-y divide-border overflow-hidden">
+          {activity.map(item => {
+            if (item.kind === 'call') {
+              const callData = item.call.analysis_json?.call;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => navigate(`/app/deals/${dealId}/calls/${item.call.id}`)}
+                  className="w-full flex items-start gap-3 px-4 py-3.5 text-left active:bg-surfaceHigh transition-colors"
+                >
+                  <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Phone className="w-3.5 h-3.5 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-textPrimary text-xs font-medium truncate">
+                        Call reviewed · {item.call.deal_stage || 'Call'}
+                      </p>
+                      <span className="text-textMuted text-xs flex-shrink-0">{formatDate(item.at)}</span>
+                    </div>
+                    {callData?.verdict && (
+                      <p className="text-textMuted text-xs truncate mt-0.5">{callData.verdict}</p>
+                    )}
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-textMuted flex-shrink-0 mt-1" />
+                </button>
+              );
+            }
+
+            const s = item.stakeholder;
+            return (
+              <div key={item.id} className="flex items-start gap-3 px-4 py-3.5">
+                <div className="w-7 h-7 rounded-full bg-surfaceHigh border border-border flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <UserPlus className="w-3.5 h-3.5 text-textMuted" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-textPrimary text-xs font-medium truncate">
+                      Stakeholder identified · {s.name}
+                    </p>
+                    <span className="text-textMuted text-xs flex-shrink-0">{formatDate(item.at)}</span>
+                  </div>
+                  <p className="text-textMuted text-xs truncate mt-0.5">
+                    {s.role || 'Role unknown'}
+                    {s.sentiment && ` · ${SENTIMENT_LABEL[s.sentiment]}`}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

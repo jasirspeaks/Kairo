@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus, AlertTriangle, CheckCircle, Clock,
-  TrendingDown, Copy, Check, Activity, Layers
+  TrendingDown, Copy, Check, Activity, Layers, Calendar
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle } from '../../lib/kairo';
@@ -30,11 +30,11 @@ function getCallStatusIcon(status: string) {
 
 function getCallStatusBorder(status: string): string {
   switch (status) {
-    case 'On Track': return 'border-emerald-400';
-    case 'Needs Attention': return 'border-amber-400';
-    case 'At Risk': return 'border-red-400';
-    case 'Stalled': return 'border-orange-400';
-    default: return 'border-textMuted';
+    case 'On Track': return 'border-emerald-400/60';
+    case 'Needs Attention': return 'border-amber-400/60';
+    case 'At Risk': return 'border-red-400/60';
+    case 'Stalled': return 'border-orange-400/60';
+    default: return 'border-border';
   }
 }
 
@@ -210,14 +210,24 @@ export function Review() {
           title={deal.deal_name}
           onBack={handleBack}
           action={
-            isLatestCall ? (
+            <div className="flex items-center gap-1.5">
               <button
-                onClick={() => setAddingCall(true)}
+                onClick={() => navigate('/app/inbox')}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary"
+                aria-label="Schedule Next Meeting"
               >
-                <Plus className="w-4 h-4" />
+                <Calendar className="w-4 h-4" />
               </button>
-            ) : undefined
+              {isLatestCall && (
+                <button
+                  onClick={() => setAddingCall(true)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary"
+                  aria-label="Add Call"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           }
         />
       </div>
@@ -228,13 +238,16 @@ export function Review() {
           <p className="text-textSecondary text-sm">
             {deal.company_name} · {deal.deal_stage} · {conv.title || formatDate(conv.created_at)}
           </p>
-          {isLatestCall && (
-            <div className="flex justify-end -mt-6">
+          <div className="flex justify-end gap-2 -mt-6">
+            <Button onClick={() => navigate('/app/inbox')} size="sm" variant="secondary">
+              <Calendar className="w-3.5 h-3.5" /> Schedule Next Meeting
+            </Button>
+            {isLatestCall && (
               <Button onClick={() => setAddingCall(true)} size="sm" variant="secondary">
                 <Plus className="w-3.5 h-3.5" /> Add Call
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className={cn('card p-4 md:p-6 border-l-4', borderColor)}>
@@ -257,13 +270,13 @@ export function Review() {
 
         {/* Highest Priority Risk (this call) - always open, headline */}
         {c.highest_priority_risk?.risk && (
-          <div className="card p-4 md:p-6 border border-red-200">
+          <div className="card p-4 md:p-6 border border-red-400/20">
             <h2 className="section-label mb-3">Highest Priority Risk</h2>
             <p className="text-textPrimary text-sm font-semibold mb-3">
               {c.highest_priority_risk.risk}
             </p>
             {c.highest_priority_risk.why_it_matters && (
-              <div className="bg-red-50 border border-red-100 rounded-lg p-3 mb-3">
+              <div className="bg-red-400/10 border border-red-400/20 rounded-lg p-3 mb-3">
                 <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
                 <p className="text-textSecondary text-xs leading-relaxed">
                   {c.highest_priority_risk.why_it_matters}
@@ -288,8 +301,8 @@ export function Review() {
               {c.what_youre_missing.map((item, i) => (
                 <div key={i} className="bg-surfaceHigh border border-border rounded-lg p-4">
                   <div className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-amber-700 text-xs font-bold">{i + 1}</span>
+                    <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
                     </div>
                     <div>
                       <p className="text-textPrimary text-xs font-medium mb-1.5">{item.gap}</p>
@@ -373,8 +386,8 @@ export function Review() {
             />
           </div>
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              <p className="text-red-600 text-xs">{error}</p>
+            <div className="bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+              <p className="text-red-400 text-xs">{error}</p>
             </div>
           )}
           <Button
