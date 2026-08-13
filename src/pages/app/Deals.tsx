@@ -240,78 +240,53 @@ export function Deals() {
           action={rows.length === 0 ? <Button onClick={() => navigate('/app/new')}>New Deal</Button> : undefined}
         />
       ) : (
-        <>
-          {/* Desktop: table */}
-          <div className="hidden md:block card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide">Deal Name</th>
-                  <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide">Company</th>
-                  <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide">Stage</th>
-                  <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide">Status</th>
-                  <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide">Value</th>
-                  <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide">Last Contact</th>
-                  <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide">Next Meeting</th>
+        // Same table on every breakpoint -- mobile scrolls horizontally
+        // instead of collapsing to a different card layout, so the full
+        // column set (incl. Value / Last Contact / Next Meeting) is always
+        // reachable, not hidden behind a simplified view.
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Deal Name</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Company</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Stage</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Status</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Value</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Last Contact</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Next Meeting</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(d => (
+                <tr
+                  key={d.id}
+                  onClick={() => navigate(`/app/deals/${d.id}`)}
+                  className="border-b border-border last:border-0 cursor-pointer hover:bg-surfaceHigh active:bg-surfaceHigh transition-colors"
+                >
+                  <td className="px-5 py-3.5 font-medium text-textPrimary whitespace-nowrap">{d.deal_name}</td>
+                  <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">{d.company_name}</td>
+                  <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">{d.deal_stage}</td>
+                  <td className="px-5 py-3.5 whitespace-nowrap">
+                    <span
+                      className="text-xs font-semibold px-2 py-0.5 rounded-full border"
+                      style={getStatusStyle(d.current_status || 'Unknown')}
+                    >
+                      {d.current_status || 'Unknown'}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">{formatValue(d.deal_value)}</td>
+                  <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">
+                    {d.last_contact ? formatDate(d.last_contact) : '—'}
+                  </td>
+                  <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">
+                    {d.next_meeting ? formatDate(d.next_meeting) : '—'}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filtered.map(d => (
-                  <tr
-                    key={d.id}
-                    onClick={() => navigate(`/app/deals/${d.id}`)}
-                    className="border-b border-border last:border-0 cursor-pointer hover:bg-surfaceHigh transition-colors"
-                  >
-                    <td className="px-5 py-3.5 font-medium text-textPrimary">{d.deal_name}</td>
-                    <td className="px-5 py-3.5 text-textSecondary">{d.company_name}</td>
-                    <td className="px-5 py-3.5 text-textSecondary">{d.deal_stage}</td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className="text-xs font-semibold px-2 py-0.5 rounded-full border"
-                        style={getStatusStyle(d.current_status || 'Unknown')}
-                      >
-                        {d.current_status || 'Unknown'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-textSecondary">{formatValue(d.deal_value)}</td>
-                    <td className="px-5 py-3.5 text-textSecondary">
-                      {d.last_contact ? formatDate(d.last_contact) : '—'}
-                    </td>
-                    <td className="px-5 py-3.5 text-textSecondary">
-                      {d.next_meeting ? formatDate(d.next_meeting) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile: cards */}
-          <div className="md:hidden space-y-2">
-            {filtered.map(d => (
-              <button
-                key={d.id}
-                onClick={() => navigate(`/app/deals/${d.id}`)}
-                className="w-full card p-4 text-left active:scale-[0.99] transition-transform"
-              >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <p className="text-textPrimary text-sm font-semibold truncate">{d.deal_name}</p>
-                  <span
-                    className="text-xs font-semibold px-2 py-0.5 rounded-full border flex-shrink-0"
-                    style={getStatusStyle(d.current_status || 'Unknown')}
-                  >
-                    {d.current_status || 'Unknown'}
-                  </span>
-                </div>
-                <p className="text-textSecondary text-xs mb-2">{d.company_name} · {d.deal_stage}</p>
-                <div className="flex items-center justify-between text-xs text-textMuted">
-                  <span>{formatValue(d.deal_value)}</span>
-                  <span>{d.last_contact ? formatDate(d.last_contact) : 'No contact yet'}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

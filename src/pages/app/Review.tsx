@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus, AlertTriangle, CheckCircle, Clock,
-  TrendingDown, Copy, Check, Activity, Layers, Calendar
+  TrendingDown, Copy, Check, Activity, Layers
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle } from '../../lib/kairo';
@@ -14,6 +14,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
+import { ScheduleMeetingButton } from '../../components/ui/ScheduleMeetingButton';
 import { formatDate, cn } from '../../lib/utils';
 
 // Call Status icons -- distinct from Deal Status, this describes only how
@@ -211,13 +212,7 @@ export function Review() {
           onBack={handleBack}
           action={
             <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => navigate('/app/inbox')}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary"
-                aria-label="Schedule Next Meeting"
-              >
-                <Calendar className="w-4 h-4" />
-              </button>
+              <ScheduleMeetingButton userId={user?.id} variant="icon" />
               {isLatestCall && (
                 <button
                   onClick={() => setAddingCall(true)}
@@ -239,9 +234,7 @@ export function Review() {
             {deal.company_name} · {deal.deal_stage} · {conv.title || formatDate(conv.created_at)}
           </p>
           <div className="flex justify-end gap-2 -mt-6">
-            <Button onClick={() => navigate('/app/inbox')} size="sm" variant="secondary">
-              <Calendar className="w-3.5 h-3.5" /> Schedule Next Meeting
-            </Button>
+            <ScheduleMeetingButton userId={user?.id} size="sm" />
             {isLatestCall && (
               <Button onClick={() => setAddingCall(true)} size="sm" variant="secondary">
                 <Plus className="w-3.5 h-3.5" /> Add Call

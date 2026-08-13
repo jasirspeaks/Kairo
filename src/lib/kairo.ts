@@ -152,3 +152,20 @@ export function getRiskLevel(status: string): 'high' | 'medium' | 'low' | 'none'
       return 'none';
   }
 }
+
+// "Schedule Next Meeting" opens the user's actual Google Calendar, not an
+// in-app scheduler -- Kairo has no calendar-write scope yet (read-only
+// google-calendar-sync only). calendar_connections has no stored account
+// email, so this is a generic deep link; the browser's own Google session
+// resolves the right account.
+export const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/r';
+
+export async function checkCalendarConnected(userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('calendar_connections')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('provider', 'google')
+    .maybeSingle();
+  return !!data;
+}
