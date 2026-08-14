@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, ArrowRight, Calendar, AlertTriangle, Clock, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { getStatusStyle } from '../../lib/kairo';
+import { getStatusStyle, syncGoogleCalendar } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, DealState, ScheduledMeeting } from '../../types';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -131,7 +131,11 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
-    fetchData();
+    // Every time the user lands on the Dashboard, refresh their calendar
+    // first -- this is the "opens the app" moment, so it's the other
+    // natural place (besides Inbox) where a stale meeting should get
+    // caught and reconciled before anything renders.
+    syncGoogleCalendar().then(fetchData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -174,6 +178,7 @@ export function Dashboard() {
       .select('*, deals(deal_name)')
       .eq('user_id', user!.id)
       .eq('status', 'assigned')
+      .is('cancelled_at', null)
       .gte('start_time', new Date().toISOString())
       .order('start_time', { ascending: true })
       .limit(8);

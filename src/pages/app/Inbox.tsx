@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Inbox as InboxIcon, Building2, ArrowRight, CalendarClock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, syncGoogleCalendar } from '../../lib/kairo';
 import { Deal, Conversation, PendingCall } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
@@ -79,24 +79,10 @@ export function Inbox() {
   async function syncCalendar() {
     if (!user) return;
     setSyncing(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      // If the user hasn't connected a calendar, this will just 404 --
-      // that's fine, we simply won't have upcoming meetings to show.
-      await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-    } catch {
-      // Silently ignore -- sync failures shouldn't block viewing the Inbox.
-    } finally {
-      setSyncing(false);
-    }
+    // If the user hasn't connected a calendar, syncGoogleCalendar just
+    // no-ops -- that's fine, we simply won't have upcoming meetings to show.
+    await syncGoogleCalendar();
+    setSyncing(false);
   }
 
   async function fetchData() {
@@ -106,6 +92,7 @@ export function Inbox() {
         .select('*')
         .eq('user_id', user!.id)
         .eq('status', 'unassigned')
+        .is('cancelled_at', null)
         .order('start_time', { ascending: true }),
       supabase
         .from('pending_calls')

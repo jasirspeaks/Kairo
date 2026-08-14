@@ -5,7 +5,7 @@ import {
   TrendingDown, Copy, Check, Activity, Layers
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, Conversation, DEAL_STAGES, DealStage } from '../../types';
 import { Button } from '../../components/ui/Button';
@@ -149,8 +149,14 @@ export function Review() {
       await saveDealState(deal.id, user.id, review);
       await saveStakeholders(deal.id, user.id, review);
 
+      // The user can only pick stages through "Decision" -- if this call's
+      // outcome reads as an unambiguous Won or Lost, promote the deal's
+      // stage to the matching Closed value automatically rather than
+      // leaving it on whatever stage was selected in this form.
+      const resolvedStage = resolveDealStage(newDealStage, review.deal.status);
+
       await supabase.from('deals').update({
-        deal_stage: newDealStage,
+        deal_stage: resolvedStage,
         risk_level: getRiskLevel(review.deal.status),
         updated_at: new Date().toISOString(),
       }).eq('id', deal.id);
@@ -205,26 +211,10 @@ export function Review() {
   return (
     <div className="animate-fade-in max-w-2xl">
 
-      {/* Mobile: sticky top bar with deal name + Add Call action */}
+      {/* Mobile: sticky top bar with deal name -- actions live at the
+          bottom of the page, not up here. */}
       <div className="-mx-4 md:hidden">
-        <TopBar
-          title={deal.deal_name}
-          onBack={handleBack}
-          action={
-            <div className="flex items-center gap-1.5">
-              <ScheduleMeetingButton userId={user?.id} variant="icon" />
-              {isLatestCall && (
-                <button
-                  onClick={() => setAddingCall(true)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary"
-                  aria-label="Add Call"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          }
-        />
+        <TopBar title={deal.deal_name} onBack={handleBack} />
       </div>
 
       {/* Sticky verdict header - stays visible while scrolling on mobile */}
@@ -233,14 +223,6 @@ export function Review() {
           <p className="text-textSecondary text-sm">
             {deal.company_name} · {deal.deal_stage} · {conv.title || formatDate(conv.created_at)}
           </p>
-          <div className="flex justify-end gap-2 -mt-6">
-            <ScheduleMeetingButton userId={user?.id} size="sm" />
-            {isLatestCall && (
-              <Button onClick={() => setAddingCall(true)} size="sm" variant="secondary">
-                <Plus className="w-3.5 h-3.5" /> Add Call
-              </Button>
-            )}
-          </div>
         </div>
 
         <div className={cn('card p-4 md:p-6 border-l-4', borderColor)}>
@@ -346,6 +328,17 @@ export function Review() {
             <p className="text-textPrimary text-sm font-medium">{c.manager_note}</p>
           </div>
         )}
+
+        {/* Actions live at the bottom of the review, not the top -- the
+            call's findings are the first thing the user should see. */}
+        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+          <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="flex-1" />
+          {isLatestCall && (
+            <Button onClick={() => setAddingCall(true)} variant="secondary" className="flex-1">
+              <Plus className="w-4 h-4" /> Add Call
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Add Call - bottom sheet on mobile, centered dialog on desktop */}

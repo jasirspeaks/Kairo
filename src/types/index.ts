@@ -8,7 +8,9 @@ export type DealLifecycle = 'active' | 'stalled' | 'won' | 'lost';
 export type RiskLevel = 'high' | 'medium' | 'low' | 'none';
 export type DealConfidence = 'High' | 'Medium' | 'Low';
 
-// Deal Stage: where the opportunity sits in the sales process.
+// Deal Stage: where the opportunity sits in the sales process. Closed Won
+// and Closed Lost are real values a deal can hold (set automatically, see
+// below) but are not user-selectable -- see DEAL_STAGES.
 export type DealStage =
   | 'Qualification'
   | 'Discovery'
@@ -18,9 +20,17 @@ export type DealStage =
   | 'Proposal'
   | 'Negotiation'
   | 'Procurement'
+  | 'Decision'
   | 'Closed Won'
   | 'Closed Lost';
 
+// The stages a user can pick from a dropdown (New Deal, Add Call). Closed
+// Won/Closed Lost are deliberately excluded here -- a user never manually
+// sets a deal to closed. Instead, when a call's outcome is unambiguous,
+// Kairo reads the AI's deal.status (Won/Lost) and promotes deal_stage to
+// the matching Closed value automatically. "Decision" is the last
+// user-selectable stage and covers everything from final decision-maker
+// review through waiting on a signature.
 export const DEAL_STAGES: DealStage[] = [
   'Qualification',
   'Discovery',
@@ -30,8 +40,7 @@ export const DEAL_STAGES: DealStage[] = [
   'Proposal',
   'Negotiation',
   'Procurement',
-  'Closed Won',
-  'Closed Lost',
+  'Decision',
 ];
 
 // Deal Status: Kairo's assessment of the deal's current condition.

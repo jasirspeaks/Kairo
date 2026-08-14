@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { supabase } from './supabase';
-import { DealReview, DealStatus, DEAL_STATUS_COLORS } from '../types';
+import { DealReview, DealStatus, DealStage, DEAL_STATUS_COLORS } from '../types';
 
 interface SellerContext {
   what_you_sell?: string;
@@ -153,6 +153,19 @@ export function getRiskLevel(status: string): 'high' | 'medium' | 'low' | 'none'
   }
 }
 
+// A user picks a stage up through "Decision" (see DEAL_STAGES) -- Closed
+// Won and Closed Lost are never manually selected. Instead, every time a
+// call comes back, check the AI's deal.status: if it's unambiguously Won
+// or Lost, the deal_stage should reflect that regardless of which stage
+// the user had it parked in. Any other status leaves the user's chosen
+// stage untouched -- this only ever moves a deal forward into a closed
+// state, never back out of one or sideways between open stages.
+export function resolveDealStage(selectedStage: DealStage, dealStatus: string): DealStage {
+  if (dealStatus === 'Won') return 'Closed Won';
+  if (dealStatus === 'Lost') return 'Closed Lost';
+  return selectedStage;
+}
+
 // "Schedule Next Meeting" opens the user's actual Google Calendar, not an
 // in-app scheduler -- Kairo has no calendar-write scope yet (read-only
 // google-calendar-sync only). calendar_connections has no stored account
@@ -168,4 +181,26 @@ export async function checkCalendarConnected(userId: string): Promise<boolean> {
     .eq('provider', 'google')
     .maybeSingle();
   return !!data;
+}
+
+// Single place that knows how to call google-calendar-sync, used by every
+// entry point that needs a fresh read of the user's calendar: Inbox on
+// load, Dashboard on load, and ScheduleMeetingButton when the user returns
+// to the tab. Silently no-ops if there's no session or no calendar
+// connected (a 404 from the function in that case) -- callers shouldn't
+// have to know or care why a sync didn't run, only that it was attempted.
+export async function syncGoogleCalendar(): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
+  } catch {
+    // Sync failures shouldn't block rendering whatever page called this.
+  }
 }

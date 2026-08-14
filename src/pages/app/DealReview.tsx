@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, Phone, Calendar, Users, Clock,
+  AlertTriangle, Phone, Users, Clock,
   ChevronRight, Building2, UserPlus, TrendingUp, TrendingDown,
   Minus, CheckCircle2, AlertCircle
 } from 'lucide-react';
@@ -364,7 +364,7 @@ export function DealReview() {
         supabase.from('conversations').select('*').eq('deal_id', dealId).order('created_at', { ascending: true }),
         supabase.from('stakeholders').select('*').eq('deal_id', dealId).order('created_at', { ascending: true }),
         supabase.from('scheduled_meetings').select('start_time, title')
-          .eq('deal_id', dealId).eq('status', 'assigned')
+          .eq('deal_id', dealId).eq('status', 'assigned').is('cancelled_at', null)
           .gte('start_time', new Date().toISOString())
           .order('start_time', { ascending: true }).limit(1).maybeSingle(),
       ]);
@@ -474,13 +474,19 @@ export function DealReview() {
   );
 
   return (
-    <div className="animate-fade-in max-w-2xl md:max-w-5xl">
+    <div className="animate-fade-in w-full">
       <div className="-mx-4 md:hidden">
         <TopBar title={deal.deal_name} onBack={() => navigate('/app/deals')} />
       </div>
 
-      {/* Always-visible summary -- deal facts only, never toggled away */}
-      <div className="card p-4 md:p-6 mb-4">
+      {/* Always-visible summary -- deal facts only, never toggled away.
+          w-full + no page-level max-width here: AppLayout already caps the
+          whole page at max-w-5xl, so this card and the two-column grid
+          below both inherit that same width and their edges line up. A
+          second, narrower max-width on this page (as some other pages
+          intentionally use for single-column reading) would make this
+          card render narrower than the grid. */}
+      <div className="card p-4 md:p-6 mb-4 w-full">
         <div className="hidden md:flex items-start justify-between mb-4">
           <div>
             <h1 className="text-xl font-display font-bold text-textPrimary mb-1">{deal.deal_name}</h1>
@@ -506,7 +512,7 @@ export function DealReview() {
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
           <div className="flex flex-col items-center md:items-start">
             <div className="relative w-16 h-16 mb-1">
               <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
@@ -541,14 +547,14 @@ export function DealReview() {
             </span>
             <span className="text-xs text-textMuted mt-0.5">Last Contact</span>
           </div>
-        </div>
 
-        {nextMeeting && (
-          <div className="mt-4 pt-4 border-t border-border flex items-center gap-2 text-xs text-textSecondary">
-            <Calendar className="w-3.5 h-3.5 text-primary" />
-            Next meeting: {nextMeeting.title || 'Scheduled call'} — {formatDate(nextMeeting.start_time)}
+          <div className="flex flex-col items-center md:items-start justify-center">
+            <span className="text-sm font-semibold text-textPrimary">
+              {nextMeeting ? formatDate(nextMeeting.start_time) : '—'}
+            </span>
+            <span className="text-xs text-textMuted mt-0.5">Next Meeting</span>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Desktop: two columns. Left = primary insight cards. Right = Timeline / Risk Evolution / Stakeholders. */}
@@ -557,7 +563,7 @@ export function DealReview() {
           {primaryInsightCards}
 
           <div>
-            <ScheduleMeetingButton userId={user?.id} className="w-full" />
+            <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="w-full" />
           </div>
 
           {/* Deal Activity: full chronological history of this deal, newest first */}
@@ -604,7 +610,7 @@ export function DealReview() {
             {primaryInsightCards}
 
             <div>
-              <ScheduleMeetingButton userId={user?.id} className="w-full" />
+              <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="w-full" />
             </div>
 
             <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, User, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
@@ -104,7 +104,15 @@ export function NewDeal() {
       await saveDealState(deal.id, user.id, review);
       await saveStakeholders(deal.id, user.id, review);
 
+      // A first call can already be an explicit close (logging a deal
+      // that was won or lost before the seller started using Kairo) --
+      // resolveDealStage promotes to Closed Won/Lost only when the AI's
+      // read is unambiguous, otherwise it's a no-op and the stage the
+      // user picked stands.
+      const resolvedStage = resolveDealStage(dealStage, review.deal.status);
+
       await supabase.from('deals').update({
+        deal_stage: resolvedStage,
         risk_level: getRiskLevel(review.deal.status),
         updated_at: new Date().toISOString(),
       }).eq('id', deal.id);
@@ -334,9 +342,9 @@ export function NewDeal() {
           </div>
 
           {error && (
-            <div className="flex gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
-              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-red-600 text-xs">{error}</p>
+            <div className="flex gap-2 bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-3">
+              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-red-400 text-xs">{error}</p>
             </div>
           )}
 

@@ -63,7 +63,7 @@ export function Deals() {
       supabase.from('deal_state').select('deal_id, current_status').in('deal_id', dealIds),
       supabase.from('conversations').select('deal_id, created_at, status').in('deal_id', dealIds).order('created_at', { ascending: false }),
       supabase.from('scheduled_meetings').select('deal_id, start_time')
-        .in('deal_id', dealIds).eq('status', 'assigned')
+        .in('deal_id', dealIds).eq('status', 'assigned').is('cancelled_at', null)
         .gte('start_time', new Date().toISOString()).order('start_time', { ascending: true }),
     ]);
 
@@ -240,16 +240,15 @@ export function Deals() {
           action={rows.length === 0 ? <Button onClick={() => navigate('/app/new')}>New Deal</Button> : undefined}
         />
       ) : (
-        // Same table on every breakpoint -- mobile scrolls horizontally
-        // instead of collapsing to a different card layout, so the full
-        // column set (incl. Value / Last Contact / Next Meeting) is always
-        // reachable, not hidden behind a simplified view.
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm min-w-[720px]">
+        // Mobile scrolls horizontally so every column stays reachable.
+        // Desktop never scrolls -- the table sits in the full-width shell
+        // and all seven columns need to be visible in one glance.
+        <div className="card overflow-x-auto md:overflow-visible">
+          <table className="w-full text-sm min-w-[720px] md:min-w-0">
             <thead>
               <tr className="border-b border-border text-left">
-                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Deal Name</th>
-                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Company</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap md:whitespace-normal">Deal Name</th>
+                <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap md:whitespace-normal">Company</th>
                 <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Stage</th>
                 <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Status</th>
                 <th className="px-5 py-3 text-xs font-semibold text-textMuted uppercase tracking-wide whitespace-nowrap">Value</th>
@@ -264,8 +263,8 @@ export function Deals() {
                   onClick={() => navigate(`/app/deals/${d.id}`)}
                   className="border-b border-border last:border-0 cursor-pointer hover:bg-surfaceHigh active:bg-surfaceHigh transition-colors"
                 >
-                  <td className="px-5 py-3.5 font-medium text-textPrimary whitespace-nowrap">{d.deal_name}</td>
-                  <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">{d.company_name}</td>
+                  <td className="px-5 py-3.5 font-medium text-textPrimary whitespace-nowrap md:whitespace-normal md:max-w-[220px]">{d.deal_name}</td>
+                  <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap md:whitespace-normal md:max-w-[160px]">{d.company_name}</td>
                   <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">{d.deal_stage}</td>
                   <td className="px-5 py-3.5 whitespace-nowrap">
                     <span
