@@ -11,27 +11,16 @@ import { DEAL_STAGES, DealStage } from '../../types';
 
 type Step = 'deal' | 'transcript' | 'awaiting-meeting' | 'scheduled';
 
-// Persists the in-flight "waiting on a scheduled meeting" state so it
-// survives a full page reload -- on mobile, opening an external calendar
-// link from a standalone/PWA context can background or even reload this
-// page rather than leaving it running in an untouched background tab the
-// way a desktop browser does. Without this, a reload would silently lose
-// track of the fact that we were waiting on anything.
-const AWAITING_MEETING_STORAGE_KEY = 'kairo:newdeal:awaiting-meeting';
+// Tailwind's `md` breakpoint -- used once, at click time, to decide whether
+// "Schedule First Meeting" waits for a success screen (desktop) or just
+// sends the user to Dashboard on return (mobile). See handleScheduleFirstMeeting.
+const DESKTOP_MEDIA_QUERY = '(min-width: 768px)';
 
-// How long we let a "Schedule First Meeting" attempt wait for the event to
-// show up as assigned before giving up quietly. Generous because on mobile
-// the tab is backgrounded (often fully suspended) while the user is away in
-// their calendar app, so setInterval-based polling can't be relied on to
-// run during that gap -- the real check happens on return via
-// visibilitychange, and this window has to survive however long that takes.
-const AWAIT_MEETING_TIMEOUT_MS = 90_000;
+// How long we let a "Schedule First Meeting" click wait for the event to
+// show up as assigned before giving up quietly. Desktop-only -- see
+// handleScheduleFirstMeeting for why mobile doesn't use this at all.
+const AWAIT_MEETING_TIMEOUT_MS = 20_000;
 const AWAIT_MEETING_POLL_MS = 1500;
-// After coming back into view, keep re-checking for a few seconds -- the
-// scheduled_meetings row can lag slightly behind syncGoogleCalendar()
-// resolving, so one immediate check isn't always enough.
-const RETURN_RECHECK_WINDOW_MS = 8_000;
-const RETURN_RECHECK_INTERVAL_MS = 1000;
 
 export function NewDeal() {
   const navigate = useNavigate();
@@ -53,45 +42,11 @@ export function NewDeal() {
   const [showConnectPrompt, setShowConnectPrompt] = useState(false);
   const [creatingDeal, setCreatingDeal] = useState(false);
   const awaitingReturn = useRef(false);
+  // Mobile takes a different path on return than desktop (straight to
+  // Dashboard, no success screen) -- see handleScheduleFirstMeeting.
+  const awaitingReturnIsMobile = useRef(false);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // On mount, recover an in-flight "awaiting meeting" state if the page
-  // reloaded while the user was away in their calendar app (common on
-  // mobile). Only resumes if it's recent -- a stale leftover from a much
-  // earlier abandoned attempt shouldn't silently resurrect itself.
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(AWAITING_MEETING_STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as { dealId: string; dealName: string; companyName: string; startedAt: number };
-      const age = Date.now() - saved.startedAt;
-      if (age > AWAIT_MEETING_TIMEOUT_MS) {
-        sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
-        return;
-      }
-      setScheduledDealId(saved.dealId);
-      setDealName(saved.dealName);
-      setCompanyName(saved.companyName);
-      awaitingReturn.current = true;
-      beginAwaitingMeeting(saved.dealId, AWAIT_MEETING_TIMEOUT_MS - age);
-      // Rehydration happens on mount; page just reloaded, so we're already
-      // "visible" -- run the return check immediately rather than waiting
-      // for a visibilitychange event that won't fire again on its own.
-      (async () => {
-        await syncGoogleCalendar();
-        const found = await checkForAssignedMeeting(saved.dealId);
-        if (found) {
-          clearPolling();
-          sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
-          setStep('scheduled');
-        }
-      })();
-    } catch {
-      // Corrupt/unavailable storage shouldn't block the page from loading.
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -125,84 +80,62 @@ export function NewDeal() {
     return !!data;
   }
 
-  function beginAwaitingMeeting(dealId: string, timeoutMs: number = AWAIT_MEETING_TIMEOUT_MS) {
+  // Desktop only. Shows the "waiting on your meeting" screen, then the
+  // success screen once the scheduled_meetings row shows up assigned, or
+  // quietly falls back to the deal step if nothing turns up in time.
+  function beginAwaitingMeeting(dealId: string) {
     setStep('awaiting-meeting');
 
     pollIntervalRef.current = setInterval(async () => {
       const found = await checkForAssignedMeeting(dealId);
       if (found) {
         clearPolling();
-        sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
         setStep('scheduled');
       }
     }, AWAIT_MEETING_POLL_MS);
 
     pollTimeoutRef.current = setTimeout(() => {
       clearPolling();
-      sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
       // No assigned meeting turned up in time -- the user either didn't
       // finish scheduling or made an event with no video link. Return
       // quietly to deal info; the deal itself is already saved.
       setStep('deal');
-    }, Math.max(timeoutMs, 0));
+    }, AWAIT_MEETING_TIMEOUT_MS);
   }
 
-  // Fires when the user comes back to this tab/app after Google Calendar
-  // opened. `visibilitychange` is used instead of `focus` because on
-  // mobile, opening Google Calendar frequently navigates the same tab (or
-  // backgrounds it in a way `window focus` doesn't reliably report on
-  // return) -- `document.visibilityState` is the signal that actually
-  // fires consistently across mobile browsers when the user switches back.
+  // Fires when the user comes back to this tab after Google Calendar opened.
+  // Desktop: sync, check for the assigned meeting, show success or fall
+  // back to deal info (the existing, working desktop behavior -- unchanged).
+  // Mobile: skip all of that entirely and just go to Dashboard. Mobile
+  // browsers don't reliably fire `focus` the same way desktop tabs do, so
+  // rather than chase that detection, mobile doesn't wait for a signal at
+  // all here -- it goes straight to Dashboard as soon as the user is back.
   useEffect(() => {
-    async function handleReturn() {
-      if (document.visibilityState !== 'visible') return;
+    async function handleFocus() {
       if (!awaitingReturn.current) return;
+      const isMobile = awaitingReturnIsMobile.current;
       awaitingReturn.current = false;
+      awaitingReturnIsMobile.current = false;
 
-      await syncGoogleCalendar();
-
-      if (!scheduledDealId) return;
-
-      // One immediate check, then a short burst of re-checks -- the
-      // scheduled_meetings write can lag a moment behind the sync call
-      // resolving, especially right after a backgrounded tab wakes up.
-      const immediatelyFound = await checkForAssignedMeeting(scheduledDealId);
-      if (immediatelyFound) {
-        clearPolling();
-        sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
-        setStep('scheduled');
+      if (isMobile) {
+        navigate('/app/dashboard');
         return;
       }
 
-      const recheckStarted = Date.now();
-      const recheckInterval = setInterval(async () => {
+      await syncGoogleCalendar();
+      if (scheduledDealId) {
         const found = await checkForAssignedMeeting(scheduledDealId);
         if (found) {
-          clearInterval(recheckInterval);
           clearPolling();
-          sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
           setStep('scheduled');
-          return;
         }
-        if (Date.now() - recheckStarted > RETURN_RECHECK_WINDOW_MS) {
-          clearInterval(recheckInterval);
-          // Not found even after the return re-check burst -- leave the
-          // background poll/timeout (already running) to keep watching in
-          // case the calendar write is just slow, or to eventually fall
-          // back to the deal step quietly.
-        }
-      }, RETURN_RECHECK_INTERVAL_MS);
+        // If not found yet, the background poll (already running) keeps
+        // checking until AWAIT_MEETING_TIMEOUT_MS.
+      }
     }
-
-    document.addEventListener('visibilitychange', handleReturn);
-    // Also listen for 'focus' as a belt-and-suspenders desktop signal --
-    // harmless no-op on platforms where visibilitychange already covers it.
-    window.addEventListener('focus', handleReturn);
-    return () => {
-      document.removeEventListener('visibilitychange', handleReturn);
-      window.removeEventListener('focus', handleReturn);
-    };
-  }, [scheduledDealId]);
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [scheduledDealId, navigate]);
 
   async function createDealRow(): Promise<string | null> {
     if (!user) return null;
@@ -232,6 +165,13 @@ export function NewDeal() {
   // "Schedule First Meeting" -- only does anything if calendar is connected.
   // If it's not, this is a no-op other than surfacing the connect prompt;
   // no deal gets created and nothing opens.
+  //
+  // Desktop and mobile diverge after the deal is created: desktop shows an
+  // "awaiting meeting" screen and then a success screen once the meeting
+  // shows up assigned (see beginAwaitingMeeting / the focus handler above).
+  // Mobile skips all of that -- no waiting screen, no success screen, no
+  // detection of whether the meeting was actually created -- it just sends
+  // the user straight to Dashboard as soon as they're back in Kairo.
   async function handleScheduleFirstMeeting() {
     if (!calendarConnected) {
       setShowConnectPrompt(true);
@@ -253,23 +193,22 @@ export function NewDeal() {
     // Best-effort -- if this write fails the user still reaches Google
     // Calendar, they'd just need to assign the meeting manually afterward.
     await supabase.from('pending_schedule_intents').insert({ user_id: user.id, deal_id: dealId });
-    awaitingReturn.current = true;
 
-    try {
-      sessionStorage.setItem(AWAITING_MEETING_STORAGE_KEY, JSON.stringify({
-        dealId,
-        dealName: dealName.trim(),
-        companyName: companyName.trim(),
-        startedAt: Date.now(),
-      }));
-    } catch {
-      // Storage unavailable (e.g. private browsing) -- in-memory state
-      // still works for as long as the page itself stays alive.
-    }
+    const isMobile = typeof window.matchMedia === 'function'
+      ? !window.matchMedia(DESKTOP_MEDIA_QUERY).matches
+      : true;
+
+    awaitingReturn.current = true;
+    awaitingReturnIsMobile.current = isMobile;
 
     setCreatingDeal(false);
     window.open(GOOGLE_CALENDAR_URL, '_blank', 'noopener,noreferrer');
-    beginAwaitingMeeting(dealId);
+
+    if (!isMobile) {
+      beginAwaitingMeeting(dealId);
+    }
+    // Mobile: nothing else to do here. The focus handler above takes it
+    // from here and navigates to Dashboard as soon as the user returns.
   }
 
   function handleUploadFirstCall(e: React.FormEvent) {
