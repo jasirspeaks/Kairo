@@ -11,11 +11,27 @@ import { DEAL_STAGES, DealStage } from '../../types';
 
 type Step = 'deal' | 'transcript' | 'awaiting-meeting' | 'scheduled';
 
-// How long we let a "Schedule First Meeting" click wait for the event to
-// show up as assigned before giving up quietly. Mirrors the intent window
-// google-calendar-sync uses, plus a little slack for the sync round-trip.
-const AWAIT_MEETING_TIMEOUT_MS = 20_000;
+// Persists the in-flight "waiting on a scheduled meeting" state so it
+// survives a full page reload -- on mobile, opening an external calendar
+// link from a standalone/PWA context can background or even reload this
+// page rather than leaving it running in an untouched background tab the
+// way a desktop browser does. Without this, a reload would silently lose
+// track of the fact that we were waiting on anything.
+const AWAITING_MEETING_STORAGE_KEY = 'kairo:newdeal:awaiting-meeting';
+
+// How long we let a "Schedule First Meeting" attempt wait for the event to
+// show up as assigned before giving up quietly. Generous because on mobile
+// the tab is backgrounded (often fully suspended) while the user is away in
+// their calendar app, so setInterval-based polling can't be relied on to
+// run during that gap -- the real check happens on return via
+// visibilitychange, and this window has to survive however long that takes.
+const AWAIT_MEETING_TIMEOUT_MS = 90_000;
 const AWAIT_MEETING_POLL_MS = 1500;
+// After coming back into view, keep re-checking for a few seconds -- the
+// scheduled_meetings row can lag slightly behind syncGoogleCalendar()
+// resolving, so one immediate check isn't always enough.
+const RETURN_RECHECK_WINDOW_MS = 8_000;
+const RETURN_RECHECK_INTERVAL_MS = 1000;
 
 export function NewDeal() {
   const navigate = useNavigate();
@@ -39,6 +55,43 @@ export function NewDeal() {
   const awaitingReturn = useRef(false);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // On mount, recover an in-flight "awaiting meeting" state if the page
+  // reloaded while the user was away in their calendar app (common on
+  // mobile). Only resumes if it's recent -- a stale leftover from a much
+  // earlier abandoned attempt shouldn't silently resurrect itself.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(AWAITING_MEETING_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { dealId: string; dealName: string; companyName: string; startedAt: number };
+      const age = Date.now() - saved.startedAt;
+      if (age > AWAIT_MEETING_TIMEOUT_MS) {
+        sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
+        return;
+      }
+      setScheduledDealId(saved.dealId);
+      setDealName(saved.dealName);
+      setCompanyName(saved.companyName);
+      awaitingReturn.current = true;
+      beginAwaitingMeeting(saved.dealId, AWAIT_MEETING_TIMEOUT_MS - age);
+      // Rehydration happens on mount; page just reloaded, so we're already
+      // "visible" -- run the return check immediately rather than waiting
+      // for a visibilitychange event that won't fire again on its own.
+      (async () => {
+        await syncGoogleCalendar();
+        const found = await checkForAssignedMeeting(saved.dealId);
+        if (found) {
+          clearPolling();
+          sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
+          setStep('scheduled');
+        }
+      })();
+    } catch {
+      // Corrupt/unavailable storage shouldn't block the page from loading.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -72,44 +125,83 @@ export function NewDeal() {
     return !!data;
   }
 
-  function beginAwaitingMeeting(dealId: string) {
+  function beginAwaitingMeeting(dealId: string, timeoutMs: number = AWAIT_MEETING_TIMEOUT_MS) {
     setStep('awaiting-meeting');
 
     pollIntervalRef.current = setInterval(async () => {
       const found = await checkForAssignedMeeting(dealId);
       if (found) {
         clearPolling();
+        sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
         setStep('scheduled');
       }
     }, AWAIT_MEETING_POLL_MS);
 
     pollTimeoutRef.current = setTimeout(() => {
       clearPolling();
+      sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
       // No assigned meeting turned up in time -- the user either didn't
       // finish scheduling or made an event with no video link. Return
       // quietly to deal info; the deal itself is already saved.
       setStep('deal');
-    }, AWAIT_MEETING_TIMEOUT_MS);
+    }, Math.max(timeoutMs, 0));
   }
 
-  // Fires when the user comes back to this tab after Google Calendar opened.
+  // Fires when the user comes back to this tab/app after Google Calendar
+  // opened. `visibilitychange` is used instead of `focus` because on
+  // mobile, opening Google Calendar frequently navigates the same tab (or
+  // backgrounds it in a way `window focus` doesn't reliably report on
+  // return) -- `document.visibilityState` is the signal that actually
+  // fires consistently across mobile browsers when the user switches back.
   useEffect(() => {
-    async function handleFocus() {
+    async function handleReturn() {
+      if (document.visibilityState !== 'visible') return;
       if (!awaitingReturn.current) return;
       awaitingReturn.current = false;
+
       await syncGoogleCalendar();
-      if (scheduledDealId) {
+
+      if (!scheduledDealId) return;
+
+      // One immediate check, then a short burst of re-checks -- the
+      // scheduled_meetings write can lag a moment behind the sync call
+      // resolving, especially right after a backgrounded tab wakes up.
+      const immediatelyFound = await checkForAssignedMeeting(scheduledDealId);
+      if (immediatelyFound) {
+        clearPolling();
+        sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
+        setStep('scheduled');
+        return;
+      }
+
+      const recheckStarted = Date.now();
+      const recheckInterval = setInterval(async () => {
         const found = await checkForAssignedMeeting(scheduledDealId);
         if (found) {
+          clearInterval(recheckInterval);
           clearPolling();
+          sessionStorage.removeItem(AWAITING_MEETING_STORAGE_KEY);
           setStep('scheduled');
+          return;
         }
-        // If not found yet, the background poll (already running) keeps
-        // checking until AWAIT_MEETING_TIMEOUT_MS.
-      }
+        if (Date.now() - recheckStarted > RETURN_RECHECK_WINDOW_MS) {
+          clearInterval(recheckInterval);
+          // Not found even after the return re-check burst -- leave the
+          // background poll/timeout (already running) to keep watching in
+          // case the calendar write is just slow, or to eventually fall
+          // back to the deal step quietly.
+        }
+      }, RETURN_RECHECK_INTERVAL_MS);
     }
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+
+    document.addEventListener('visibilitychange', handleReturn);
+    // Also listen for 'focus' as a belt-and-suspenders desktop signal --
+    // harmless no-op on platforms where visibilitychange already covers it.
+    window.addEventListener('focus', handleReturn);
+    return () => {
+      document.removeEventListener('visibilitychange', handleReturn);
+      window.removeEventListener('focus', handleReturn);
+    };
   }, [scheduledDealId]);
 
   async function createDealRow(): Promise<string | null> {
@@ -162,6 +254,18 @@ export function NewDeal() {
     // Calendar, they'd just need to assign the meeting manually afterward.
     await supabase.from('pending_schedule_intents').insert({ user_id: user.id, deal_id: dealId });
     awaitingReturn.current = true;
+
+    try {
+      sessionStorage.setItem(AWAITING_MEETING_STORAGE_KEY, JSON.stringify({
+        dealId,
+        dealName: dealName.trim(),
+        companyName: companyName.trim(),
+        startedAt: Date.now(),
+      }));
+    } catch {
+      // Storage unavailable (e.g. private browsing) -- in-memory state
+      // still works for as long as the page itself stays alive.
+    }
 
     setCreatingDeal(false);
     window.open(GOOGLE_CALENDAR_URL, '_blank', 'noopener,noreferrer');
