@@ -271,22 +271,24 @@ export function NewDeal() {
 
   if (step === 'awaiting-meeting') {
     return (
-      <div className="animate-fade-in max-w-xl">
+      <div className="animate-fade-in">
         <div className="-mx-4 md:hidden">
           <TopBar title="Scheduling" />
         </div>
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="relative mb-8">
-            <div className="w-14 h-14 rounded-full border-2 border-border flex items-center justify-center">
-              <div className="w-10 h-10 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+        <div className="min-h-[calc(100vh-64px)] md:min-h-[calc(100vh-160px)] flex items-center justify-center px-4">
+          <div className="flex flex-col items-center text-center max-w-xs">
+            <div className="relative mb-8">
+              <div className="w-14 h-14 rounded-full border-2 border-border flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+              </div>
             </div>
+            <p className="text-textPrimary font-semibold font-display text-lg mb-2">
+              Waiting for your meeting
+            </p>
+            <p className="text-textSecondary text-sm">
+              Finish scheduling in Google Calendar, then come back here. Kairo will pick it up automatically.
+            </p>
           </div>
-          <p className="text-textPrimary font-semibold font-display text-lg mb-2">
-            Waiting for your meeting
-          </p>
-          <p className="text-textSecondary text-sm max-w-xs">
-            Finish scheduling in Google Calendar, then come back here. Kairo will pick it up automatically.
-          </p>
         </div>
       </div>
     );
@@ -294,24 +296,28 @@ export function NewDeal() {
 
   if (step === 'scheduled') {
     return (
-      <div className="animate-fade-in max-w-xl">
+      <div className="animate-fade-in">
         <div className="-mx-4 md:hidden">
           <TopBar title="Deal Created" />
         </div>
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6">
-            <CheckCircle2 className="w-8 h-8 text-primary" />
+        <div className="min-h-[calc(100vh-64px)] md:min-h-[calc(100vh-160px)] flex items-center justify-center px-4">
+          <div className="w-full max-w-sm">
+            <div className="card p-8 flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6">
+                <CheckCircle2 className="w-8 h-8 text-primary" />
+              </div>
+              <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">
+                {dealName} is on the board
+              </h1>
+              <p className="text-textSecondary text-sm leading-relaxed mb-8">
+                Your first meeting with {companyName} is on the calendar. Kairo will start building the deal review as soon as the call happens.
+              </p>
+              <Button size="lg" className="w-full" onClick={() => navigate('/app/dashboard')}>
+                Go to Dashboard
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
-          <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">
-            {dealName} is on the board
-          </h1>
-          <p className="text-textSecondary text-sm max-w-sm mb-8 leading-relaxed">
-            Your first meeting with {companyName} is on the calendar. Kairo will start building the deal review as soon as the call happens.
-          </p>
-          <Button size="lg" onClick={() => navigate('/app/dashboard')}>
-            Go to Dashboard
-            <ArrowRight className="w-4 h-4" />
-          </Button>
         </div>
       </div>
     );
