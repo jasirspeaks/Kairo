@@ -32,7 +32,7 @@ export function Deals() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<DealStage | 'all'>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
   const [showFilters, setShowFilters] = useState(false);
 
