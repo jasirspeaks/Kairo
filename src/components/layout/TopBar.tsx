@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Zap, LogOut, Settings } from 'lucide-react';
+import { ChevronLeft, Zap, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 interface TopBarProps {
@@ -10,12 +9,11 @@ interface TopBarProps {
 }
 
 export function TopBar({ title, onBack, action }: TopBarProps) {
-  const navigate = useNavigate();
   const { profile, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-border pt-safe-t">
+    <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur border-b border-border pt-safe-t mb-4">
       <div className="flex items-center justify-between h-14 px-4">
         <div className="flex items-center gap-2 min-w-0">
           {onBack ? (
@@ -47,12 +45,6 @@ export function TopBar({ title, onBack, action }: TopBarProps) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
           <div className="absolute right-4 top-14 z-50 w-44 card p-1.5 animate-fade-in">
-            <button
-              onClick={() => { setMenuOpen(false); navigate('/app/settings'); }}
-              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-textSecondary hover:bg-surfaceHigh min-h-[44px]"
-            >
-              <Settings className="w-4 h-4" /> Settings
-            </button>
             <button
               onClick={signOut}
               className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-red-500 hover:bg-red-50 min-h-[44px]"

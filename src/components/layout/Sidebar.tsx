@@ -1,23 +1,20 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Plus, FolderOpen, Settings, LogOut, Zap, Inbox
+  LayoutDashboard, Plus, FolderOpen, Settings, Zap, Inbox
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useAuth } from '../../hooks/useAuth';
 
 const NAV_ITEMS = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/app/inbox', label: 'Inbox', icon: Inbox },
-  { path: '/app/new', label: 'New Deal', icon: Plus },
   { path: '/app/deals', label: 'Deals', icon: FolderOpen },
+  { path: '/app/inbox', label: 'Inbox', icon: Inbox },
   { path: '/app/settings', label: 'Settings', icon: Settings },
 ];
 
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile, signOut } = useAuth();
 
   function isActive(path: string) {
     if (path === '/app/deals') {
@@ -60,23 +57,14 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User + Sign out */}
-      <div className="px-4 pb-5 border-t border-border pt-4">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-xs font-semibold text-primary flex-shrink-0">
-            {(profile?.name || profile?.email || 'U')[0].toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-textPrimary truncate">{profile?.name || 'User'}</p>
-            <p className="text-xs text-textMuted truncate">{profile?.email}</p>
-          </div>
-        </div>
+      {/* New Deal — accent action, pinned to bottom */}
+      <div className="px-3 pb-5 pt-3 border-t border-border">
         <button
-          onClick={signOut}
-          className="flex items-center gap-2 text-xs text-textMuted hover:text-red-500 transition-colors"
+          onClick={() => navigate('/app/new')}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primaryHover transition-colors duration-200 shadow-purple-glow-sm"
         >
-          <LogOut className="w-3.5 h-3.5" />
-          Sign out
+          <Plus className="w-4 h-4" />
+          New Deal
         </button>
       </div>
     </aside>

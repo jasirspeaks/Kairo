@@ -32,11 +32,11 @@ export function BottomNav() {
               <button
                 key={path}
                 onClick={() => navigate(path)}
-                className="relative -top-5 flex-shrink-0 self-center"
+                className="flex-1 flex items-center justify-center min-w-[44px]"
                 aria-label="New Deal"
               >
-                <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-purple-glow active:scale-95 transition-transform duration-150 ease-spring">
-                  <Icon className="w-6 h-6 text-white" />
+                <div className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shadow-purple-glow-sm active:scale-95 transition-transform duration-150 ease-spring">
+                  <Icon className="w-5 h-5 text-white" />
                 </div>
               </button>
             );
