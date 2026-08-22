@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ArrowRight, Calendar, AlertTriangle, Clock, TrendingUp } from 'lucide-react';
+import { Building2, ArrowRight, Calendar, CalendarX, AlertTriangle, Clock, TrendingUp, Wallet, ShieldAlert } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle, syncGoogleCalendar } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
-import { Deal, DealState, ScheduledMeeting } from '../../types';
+import { Deal, DealState, DealStatus, ScheduledMeeting } from '../../types';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { cn } from '../../lib/utils';
@@ -85,16 +85,28 @@ function MeetingCard({ meeting }: { meeting: ScheduledMeeting & { deal_name?: st
   );
 }
 
-// Side-by-side summary tile — used for Active Deals and Deals At Risk.
+function formatValue(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+    notation: value >= 100000 ? 'compact' : 'standard',
+  }).format(value);
+}
+
+// Side-by-side summary tile — used for Active Deals, Deals At Risk,
+// Pipeline Value, and Pipeline at Risk.
 function StatCard({
   label,
   value,
+  displayValue,
   icon,
   tone = 'default',
   onClick,
 }: {
   label: string;
   value: number;
+  displayValue?: string;
   icon: React.ReactNode;
   tone?: 'default' | 'danger';
   onClick: () => void;
@@ -102,7 +114,7 @@ function StatCard({
   return (
     <button
       onClick={onClick}
-      className="card-hover flex-1 p-4 text-left flex flex-col gap-3 min-w-0"
+      className="card-hover p-4 text-left flex flex-col gap-3 min-w-0"
     >
       <div
         className={cn(
@@ -114,8 +126,10 @@ function StatCard({
       >
         {icon}
       </div>
-      <div>
-        <p className="text-textPrimary text-2xl font-display font-bold leading-none">{value}</p>
+      <div className="min-w-0">
+        <p className="text-textPrimary text-2xl font-display font-bold leading-none truncate">
+          {displayValue ?? value}
+        </p>
         <p className="text-textMuted text-xs mt-1.5">{label}</p>
       </div>
     </button>
@@ -201,18 +215,21 @@ export function Dashboard() {
     d.deal_state?.current_status && ['At Risk', 'Critical', 'Stalled'].includes(d.deal_state.current_status)
   );
 
-  // Deals Requiring Attention: deal-risk data only -- no meetings, no Inbox
-  // items. At-risk deals first, then deals with an open gap (missing info),
-  // then everything else by recency.
-  const missingInfo = deals.filter(d =>
-    !atRisk.includes(d) &&
-    d.deal_state?.what_youre_missing &&
-    d.deal_state.what_youre_missing.length > 0
-  );
+  // Pipeline Value: total value across active deals. Pipeline at Risk:
+  // the slice of that value sitting in the same at-risk deals above --
+  // what's actually exposed, not just a headcount.
+  const pipelineValue = deals.reduce((sum, d) => sum + (d.deal_value || 0), 0);
+  const pipelineAtRisk = atRisk.reduce((sum, d) => sum + (d.deal_value || 0), 0);
 
-  const priorityRanked = [...atRisk, ...missingInfo, ...deals.filter(
-    d => !atRisk.includes(d) && !missingInfo.includes(d)
-  )].slice(0, 10);
+  // Deals Requiring Attention: strict priority order by current status,
+  // most critical first. Only these six statuses qualify -- Unknown,
+  // Won, and Lost deals never appear in this list regardless of anything
+  // else about them.
+  const ATTENTION_ORDER: DealStatus[] = ['Critical', 'At Risk', 'Stalled', 'Recovering', 'Promising', 'Healthy'];
+
+  const priorityRanked = ATTENTION_ORDER.flatMap(status =>
+    deals.filter(d => d.deal_state?.current_status === status)
+  ).slice(0, 10);
 
   return (
     <>
@@ -229,9 +246,7 @@ export function Dashboard() {
           <p className="text-textSecondary text-sm">
             {deals.length === 0
               ? 'No active deals yet. Tap + to add your first.'
-              : atRisk.length > 0
-              ? `${atRisk.length} deal${atRisk.length !== 1 ? 's' : ''} need${atRisk.length === 1 ? 's' : ''} attention.`
-              : `${deals.length} active deal${deals.length !== 1 ? 's' : ''} — all looking good.`
+              : "Here's how your pipeline's looking."
             }
           </p>
         </div>
@@ -258,22 +273,31 @@ export function Dashboard() {
         ) : (
           <div className="space-y-6">
 
-            {/* Upcoming Meetings — horizontally scrollable */}
-            {meetings.length > 0 && (
-              <div>
-                <h2 className="section-label mb-3 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5" /> Upcoming Meetings
-                </h2>
+            {/* Upcoming Meetings — horizontally scrollable, or an empty
+                state when there's nothing on the calendar. */}
+            <div>
+              <h2 className="section-label mb-3 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" /> Upcoming Meetings
+              </h2>
+              {meetings.length > 0 ? (
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
                   {meetings.map(m => (
                     <MeetingCard key={m.id} meeting={m} />
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="card px-4 py-5 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg border bg-surfaceHigh border-border flex items-center justify-center flex-shrink-0 text-textMuted">
+                    <CalendarX className="w-4 h-4" />
+                  </div>
+                  <p className="text-textMuted text-sm">No Upcoming Meetings</p>
+                </div>
+              )}
+            </div>
 
-            {/* Active Deals + Deals At Risk — side by side */}
-            <div className="flex gap-3">
+            {/* Active Deals, Deals At Risk, Pipeline Value, Pipeline at
+                Risk — a 2x2 grid on mobile, one row of four on desktop. */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <StatCard
                 label="Active Deals"
                 value={deals.length}
@@ -285,6 +309,21 @@ export function Dashboard() {
                 value={atRisk.length}
                 icon={<AlertTriangle className="w-4 h-4" />}
                 tone={atRisk.length > 0 ? 'danger' : 'default'}
+                onClick={() => navigate('/app/deals?status=at-risk')}
+              />
+              <StatCard
+                label="Pipeline Value"
+                value={pipelineValue}
+                displayValue={formatValue(pipelineValue)}
+                icon={<Wallet className="w-4 h-4" />}
+                onClick={() => navigate('/app/deals')}
+              />
+              <StatCard
+                label="Pipeline at Risk"
+                value={pipelineAtRisk}
+                displayValue={formatValue(pipelineAtRisk)}
+                icon={<ShieldAlert className="w-4 h-4" />}
+                tone={pipelineAtRisk > 0 ? 'danger' : 'default'}
                 onClick={() => navigate('/app/deals?status=at-risk')}
               />
             </div>

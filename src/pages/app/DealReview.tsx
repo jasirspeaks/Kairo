@@ -7,12 +7,10 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
-import { useAuth } from '../../hooks/useAuth';
 import { Deal, DealState, Conversation, Stakeholder } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
-import { ScheduleMeetingButton } from '../../components/ui/ScheduleMeetingButton';
 import { formatDate, cn } from '../../lib/utils';
 
 // Deal Review is a pure read. deal_state is always current because
@@ -390,7 +388,6 @@ function DealActivityFeed({ activity, dealId, navigate }: { activity: ActivityIt
 export function DealReview() {
   const { dealId } = useParams<{ dealId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   const [deal, setDeal] = useState<Deal | null>(null);
   const [dealState, setDealState] = useState<DealState | null>(null);
@@ -621,9 +618,13 @@ export function DealReview() {
             </div>
           )}
 
-          <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="w-full" />
-
-          <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
+          {/* Desktop only: Deal Activity stays in the left column, right
+              after the findings. On mobile it moves below the supporting
+              rail (see outside this column) so the tabbed Timeline /
+              Risk Evolution / Stakeholders card comes first. */}
+          <div className="hidden md:block">
+            <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
+          </div>
         </div>
 
         <div className="mt-4 md:mt-0 md:sticky md:top-4">
@@ -636,6 +637,11 @@ export function DealReview() {
             onTabChange={setRailTab}
           />
         </div>
+      </div>
+
+      {/* Mobile only: Deal Activity at the very end of the page. */}
+      <div className="md:hidden mt-4">
+        <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
       </div>
     </div>
   );
