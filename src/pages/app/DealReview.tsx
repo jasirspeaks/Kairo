@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, Phone, Users, Clock,
+  AlertTriangle, Phone, Users, Clock, Target,
   ChevronRight, Building2, UserPlus, TrendingUp, TrendingDown,
-  Minus, CheckCircle2, AlertCircle
+  Minus, CheckCircle2, AlertCircle, ArrowRight
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
@@ -182,7 +182,7 @@ function RiskEvolutionPanel({ calls }: { calls: Conversation[] }) {
 
   if (entries.length === 0) {
     return (
-      <p className="text-textMuted text-xs">
+      <p className="text-textMuted text-xs py-2">
         Risk evolution appears once this deal has more than one call.
       </p>
     );
@@ -198,6 +198,9 @@ function RiskEvolutionPanel({ calls }: { calls: Conversation[] }) {
 }
 
 function TimelinePanel({ calls, dealId, navigate }: { calls: Conversation[]; dealId?: string; navigate: (path: string) => void }) {
+  if (calls.length === 0) {
+    return <p className="text-textMuted text-xs py-2">No calls yet.</p>;
+  }
   return (
     <div className="space-y-2">
       {[...calls].reverse().map(call => {
@@ -237,7 +240,7 @@ function TimelinePanel({ calls, dealId, navigate }: { calls: Conversation[]; dea
 function StakeholdersPanel({ stakeholders }: { stakeholders: Stakeholder[] }) {
   if (stakeholders.length === 0) {
     return (
-      <p className="text-textMuted text-xs">
+      <p className="text-textMuted text-xs py-2">
         No stakeholders identified yet. They'll appear here as Kairo recognizes named people across your calls.
       </p>
     );
@@ -270,6 +273,57 @@ function StakeholdersPanel({ stakeholders }: { stakeholders: Stakeholder[] }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Timeline / Risk Evolution / Stakeholders share one card shell with an
+// internal tab switcher instead of three stacked cards with duplicate
+// chrome. One header, one border, one visual unit -- the reader picks
+// which lens they want instead of scanning three near-identical boxes.
+type RailTab = 'timeline' | 'evolution' | 'stakeholders';
+
+function SupportingRail({
+  calls, stakeholders, dealId, navigate, activeTab, onTabChange,
+}: {
+  calls: Conversation[];
+  stakeholders: Stakeholder[];
+  dealId?: string;
+  navigate: (path: string) => void;
+  activeTab: RailTab;
+  onTabChange: (tab: RailTab) => void;
+}) {
+  const evolutionCount = buildEvolution(calls).length;
+
+  const TABS: { key: RailTab; label: string; count: number }[] = [
+    { key: 'timeline', label: 'Timeline', count: calls.length },
+    { key: 'evolution', label: 'Risk Evolution', count: evolutionCount },
+    { key: 'stakeholders', label: 'Stakeholders', count: stakeholders.length },
+  ];
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center gap-1 mb-4 -mx-1">
+        {TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => onTabChange(tab.key)}
+            className={cn(
+              'flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors truncate',
+              activeTab === tab.key
+                ? 'bg-primary/10 text-primary'
+                : 'text-textMuted hover:text-textSecondary'
+            )}
+          >
+            {tab.label}
+            {tab.count > 0 && <span className="ml-1 opacity-60">{tab.count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'timeline' && <TimelinePanel calls={calls} dealId={dealId} navigate={navigate} />}
+      {activeTab === 'evolution' && <RiskEvolutionPanel calls={calls} />}
+      {activeTab === 'stakeholders' && <StakeholdersPanel stakeholders={stakeholders} />}
     </div>
   );
 }
@@ -333,8 +387,6 @@ function DealActivityFeed({ activity, dealId, navigate }: { activity: ActivityIt
   );
 }
 
-type MobileTab = 'overview' | 'timeline' | 'evolution' | 'stakeholders';
-
 export function DealReview() {
   const { dealId } = useParams<{ dealId: string }>();
   const navigate = useNavigate();
@@ -346,7 +398,7 @@ export function DealReview() {
   const [stakeholders, setStakeholders] = useState<Stakeholder[]>([]);
   const [nextMeeting, setNextMeeting] = useState<{ start_time: string; title: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [mobileTab, setMobileTab] = useState<MobileTab>('overview');
+  const [railTab, setRailTab] = useState<RailTab>('timeline');
 
   useEffect(() => {
     if (!dealId) return;
@@ -412,82 +464,18 @@ export function DealReview() {
   const healthColor = healthScoreColor(dealState.deal_health_score ?? 0);
   const activity = buildActivity(calls, stakeholders);
 
-  const MOBILE_TABS: { key: MobileTab; label: string }[] = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'timeline', label: 'Timeline' },
-    { key: 'evolution', label: 'Risk Evolution' },
-    { key: 'stakeholders', label: 'Stakeholders' },
-  ];
-
-  const primaryInsightCards = (
-    <div className="space-y-3 md:space-y-4">
-      {dealState.highest_priority_risk_full?.risk && (
-        <div className="card p-4 md:p-6 border border-red-400/20">
-          <h2 className="section-label mb-3">Highest Priority Risk</h2>
-          <p className="text-textPrimary text-sm font-semibold mb-3">
-            {dealState.highest_priority_risk_full.risk}
-          </p>
-          {dealState.highest_priority_risk_full.why_it_matters && (
-            <div className="bg-red-400/10 border border-red-400/20 rounded-lg p-3">
-              <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
-              <p className="text-textSecondary text-xs leading-relaxed">
-                {dealState.highest_priority_risk_full.why_it_matters}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {dealState.what_youre_missing && dealState.what_youre_missing.length > 0 && (
-        <div className="card p-4 md:p-6">
-          <h2 className="section-label mb-3">What's Still Missing</h2>
-          <div className="space-y-3">
-            {dealState.what_youre_missing.map((item, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
-                </div>
-                <div>
-                  <p className="text-textPrimary text-xs font-medium mb-1">{item.gap}</p>
-                  <p className="text-primary text-xs">Ask: "{item.question_to_answer}"</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {dealState.key_follow_up_message && (
-        <div className="card p-4 md:p-6">
-          <h2 className="section-label mb-2">Next Recommended Action</h2>
-          <p className="text-textPrimary text-sm leading-relaxed">{dealState.key_follow_up_message}</p>
-        </div>
-      )}
-
-      {dealState.manager_note && (
-        <div className="bg-primary/8 border border-primary/15 rounded-xl px-5 py-4">
-          <p className="text-xs text-primary font-semibold mb-1">Manager Note</p>
-          <p className="text-textPrimary text-sm font-medium">{dealState.manager_note}</p>
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <div className="animate-fade-in w-full">
       <div className="-mx-4 md:hidden">
         <TopBar title={deal.deal_name} onBack={() => navigate('/app/deals')} />
       </div>
 
-      {/* Always-visible summary -- deal facts only, never toggled away.
-          w-full + no page-level max-width here: AppLayout already caps the
-          whole page at max-w-5xl, so this card and the two-column grid
-          below both inherit that same width and their edges line up. A
-          second, narrower max-width on this page (as some other pages
-          intentionally use for single-column reading) would make this
-          card render narrower than the grid. */}
-      <div className="card p-4 md:p-6 mb-4 w-full">
-        <div className="hidden md:flex items-start justify-between mb-4">
+      {/* ---- Header block: identity + status. Deliberately separate from
+          the metrics strip below so the page reads top-down as a report:
+          who is this deal, what's its status, then the numbers, then the
+          answer to "what's most important right now." */}
+      <div className="mb-4 md:mb-5">
+        <div className="hidden md:flex items-start justify-between">
           <div>
             <h1 className="text-xl font-display font-bold text-textPrimary mb-1">{deal.deal_name}</h1>
             <p className="text-textSecondary text-sm flex items-center gap-1.5">
@@ -495,14 +483,14 @@ export function DealReview() {
             </p>
           </div>
           <span
-            className="text-sm font-bold px-3 py-1.5 rounded-full border"
+            className="text-sm font-bold px-3 py-1.5 rounded-full border flex-shrink-0"
             style={getStatusStyle(dealState.current_status || 'Unknown')}
           >
             {dealState.current_status || 'Unknown'}
           </span>
         </div>
 
-        <div className="flex md:hidden items-center justify-between mb-4">
+        <div className="flex md:hidden items-center justify-between">
           <p className="text-textSecondary text-sm">{deal.company_name}</p>
           <span
             className="text-xs font-bold px-2.5 py-1 rounded-full border"
@@ -511,11 +499,17 @@ export function DealReview() {
             {dealState.current_status || 'Unknown'}
           </span>
         </div>
+      </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
-          <div className="flex flex-col items-center md:items-start">
-            <div className="relative w-16 h-16 mb-1">
-              <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
+      {/* ---- Metrics strip: Health Score gets a dedicated, larger slot on
+          the left since it's the single number that summarizes the whole
+          deal; the remaining four facts sit in an even row beside it.
+          One card, one border -- not five competing columns. */}
+      <div className="card p-4 md:p-5 mb-4 md:mb-5 w-full">
+        <div className="grid grid-cols-[auto_1fr] gap-4 md:gap-6 items-center">
+          <div className="flex items-center gap-3 pr-4 md:pr-6 border-r border-border">
+            <div className="relative w-14 h-14 md:w-16 md:h-16 flex-shrink-0">
+              <svg viewBox="0 0 64 64" className="w-14 h-14 md:w-16 md:h-16 -rotate-90">
                 <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="6" className="text-border" />
                 <circle
                   cx="32" cy="32" r="28" fill="none" strokeWidth="6" strokeLinecap="round"
@@ -528,112 +522,120 @@ export function DealReview() {
                 <span className="text-sm font-bold text-textPrimary">{dealState.deal_health_score ?? '—'}</span>
               </div>
             </div>
-            <span className="text-xs text-textMuted">Health Score</span>
+            <div className="hidden sm:block">
+              <p className="text-textPrimary text-xs font-semibold">Health Score</p>
+              <p className="text-textMuted text-xs mt-0.5">out of 100</p>
+            </div>
           </div>
 
-          <div className="flex flex-col items-center md:items-start justify-center">
-            <span className="text-sm font-semibold text-textPrimary">{formatValue(deal.deal_value)}</span>
-            <span className="text-xs text-textMuted mt-0.5">Deal Value</span>
-          </div>
-
-          <div className="flex flex-col items-center md:items-start justify-center">
-            <span className="text-sm font-semibold text-textPrimary">{deal.deal_stage}</span>
-            <span className="text-xs text-textMuted mt-0.5">Deal Stage</span>
-          </div>
-
-          <div className="flex flex-col items-center md:items-start justify-center">
-            <span className="text-sm font-semibold text-textPrimary">
-              {lastContact ? formatDate(lastContact) : '—'}
-            </span>
-            <span className="text-xs text-textMuted mt-0.5">Last Contact</span>
-          </div>
-
-          <div className="flex flex-col items-center md:items-start justify-center">
-            <span className="text-sm font-semibold text-textPrimary">
-              {nextMeeting ? formatDate(nextMeeting.start_time) : '—'}
-            </span>
-            <span className="text-xs text-textMuted mt-0.5">Next Meeting</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+            <div>
+              <p className="text-textPrimary text-sm font-semibold truncate">{formatValue(deal.deal_value)}</p>
+              <p className="text-textMuted text-xs mt-0.5">Deal Value</p>
+            </div>
+            <div>
+              <p className="text-textPrimary text-sm font-semibold truncate">{deal.deal_stage}</p>
+              <p className="text-textMuted text-xs mt-0.5">Deal Stage</p>
+            </div>
+            <div>
+              <p className="text-textPrimary text-sm font-semibold truncate">
+                {lastContact ? formatDate(lastContact) : '—'}
+              </p>
+              <p className="text-textMuted text-xs mt-0.5">Last Contact</p>
+            </div>
+            <div>
+              <p className="text-textPrimary text-sm font-semibold truncate">
+                {nextMeeting ? formatDate(nextMeeting.start_time) : '—'}
+              </p>
+              <p className="text-textMuted text-xs mt-0.5">Next Meeting</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Desktop: two columns. Left = primary insight cards. Right = Timeline / Risk Evolution / Stakeholders. */}
-      <div className="hidden md:grid md:grid-cols-[1fr_360px] md:gap-5 md:items-start">
-        <div className="space-y-5">
-          {primaryInsightCards}
-
-          <div>
-            <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="w-full" />
+      {/* ---- Highest Priority Risk: the hero card. This is the one
+          question the product exists to answer, so it's the only card
+          with a filled (not just outlined) accent treatment, sits first,
+          and is never toggled away. Everything else is secondary to it. */}
+      {dealState.highest_priority_risk_full?.risk && (
+        <div className="rounded-xl border border-red-400/25 bg-red-400/[0.06] p-4 md:p-6 mb-4 md:mb-5">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4 text-red-400" />
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-red-400">Highest Priority Risk</h2>
           </div>
+          <p className="text-textPrimary text-base font-semibold mb-3 leading-snug">
+            {dealState.highest_priority_risk_full.risk}
+          </p>
+          {dealState.highest_priority_risk_full.why_it_matters && (
+            <div className="bg-bg/40 border border-red-400/15 rounded-lg p-3">
+              <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
+              <p className="text-textSecondary text-xs leading-relaxed">
+                {dealState.highest_priority_risk_full.why_it_matters}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
-          {/* Deal Activity: full chronological history of this deal, newest first */}
+      {/* ---- Main two-column layout. Left: what's missing + next action,
+          paired since they're causally linked (the gap, then the move
+          that closes it). Right: supporting rail as a single tabbed card. */}
+      <div className="md:grid md:grid-cols-[1fr_320px] md:gap-5 md:items-start">
+        <div className="space-y-4 md:space-y-5 min-w-0">
+          {dealState.what_youre_missing && dealState.what_youre_missing.length > 0 && (
+            <div className="card p-4 md:p-6">
+              <h2 className="section-label mb-3">What's Still Missing</h2>
+              <div className="space-y-3">
+                {dealState.what_youre_missing.map((item, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
+                    </div>
+                    <div>
+                      <p className="text-textPrimary text-xs font-medium mb-1">{item.gap}</p>
+                      <p className="text-primary text-xs">Ask: "{item.question_to_answer}"</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {dealState.key_follow_up_message && (
+            <div className="rounded-xl border border-primary/20 bg-primary/[0.05] p-4 md:p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Target className="w-3.5 h-3.5 text-primary" />
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-primary">Next Recommended Action</h2>
+              </div>
+              <p className="text-textPrimary text-sm leading-relaxed">{dealState.key_follow_up_message}</p>
+            </div>
+          )}
+
+          {dealState.manager_note && (
+            <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg bg-surfaceHigh border border-border">
+              <ArrowRight className="w-3.5 h-3.5 text-textMuted flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs text-textMuted font-semibold mb-0.5">Manager Note</p>
+                <p className="text-textSecondary text-xs leading-relaxed">{dealState.manager_note}</p>
+              </div>
+            </div>
+          )}
+
+          <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="w-full" />
+
           <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
         </div>
 
-        <div className="space-y-4 sticky top-4">
-          <div className="card p-4">
-            <h2 className="section-label mb-3">Timeline</h2>
-            <TimelinePanel calls={calls} dealId={dealId} navigate={navigate} />
-          </div>
-          <div className="card p-4">
-            <h2 className="section-label mb-3">Risk Evolution</h2>
-            <RiskEvolutionPanel calls={calls} />
-          </div>
-          <div className="card p-4">
-            <h2 className="section-label mb-3">Stakeholders</h2>
-            <StakeholdersPanel stakeholders={stakeholders} />
-          </div>
+        <div className="mt-4 md:mt-0 md:sticky md:top-4">
+          <SupportingRail
+            calls={calls}
+            stakeholders={stakeholders}
+            dealId={dealId}
+            navigate={navigate}
+            activeTab={railTab}
+            onTabChange={setRailTab}
+          />
         </div>
-      </div>
-
-      {/* Mobile: chip-selectable tabs. Overview = primary insight cards (default). */}
-      <div className="md:hidden">
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mb-4 -mx-4 px-4">
-          {MOBILE_TABS.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setMobileTab(tab.key)}
-              className={cn(
-                'flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors',
-                mobileTab === tab.key
-                  ? 'bg-primary/10 border-primary/30 text-primary'
-                  : 'bg-surface border-border text-textSecondary'
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {mobileTab === 'overview' && (
-          <div className="space-y-5">
-            {primaryInsightCards}
-
-            <div>
-              <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="w-full" />
-            </div>
-
-            <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
-          </div>
-        )}
-
-        {mobileTab === 'timeline' && (
-          <div className="card p-4">
-            <TimelinePanel calls={calls} dealId={dealId} navigate={navigate} />
-          </div>
-        )}
-
-        {mobileTab === 'evolution' && (
-          <div className="card p-4">
-            <RiskEvolutionPanel calls={calls} />
-          </div>
-        )}
-
-        {mobileTab === 'stakeholders' && (
-          <div className="card p-4">
-            <StakeholdersPanel stakeholders={stakeholders} />
-          </div>
-        )}
       </div>
     </div>
   );
