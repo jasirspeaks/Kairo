@@ -125,6 +125,12 @@ export function SignIn() {
               </div>
             </div>
 
+            <div className="flex justify-end mb-4">
+              <Link to="/forgot-password" className="text-textMuted hover:text-textSecondary text-footnote transition-colors">
+                Forgot password?
+              </Link>
+            </div>
+
             <Button type="submit" loading={loading} className="w-full" size="lg">
               Sign In
             </Button>

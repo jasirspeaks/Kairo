@@ -6,6 +6,8 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary';
 // Pages
 import { SignIn } from './pages/auth/SignIn';
 import { SignUp } from './pages/auth/SignUp';
+import { ForgotPassword } from './pages/auth/ForgotPassword';
+import { ResetPassword } from './pages/auth/ResetPassword';
 import { Onboarding } from './pages/onboarding/Onboarding';
 import { Dashboard } from './pages/app/Dashboard';
 import { NewDeal } from './pages/app/NewDeal';
@@ -57,6 +59,8 @@ export default function App() {
         <Route path="/" element={<RootRoute />} />
         <Route path="/signin" element={<SignIn />} />
         <Route path="/signup" element={<SignUp />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/onboarding" element={<OnboardingRoute><Onboarding /></OnboardingRoute>} />
 
         {/* App */}
