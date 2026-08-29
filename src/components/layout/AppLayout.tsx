@@ -15,7 +15,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Sidebar />
       </div>
 
-      <main className="md:ml-72">
+      <main className="md:ml-64">
         <div className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8 pb-24 md:pb-8">
           <ErrorBoundary>
             {children}
