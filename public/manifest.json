@@ -8,6 +8,6 @@
   ],
   "start_url": "/app/dashboard",
   "display": "standalone",
-  "theme_color": "#8266B3",
-  "background_color": "#F6F0FF"
+  "theme_color": "#8B6CFF",
+  "background_color": "#121018"
 }

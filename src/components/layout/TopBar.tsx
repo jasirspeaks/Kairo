@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, Zap, LogOut } from 'lucide-react';
+import { ChevronLeft, LogOut } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 interface TopBarProps {
@@ -21,9 +21,11 @@ export function TopBar({ title, onBack, action }: TopBarProps) {
               <ChevronLeft className="w-5 h-5 text-textPrimary" />
             </button>
           ) : (
-            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-              <Zap className="w-4 h-4 text-white" />
-            </div>
+            <img
+              src="/logo-mark.png"
+              alt="Kairo"
+              className="w-7 h-7 rounded-lg flex-shrink-0 object-contain"
+            />
           )}
           <span className="font-display font-bold text-textPrimary truncate">
             {title || 'Kairo'}

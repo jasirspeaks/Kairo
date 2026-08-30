@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Zap } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/ui/Button';
@@ -42,9 +42,11 @@ export function Onboarding() {
 
       <div className="w-full max-w-lg animate-slide-up relative">
         <div className="flex items-center justify-center gap-2.5 mb-10">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-purple-glow-sm">
-            <Zap className="w-4 h-4 text-white" />
-          </div>
+          <img
+            src="/logo-mark.png"
+            alt="Kairo"
+            className="w-8 h-8 rounded-lg shadow-purple-glow-sm object-contain"
+          />
           <span className="font-display font-bold text-xl text-textPrimary">Kairo</span>
         </div>
 

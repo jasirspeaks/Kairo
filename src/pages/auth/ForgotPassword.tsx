@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Zap, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
 
@@ -38,9 +38,11 @@ export function ForgotPassword() {
       <div className="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="flex-1 flex flex-col items-center justify-center text-center animate-fade-in">
-        <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-purple-glow mb-6">
-          <Zap className="w-7 h-7 text-white" />
-        </div>
+        <img
+          src="/logo-mark.png"
+          alt="Kairo"
+          className="w-14 h-14 rounded-2xl shadow-purple-glow mb-6 object-contain"
+        />
         <h1 className="font-display font-bold text-title1 text-textPrimary mb-2">
           {sent ? 'Check your email' : 'Reset your password'}
         </h1>

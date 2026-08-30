@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Plus, FolderOpen, Settings, Zap, Inbox
+  LayoutDashboard, Plus, FolderOpen, Settings, Inbox
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -28,9 +28,11 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-6 border-b border-border">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-purple-glow-sm">
-            <Zap className="w-4 h-4 text-white" />
-          </div>
+          <img
+            src="/logo-mark.png"
+            alt="Kairo"
+            className="w-8 h-8 rounded-lg shadow-purple-glow-sm object-contain"
+          />
           <span className="font-display font-bold text-xl text-textPrimary tracking-tight">Kairo</span>
         </div>
       </div>
