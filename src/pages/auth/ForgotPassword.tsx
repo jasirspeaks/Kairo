@@ -41,7 +41,7 @@ export function ForgotPassword() {
         <img
           src="/logo-mark.png"
           alt="Kairo"
-          className="w-14 h-14 rounded-2xl shadow-purple-glow mb-6 object-contain"
+          className="w-14 h-14 rounded-2xl mb-6 object-contain"
         />
         <h1 className="font-display font-bold text-title1 text-textPrimary mb-2">
           {sent ? 'Check your email' : 'Reset your password'}

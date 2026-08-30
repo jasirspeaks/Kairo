@@ -31,7 +31,7 @@ export function Sidebar() {
           <img
             src="/logo-mark.png"
             alt="Kairo"
-            className="w-8 h-8 rounded-lg shadow-purple-glow-sm object-contain"
+            className="w-8 h-8 rounded-lg object-contain"
           />
           <span className="font-display font-bold text-xl text-textPrimary tracking-tight">Kairo</span>
         </div>
