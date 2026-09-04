@@ -64,12 +64,12 @@ export function useAudioRecorder(): UseAudioRecorderResult {
   const pausedAccumulatedMsRef = useRef<number>(0);
   const pausedAtRef = useRef<number | null>(null);
 
-  function clearTimers() {
+  const clearTimers = useCallback(() => {
     if (levelIntervalRef.current) { clearInterval(levelIntervalRef.current); levelIntervalRef.current = null; }
     if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null; }
-  }
+  }, []);
 
-  function teardownStream() {
+  const teardownStream = useCallback(() => {
     clearTimers();
     analyserRef.current = null;
     if (audioCtxRef.current) {
@@ -81,9 +81,9 @@ export function useAudioRecorder(): UseAudioRecorderResult {
       streamRef.current = null;
     }
     recorderRef.current = null;
-  }
+  }, [clearTimers]);
 
-  useEffect(() => () => teardownStream(), []);
+  useEffect(() => () => teardownStream(), [teardownStream]);
 
   const start = useCallback(async () => {
     setErrorMessage(null);
@@ -165,7 +165,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
 
     recorder.start(1000);
     setStatus('recording');
-  }, []);
+  }, [teardownStream]);
 
   const pause = useCallback(() => {
     const recorder = recorderRef.current;
@@ -222,7 +222,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
 
       recorder.stop();
     });
-  }, []);
+  }, [teardownStream]);
 
   const discard = useCallback(() => {
     const recorder = recorderRef.current;
@@ -235,7 +235,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
     setElapsedMs(0);
     setLevels(new Array(LEVEL_BAR_COUNT).fill(0));
     setStatus('idle');
-  }, []);
+  }, [teardownStream]);
 
   return { status, elapsedMs, levels, errorMessage, start, pause, resume, stop, discard };
 }
