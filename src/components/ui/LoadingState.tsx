@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
 interface LoadingStateProps {
-  phase: 'analyzing';
+  phase: 'analyzing' | 'recording';
 }
 
-const MESSAGES = [
+const ANALYZING_MESSAGES = [
   'Reviewing the deal...',
   'Identifying the highest risk...',
   'Checking what\'s missing...',
@@ -12,15 +12,35 @@ const MESSAGES = [
   'Preparing your review...',
 ];
 
+// For the Record Now flow: mobile-recording-review transcribes the audio
+// first, then runs the same call-review extraction -- these messages
+// cover both steps in one rotation, since the frontend can't observe the
+// handoff between them mid-request.
+const RECORDING_MESSAGES = [
+  'Transcribing your call...',
+  'Identifying the highest risk...',
+  'Checking what\'s missing...',
+  'Reading the evidence...',
+  'Preparing your review...',
+];
+
+const TITLES: Record<LoadingStateProps['phase'], string> = {
+  analyzing: 'Kairo is reviewing the deal',
+  recording: 'Kairo is reviewing the call',
+};
+
 export function LoadingState({ phase }: LoadingStateProps) {
   const [messageIndex, setMessageIndex] = useState(0);
+  const messages = phase === 'recording' ? RECORDING_MESSAGES : ANALYZING_MESSAGES;
 
   useEffect(() => {
+    setMessageIndex(0);
     const interval = setInterval(() => {
-      setMessageIndex(i => (i + 1) % MESSAGES.length);
+      setMessageIndex(i => (i + 1) % messages.length);
     }, 2500);
     return () => clearInterval(interval);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   return (
     <div className="flex flex-col items-center justify-center py-32 text-center">
@@ -34,13 +54,13 @@ export function LoadingState({ phase }: LoadingStateProps) {
       {/* Messages */}
       <div className="space-y-2">
         <p className="text-textPrimary font-semibold font-display text-lg">
-          Kairo is reviewing the deal
+          {TITLES[phase]}
         </p>
         <p
           className="text-textSecondary text-sm animate-fade-in"
           key={messageIndex}
         >
-          {MESSAGES[messageIndex]}
+          {messages[messageIndex]}
         </p>
       </div>
 

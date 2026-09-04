@@ -3,6 +3,7 @@ import { Pause, Play, Square, X, AlertCircle, Mic } from 'lucide-react';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { submitRecording } from '../../lib/kairo';
 import { cn } from '../../lib/utils';
+import { LoadingState } from '../ui/LoadingState';
 
 interface PendingDealForm {
   dealName: string;
@@ -90,47 +91,28 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
   }
 
   // ---- Processing (post-stop) screen -----------------------------
-  if (isSubmitting || (submitPhase === 'error' && submitError)) {
+  if (isSubmitting) {
+    return (
+      <div className="fixed inset-0 z-50 bg-bg">
+        <LoadingState phase="recording" />
+      </div>
+    );
+  }
+
+  if (submitPhase === 'error' && submitError) {
     return (
       <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center justify-center px-6 text-center">
-        {submitPhase === 'error' ? (
-          <>
-            <div className="w-14 h-14 rounded-full bg-red-400/10 border border-red-400/20 flex items-center justify-center mb-6">
-              <AlertCircle className="w-6 h-6 text-red-400" />
-            </div>
-            <p className="text-textPrimary font-display font-semibold text-lg mb-2">Couldn\u2019t process that recording</p>
-            <p className="text-textSecondary text-sm max-w-xs mb-8">{submitError}</p>
-            <button
-              onClick={onClose}
-              className="text-primary text-sm font-medium"
-            >
-              Back to New Deal
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="relative mb-8">
-              <div className="w-14 h-14 rounded-full border-2 border-border flex items-center justify-center">
-                <div className="w-10 h-10 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-spin" />
-              </div>
-            </div>
-            <p className="text-textPrimary font-display font-semibold text-lg mb-2">
-              Kairo is reviewing the call
-            </p>
-            <p className="text-textSecondary text-sm animate-fade-in" key={submitPhase}>
-              {submitPhase === 'uploading' ? 'Saving your recording\u2026' : 'Transcribing and identifying what matters\u2026'}
-            </p>
-            <div className="flex gap-1.5 mt-8">
-              {[0, 1, 2].map(i => (
-                <div
-                  key={i}
-                  className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-soft"
-                  style={{ animationDelay: `${i * 0.3}s` }}
-                />
-              ))}
-            </div>
-          </>
-        )}
+        <div className="w-14 h-14 rounded-full bg-red-400/10 border border-red-400/20 flex items-center justify-center mb-6">
+          <AlertCircle className="w-6 h-6 text-red-400" />
+        </div>
+        <p className="text-textPrimary font-display font-semibold text-lg mb-2">Couldn\u2019t process that recording</p>
+        <p className="text-textSecondary text-sm max-w-xs mb-8">{submitError}</p>
+        <button
+          onClick={onClose}
+          className="text-primary text-sm font-medium"
+        >
+          Back
+        </button>
       </div>
     );
   }
@@ -204,25 +186,34 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
             isRecording ? 'border-primary' : 'border-border'
           )}
         >
-          <div className="flex items-center gap-[3px] h-16">
-            {levels.map((level, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'w-[3px] rounded-full transition-colors duration-300',
-                  isRecording ? 'bg-primary' : 'bg-textMuted'
-                )}
-                style={{
-                  height: `${Math.max(8, level * 64)}%`,
-                  opacity: isPaused ? 0.35 : 1,
-                }}
-              />
-            ))}
+          <div className="flex items-center justify-center gap-[3px] h-11 md:h-14 w-[72%]">
+            {levels.map((level, i) => {
+              // Taper amplitude toward both ends so the waveform's
+              // silhouette narrows near the circle's curve instead of
+              // presenting a hard rectangular edge that can clip past it.
+              const mid = (levels.length - 1) / 2;
+              const distanceFromMid = Math.abs(i - mid) / mid; // 0 at center, 1 at ends
+              const taper = 1 - distanceFromMid * 0.75;
+              const barHeight = Math.max(6, level * taper * 100);
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    'w-[3px] rounded-full flex-shrink-0 transition-colors duration-300',
+                    isRecording ? 'bg-primary' : 'bg-textMuted'
+                  )}
+                  style={{
+                    height: `${barHeight}%`,
+                    opacity: isPaused ? 0.35 : 1,
+                  }}
+                />
+              );
+            })}
           </div>
         </div>
       </div>
 
-      <p className="font-mono text-2xl text-textPrimary tabular-nums mb-12">
+      <p className="font-mono text-2xl text-textPrimary tabular-nums mb-16 md:mb-12">
         {formatElapsed(elapsedMs)}
       </p>
 
