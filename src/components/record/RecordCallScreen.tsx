@@ -1,0 +1,268 @@
+import React, { useState } from 'react';
+import { Pause, Play, Square, X, AlertCircle, Mic } from 'lucide-react';
+import { useAudioRecorder } from '../../hooks/useAudioRecorder';
+import { submitRecording } from '../../lib/kairo';
+import { cn } from '../../lib/utils';
+
+interface PendingDealForm {
+  dealName: string;
+  companyName: string;
+  dealStage: string;
+  dealValue: string;
+}
+
+interface RecordCallScreenProps {
+  // Existing-deal path (Call Review -> Record Now): dealId already known,
+  // no deal gets created.
+  dealId?: string;
+  // New-deal path (New Deal -> Record Now): no deal exists yet -- the
+  // deal is created from this form state before the conversation row.
+  pendingDealForm?: PendingDealForm;
+  // Called once mobile-recording-review has finished successfully.
+  onComplete: (result: { conversationId: string; dealId: string }) => void;
+  onClose: () => void;
+  // Only used on the New Deal path -- creates the deal row and returns
+  // its id. Left as an injected callback rather than importing
+  // createDealRow directly, so this component doesn't need to know
+  // anything about NewDeal's form/user state.
+  createDeal?: () => Promise<string | null>;
+}
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+type SubmitPhase = 'idle' | 'uploading' | 'transcribing' | 'error';
+
+export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose, createDeal }: RecordCallScreenProps) {
+  const { status, elapsedMs, levels, errorMessage, start, pause, resume, stop, discard } = useAudioRecorder();
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [submitPhase, setSubmitPhase] = useState<SubmitPhase>('idle');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const startedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    start();
+  }, [start]);
+
+  const isRecording = status === 'recording';
+  const isPaused = status === 'paused';
+  const isRequesting = status === 'requesting';
+  const isSubmitting = submitPhase === 'uploading' || submitPhase === 'transcribing';
+
+  async function handleStop() {
+    const result = await stop();
+    if (!result) {
+      setSubmitPhase('error');
+      setSubmitError('We didn\u2019t capture any audio. Please try recording again.');
+      return;
+    }
+
+    setSubmitPhase('uploading');
+    setSubmitError(null);
+
+    try {
+      let targetDealId = dealId;
+      if (!targetDealId && createDeal) {
+        targetDealId = (await createDeal()) || undefined;
+      }
+      if (!targetDealId) {
+        throw new Error('Could not create the deal. Please check the details and try again.');
+      }
+
+      setSubmitPhase('transcribing');
+      const outcome = await submitRecording(targetDealId, result.blob, result.mimeType);
+      onComplete(outcome);
+    } catch (err: any) {
+      setSubmitPhase('error');
+      setSubmitError(err?.message || 'Something went wrong. Please try again.');
+    }
+  }
+
+  function handleDiscardConfirmed() {
+    discard();
+    onClose();
+  }
+
+  // ---- Processing (post-stop) screen -----------------------------
+  if (isSubmitting || (submitPhase === 'error' && submitError)) {
+    return (
+      <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center justify-center px-6 text-center">
+        {submitPhase === 'error' ? (
+          <>
+            <div className="w-14 h-14 rounded-full bg-red-400/10 border border-red-400/20 flex items-center justify-center mb-6">
+              <AlertCircle className="w-6 h-6 text-red-400" />
+            </div>
+            <p className="text-textPrimary font-display font-semibold text-lg mb-2">Couldn\u2019t process that recording</p>
+            <p className="text-textSecondary text-sm max-w-xs mb-8">{submitError}</p>
+            <button
+              onClick={onClose}
+              className="text-primary text-sm font-medium"
+            >
+              Back to New Deal
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="relative mb-8">
+              <div className="w-14 h-14 rounded-full border-2 border-border flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-spin" />
+              </div>
+            </div>
+            <p className="text-textPrimary font-display font-semibold text-lg mb-2">
+              Kairo is reviewing the call
+            </p>
+            <p className="text-textSecondary text-sm animate-fade-in" key={submitPhase}>
+              {submitPhase === 'uploading' ? 'Saving your recording\u2026' : 'Transcribing and identifying what matters\u2026'}
+            </p>
+            <div className="flex gap-1.5 mt-8">
+              {[0, 1, 2].map(i => (
+                <div
+                  key={i}
+                  className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-soft"
+                  style={{ animationDelay: `${i * 0.3}s` }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ---- Mic permission denied / unsupported browser ----------------
+  if (status === 'denied' || status === 'error') {
+    return (
+      <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center justify-center px-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-6">
+          <Mic className="w-6 h-6 text-amber-400" />
+        </div>
+        <p className="text-textPrimary font-display font-semibold text-lg mb-2">Can\u2019t start recording</p>
+        <p className="text-textSecondary text-sm max-w-xs mb-8">{errorMessage}</p>
+        <button onClick={onClose} className="text-primary text-sm font-medium">
+          Go back
+        </button>
+      </div>
+    );
+  }
+
+  // ---- Discard confirmation overlay --------------------------------
+  if (confirmingDiscard) {
+    return (
+      <div className="fixed inset-0 z-50 bg-bg/95 flex flex-col items-center justify-center px-6 text-center">
+        <p className="text-textPrimary font-display font-semibold text-lg mb-2">Discard this recording?</p>
+        <p className="text-textSecondary text-sm max-w-xs mb-8">
+          This can\u2019t be undone. The call won\u2019t be saved or reviewed.
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setConfirmingDiscard(false)}
+            className="px-5 py-2.5 rounded-lg bg-surface border border-border text-textSecondary text-sm font-medium hover:text-white hover:border-accent/50 transition-all"
+          >
+            Keep Recording
+          </button>
+          <button
+            onClick={handleDiscardConfirmed}
+            className="px-5 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/20 transition-all"
+          >
+            Discard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Main recording screen ---------------------------------------
+  return (
+    <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center justify-center px-6">
+      <p className={cn(
+        'text-sm font-medium mb-10 tracking-wide',
+        isRecording ? 'text-textPrimary' : 'text-textSecondary'
+      )}>
+        {isRequesting ? 'Waiting for microphone access\u2026' : isPaused ? 'Paused' : 'Recording\u2026'}
+      </p>
+
+      {/* Pulsing circle with live waveform bars */}
+      <div className="relative flex items-center justify-center mb-10">
+        <div
+          className={cn(
+            'absolute w-44 h-44 md:w-52 md:h-52 rounded-full',
+            isRecording && 'animate-pulse-soft'
+          )}
+          style={{
+            background: 'radial-gradient(circle, rgba(205,184,255,0.18) 0%, rgba(205,184,255,0) 70%)',
+          }}
+        />
+        <div
+          className={cn(
+            'relative w-36 h-36 md:w-44 md:h-44 rounded-full border-2 flex items-center justify-center transition-colors duration-300',
+            isRecording ? 'border-primary' : 'border-border'
+          )}
+        >
+          <div className="flex items-center gap-[3px] h-16">
+            {levels.map((level, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'w-[3px] rounded-full transition-colors duration-300',
+                  isRecording ? 'bg-primary' : 'bg-textMuted'
+                )}
+                style={{
+                  height: `${Math.max(8, level * 64)}%`,
+                  opacity: isPaused ? 0.35 : 1,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <p className="font-mono text-2xl text-textPrimary tabular-nums mb-12">
+        {formatElapsed(elapsedMs)}
+      </p>
+
+      {/* Controls */}
+      <div className="flex items-center gap-6 mb-10">
+        <button
+          onClick={isPaused ? resume : pause}
+          disabled={isRequesting}
+          aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
+          className="w-14 h-14 rounded-full bg-surface border border-border flex items-center justify-center text-textSecondary hover:text-white hover:border-accent/50 transition-all active:scale-95 disabled:opacity-40"
+        >
+          {isPaused ? <Play className="w-5 h-5 ml-0.5" /> : <Pause className="w-5 h-5" />}
+        </button>
+
+        <button
+          onClick={handleStop}
+          disabled={isRequesting}
+          aria-label="Stop recording"
+          className="w-16 h-16 rounded-full bg-primary hover:bg-primaryLight text-white flex items-center justify-center shadow-purple-glow transition-all active:scale-95 disabled:opacity-40"
+        >
+          <Square className="w-5 h-5" fill="currentColor" />
+        </button>
+
+        <div className="w-14 h-14" aria-hidden="true" />
+      </div>
+
+      <button
+        onClick={() => setConfirmingDiscard(true)}
+        className="text-textMuted text-xs font-medium hover:text-textSecondary transition-colors"
+      >
+        Discard recording
+      </button>
+
+      <button
+        onClick={() => setConfirmingDiscard(true)}
+        aria-label="Close"
+        className="absolute top-6 right-6 w-9 h-9 rounded-full flex items-center justify-center text-textMuted hover:text-white hover:bg-surfaceHigh transition-all"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}

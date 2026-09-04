@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus, AlertTriangle, CheckCircle, Clock,
-  TrendingDown, Copy, Check, Activity, Layers, Target, Building2, ArrowRight
+  TrendingDown, Copy, Check, Activity, Layers, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle, resolveDealStage } from '../../lib/kairo';
@@ -14,6 +14,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { ScheduleMeetingButton } from '../../components/ui/ScheduleMeetingButton';
+import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { formatDate } from '../../lib/utils';
 
 // Call Status icons -- distinct from Deal Status, this describes only how
@@ -43,6 +44,7 @@ export function Review() {
   const [newDealStage, setNewDealStage] = useState<DealStage>('Qualification');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
+  const [recordingNow, setRecordingNow] = useState(false);
 
   useEffect(() => {
     if (!dealId) return;
@@ -182,6 +184,19 @@ export function Review() {
       <LoadingState phase="analyzing" />
     </div>
   );
+
+  if (recordingNow && dealId) {
+    return (
+      <RecordCallScreen
+        dealId={dealId}
+        onComplete={(result) => {
+          setRecordingNow(false);
+          navigate(`/app/deals/${result.dealId}/calls/${result.conversationId}`);
+        }}
+        onClose={() => setRecordingNow(false)}
+      />
+    );
+  }
 
   if (!deal || !conv || !conv.analysis_json) return (
     <EmptyState
@@ -355,15 +370,21 @@ export function Review() {
         )}
 
         {/* Actions live at the bottom of the review, not the top -- the
-            call's findings are the first thing the user should see. */}
-        <div className="flex flex-col sm:flex-row gap-2 pt-1">
-          <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="flex-1" />
-          {isLatestCall && (
+            call's findings are the first thing the user should see.
+            Scheduling and recording only make sense against the latest
+            call for this deal -- an older Call Review is a historical
+            record, not the place to add the next one. */}
+        {isLatestCall && (
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+            <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="flex-1" />
             <Button onClick={() => setAddingCall(true)} variant="secondary" className="flex-1">
               <Plus className="w-4 h-4" /> Add Call
             </Button>
-          )}
-        </div>
+            <Button onClick={() => setRecordingNow(true)} variant="secondary" className="flex-1">
+              <Mic className="w-4 h-4" /> Record Now
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Add Call - bottom sheet on mobile, centered dialog on desktop */}

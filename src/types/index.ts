@@ -1,5 +1,11 @@
 export type InputType = 'audio' | 'transcript';
-export type ConversationStatus = 'pending' | 'analyzing' | 'complete' | 'error';
+// 'processing' and 'failed' are written by the mobile-recording-review edge
+// function (audio transcription + review path) -- added alongside the
+// pre-existing 'pending' | 'analyzing' | 'complete' | 'error' values used
+// by the transcript-paste path, rather than reusing 'analyzing'/'error',
+// since the two paths' status writes come from different code and
+// shouldn't be silently conflated.
+export type ConversationStatus = 'pending' | 'analyzing' | 'processing' | 'complete' | 'error' | 'failed';
 
 // Deal lifecycle bucket (separate from Deal Status). Controls whether a deal
 // shows up in the default "active" views vs. closed/archived.

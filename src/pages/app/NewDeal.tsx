@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Layers, Calendar, CheckCircle2, X } from 'lucide-react';
+import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Layers, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { TopBar } from '../../components/layout/TopBar';
+import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { DEAL_STAGES, DealStage } from '../../types';
 
-type Step = 'deal' | 'transcript' | 'awaiting-meeting' | 'scheduled';
+type Step = 'deal' | 'transcript' | 'record' | 'awaiting-meeting' | 'scheduled';
 
 // Tailwind's `md` breakpoint -- used once, at click time, to decide whether
 // "Schedule First Meeting" waits for a success screen (desktop) or just
@@ -217,6 +218,26 @@ export function NewDeal() {
     setStep('transcript');
   }
 
+  function handleRecordNow() {
+    if (!dealName.trim() || !companyName.trim()) return;
+    setError('');
+    setStep('record');
+  }
+
+  // Passed to RecordCallScreen as `createDeal` -- only invoked on Stop,
+  // reusing scheduledDealId if "Schedule First Meeting" already created
+  // this deal earlier in the same visit, same pattern handleSubmit uses.
+  async function handleCreateDealForRecording(): Promise<string | null> {
+    if (scheduledDealId) return scheduledDealId;
+    const dealId = await createDealRow();
+    if (dealId) setScheduledDealId(dealId);
+    return dealId;
+  }
+
+  function handleRecordingComplete(result: { conversationId: string; dealId: string }) {
+    navigate(`/app/deals/${result.dealId}/calls/${result.conversationId}`);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
@@ -309,6 +330,17 @@ export function NewDeal() {
       <div className="min-h-[calc(100vh-64px)]">
         <LoadingState phase="analyzing" />
       </div>
+    );
+  }
+
+  if (step === 'record') {
+    return (
+      <RecordCallScreen
+        dealId={scheduledDealId || undefined}
+        createDeal={handleCreateDealForRecording}
+        onComplete={handleRecordingComplete}
+        onClose={() => setStep('deal')}
+      />
     );
   }
 
@@ -509,6 +541,25 @@ export function NewDeal() {
               <FileText className="w-4 h-4" />
               Upload First Call
             </Button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-textMuted text-xs">or</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          <div className="flex flex-col items-center gap-2 pt-1 pb-2">
+            <button
+              type="button"
+              onClick={handleRecordNow}
+              disabled={!dealName.trim() || !companyName.trim()}
+              aria-label="Record call now"
+              className="w-16 h-16 rounded-full bg-primary hover:bg-primaryLight text-white flex items-center justify-center shadow-purple-glow transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
+            >
+              <Mic className="w-6 h-6" />
+            </button>
+            <p className="text-textMuted text-xs">Record Now</p>
           </div>
 
           {showConnectPrompt && (

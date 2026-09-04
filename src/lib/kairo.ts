@@ -204,3 +204,125 @@ export async function syncGoogleCalendar(): Promise<void> {
     // Sync failures shouldn't block rendering whatever page called this.
   }
 }
+
+// ---- Record Now (audio) flow ----------------------------------------
+//
+// mobile-recording-review expects, in this order:
+//   1. a `conversations` row already exists with deal_id set
+//   2. that row's audio_url is a Storage path in the private `recordings`
+//      bucket, shaped `{user_id}/{deal_id}/{conversation_id}.{ext}`
+//   3. only then is the function invoked with { conversation_id }
+//
+// The functions below implement exactly that sequence. Nothing here
+// creates a `deals` row -- callers (NewDeal, Review) are responsible for
+// having a real deal.id before calling submitRecording, since New Deal's
+// flow creates the deal first and Review's flow already has one.
+
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType.startsWith('audio/mp4')) return 'm4a';
+  if (mimeType.startsWith('audio/aac')) return 'aac';
+  if (mimeType.startsWith('audio/webm')) return 'webm';
+  return 'm4a';
+}
+
+interface SubmitRecordingResult {
+  conversationId: string;
+  dealId: string;
+}
+
+// Creates the conversation row, uploads the blob to the private
+// `recordings` bucket, stamps audio_url, then invokes
+// mobile-recording-review and waits for it to finish. Throws with a
+// message suitable for direct display if any step fails; the caller
+// (RecordCallScreen) is expected to catch and route through
+// describeRecordingError for phase-aware copy where useful.
+export async function submitRecording(
+  dealId: string,
+  blob: Blob,
+  mimeType: string
+): Promise<SubmitRecordingResult> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('You must be signed in to submit a recording.');
+  }
+  const userId = session.user.id;
+
+  const { data: newConv, error: convError } = await supabase
+    .from('conversations')
+    .insert({
+      user_id: userId,
+      deal_id: dealId,
+      input_type: 'audio',
+      status: 'pending',
+    })
+    .select()
+    .single();
+
+  if (convError || !newConv) {
+    throw new Error('Failed to create the call record. Please try again.');
+  }
+
+  const ext = extensionForMimeType(mimeType);
+  const storagePath = `${userId}/${dealId}/${newConv.id}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('recordings')
+    .upload(storagePath, blob, { contentType: mimeType, upsert: false });
+
+  if (uploadError) {
+    // Best-effort cleanup so a failed upload doesn't leave an orphaned
+    // conversation row with no audio and no transcript.
+    await supabase.from('conversations').delete().eq('id', newConv.id);
+    throw new Error('Failed to upload the recording. Check your connection and try again.');
+  }
+
+  const { error: updateError } = await supabase
+    .from('conversations')
+    .update({ audio_url: storagePath })
+    .eq('id', newConv.id);
+
+  if (updateError) {
+    throw new Error('Failed to save the recording. Please try again.');
+  }
+
+  const response = await fetch(
+    `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/mobile-recording-review`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ conversation_id: newConv.id }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(describeRecordingError(data.error));
+  }
+
+  return { conversationId: newConv.id, dealId };
+}
+
+// Maps mobile-recording-review's thrown error strings to user-facing copy.
+// The function throws plain Error messages (see its catch block), so this
+// matches on substrings rather than error codes.
+export function describeRecordingError(rawError: string | undefined): string {
+  if (!rawError) return 'Something went wrong while processing your recording. Please try again.';
+
+  if (rawError.includes('MAX_TOKENS_TRUNCATED')) {
+    return 'That recording was too long to process in one pass. Try a shorter call, or paste the transcript instead.';
+  }
+  if (rawError.includes('too short')) {
+    return 'We couldn\u2019t get enough from that recording to review it. Make sure the call was actually captured, then try again.';
+  }
+  if (rawError.includes('Failed to download recording')) {
+    return 'We couldn\u2019t retrieve your recording. Please try recording again.';
+  }
+  if (rawError.includes('Gemini')) {
+    return 'Kairo couldn\u2019t process that recording right now. Please try again in a moment.';
+  }
+  return rawError;
+}
