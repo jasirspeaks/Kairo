@@ -58,6 +58,21 @@ body {
   .score-badge {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
   }
+  /* Skeleton loading block — Twitter/X-style diagonal shine. Each block is
+     its own gradient + animation instance (rather than one overlay sweeping
+     across a shared parent), so blocks of different sizes/positions in the
+     Dashboard grid all catch the same moving light at the same moment. */
+  .skeleton {
+    @apply bg-surface border border-border rounded-xl relative overflow-hidden;
+    background-image: linear-gradient(
+      105deg,
+      #1A1625 40%,
+      #282235 50%,
+      #1A1625 60%
+    );
+    background-size: 300% 100%;
+    animation: shimmer 1.8s ease-in-out infinite;
+  }
 }
 
 @layer utilities {

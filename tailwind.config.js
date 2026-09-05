@@ -80,12 +80,21 @@ module.exports = {
         'slide-up': 'slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
         'sheet-up': 'sheetUp 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
+        // Diagonal shimmer sweep for skeleton loading screens (Twitter/X-style).
+        // The shine is a single fixed gradient layered over the whole
+        // skeleton container; each skeleton block masks/clips it locally so
+        // the sweep reads as one continuous diagonal pass across all blocks.
+        shimmer: 'shimmer 1.8s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
         slideUp: { '0%': { opacity: '0', transform: 'translateY(12px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
         sheetUp: { '0%': { transform: 'translateY(100%)' }, '100%': { transform: 'translateY(0)' } },
         pulseSoft: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.5' } },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
       }
     },
   },

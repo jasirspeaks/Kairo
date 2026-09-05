@@ -85,6 +85,57 @@ function MeetingCard({ meeting }: { meeting: ScheduledMeeting & { deal_name?: st
   );
 }
 
+// Dashboard skeleton — mirrors the actual layout (greeting, upcoming
+// meetings row, 2x2/4-across stat grid, deals-requiring-attention list) so
+// the loading state doesn't jump/reflow once real content arrives. Every
+// block shares the `.skeleton` class, which carries its own diagonal
+// shimmer animation, so the shine sweeps across all containers in sync.
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      {/* Upcoming Meetings row */}
+      <div>
+        <div className="skeleton h-3 w-36 rounded-full mb-3" />
+        <div className="flex gap-3 overflow-hidden">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="skeleton flex-shrink-0 w-48 h-[74px]" />
+          ))}
+        </div>
+      </div>
+
+      {/* Stat grid — 2x2 on mobile, one row of four on desktop */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="skeleton h-[104px] p-4 flex flex-col gap-3">
+            <div className="w-9 h-9 rounded-lg bg-surfaceHigh flex-shrink-0" />
+            <div className="space-y-1.5">
+              <div className="h-5 w-14 rounded bg-surfaceHigh" />
+              <div className="h-2.5 w-16 rounded bg-surfaceHigh" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Deals Requiring Attention list */}
+      <div>
+        <div className="skeleton h-3 w-44 rounded-full mb-3" />
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="skeleton h-16 flex items-center gap-3 pl-3 pr-4">
+              <div className="w-1 h-8 rounded-full bg-surfaceHigh flex-shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3 w-1/3 rounded bg-surfaceHigh" />
+                <div className="h-2.5 w-1/2 rounded bg-surfaceHigh" />
+              </div>
+              <div className="w-14 h-5 rounded-full bg-surfaceHigh flex-shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatValue(value: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -252,18 +303,7 @@ export function Dashboard() {
         </div>
 
         {loading ? (
-          <div className="space-y-6">
-            <div className="flex gap-3">
-              {[1, 2, 3].map(i => <div key={i} className="card h-28 w-64 flex-shrink-0 animate-pulse" />)}
-            </div>
-            <div className="flex gap-3">
-              <div className="card h-24 flex-1 animate-pulse" />
-              <div className="card h-24 flex-1 animate-pulse" />
-            </div>
-            <div className="space-y-2">
-              {[1, 2, 3].map(i => <div key={i} className="card h-16 animate-pulse" />)}
-            </div>
-          </div>
+          <DashboardSkeleton />
         ) : deals.length === 0 && meetings.length === 0 ? (
           <EmptyState
             icon={<Building2 className="w-6 h-6" />}
