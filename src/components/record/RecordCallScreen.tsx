@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pause, Play, Square, X, AlertCircle, Mic } from 'lucide-react';
+import { Pause, Play, Square, Trash2, X, AlertCircle, Mic } from 'lucide-react';
 import { useAudioRecorder } from '../../hooks/useAudioRecorder';
 import { submitRecording } from '../../lib/kairo';
 import { cn } from '../../lib/utils';
@@ -39,7 +39,7 @@ function formatElapsed(ms: number): string {
 type SubmitPhase = 'idle' | 'uploading' | 'transcribing' | 'error';
 
 export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose, createDeal }: RecordCallScreenProps) {
-  const { status, elapsedMs, levels, errorMessage, start, pause, resume, stop, discard } = useAudioRecorder();
+  const { status, elapsedMs, levels, start, pause, resume, stop, discard, errorMessage } = useAudioRecorder();
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>('idle');
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -161,63 +161,41 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
 
   // ---- Main recording screen ---------------------------------------
   return (
-    <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center justify-center px-6">
-      <p className={cn(
-        'text-sm font-medium mb-10 tracking-wide',
-        isRecording ? 'text-textPrimary' : 'text-textSecondary'
-      )}>
-        {isRequesting ? 'Waiting for microphone access\u2026' : isPaused ? 'Paused' : 'Recording\u2026'}
-      </p>
+    <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center px-6 pt-24 pb-24 md:pt-0 md:pb-0 md:justify-center">
+      <div className="flex-1 md:flex-none flex flex-col items-center justify-center">
+        <p className={cn(
+          'text-sm font-medium mb-6 tracking-wide',
+          isRecording ? 'text-textPrimary' : 'text-textSecondary'
+        )}>
+          {isRequesting ? 'Waiting for microphone access\u2026' : isPaused ? 'Paused' : 'Recording\u2026'}
+        </p>
 
-      {/* Pulsing circle with live waveform bars */}
-      <div className="relative flex items-center justify-center mb-10">
-        <div
-          className={cn(
-            'absolute w-44 h-44 md:w-52 md:h-52 rounded-full',
-            isRecording && 'animate-pulse-soft'
-          )}
-          style={{
-            background: 'radial-gradient(circle, rgba(205,184,255,0.18) 0%, rgba(205,184,255,0) 70%)',
-          }}
-        />
-        <div
-          className={cn(
-            'relative w-36 h-36 md:w-44 md:h-44 rounded-full border-2 flex items-center justify-center transition-colors duration-300',
-            isRecording ? 'border-primary' : 'border-border'
-          )}
-        >
-          <div className="flex items-center justify-center gap-[3px] h-11 md:h-14 w-[72%]">
-            {levels.map((level, i) => {
-              // Taper amplitude toward both ends so the waveform's
-              // silhouette narrows near the circle's curve instead of
-              // presenting a hard rectangular edge that can clip past it.
-              const mid = (levels.length - 1) / 2;
-              const distanceFromMid = Math.abs(i - mid) / mid; // 0 at center, 1 at ends
-              const taper = 1 - distanceFromMid * 0.75;
-              const barHeight = Math.max(6, level * taper * 100);
-              return (
-                <div
-                  key={i}
-                  className={cn(
-                    'w-[3px] rounded-full flex-shrink-0 transition-colors duration-300',
-                    isRecording ? 'bg-primary' : 'bg-textMuted'
-                  )}
-                  style={{
-                    height: `${barHeight}%`,
-                    opacity: isPaused ? 0.35 : 1,
-                  }}
-                />
-              );
-            })}
-          </div>
+        <p className="font-mono text-4xl text-textPrimary tabular-nums mb-10">
+          {formatElapsed(elapsedMs)}
+        </p>
+
+        {/* Live waveform -- standalone bar row now that there's no circle
+            to fit inside, so bars run full amplitude with no edge taper. */}
+        <div className="flex items-center justify-center gap-[3px] h-14 w-full max-w-xs">
+          {levels.map((level, i) => (
+            <div
+              key={i}
+              className={cn(
+                'w-[3px] rounded-full flex-shrink-0 transition-colors duration-300',
+                isRecording ? 'bg-primary' : 'bg-textMuted'
+              )}
+              style={{
+                height: `${Math.max(6, level * 100)}%`,
+                opacity: isPaused ? 0.35 : 1,
+              }}
+            />
+          ))}
         </div>
       </div>
 
-      <p className="font-mono text-2xl text-textPrimary tabular-nums mb-16 md:mb-12">
-        {formatElapsed(elapsedMs)}
-      </p>
-
-      {/* Controls */}
+      {/* Controls -- pinned toward the bottom via the flex-1 spacer above,
+          with extra bottom padding on mobile specifically (pb-12 vs the
+          md:pb-0 + md:justify-center centered layout on desktop). */}
       <div className="flex items-center gap-6 mb-10">
         <button
           onClick={isPaused ? resume : pause}
@@ -237,15 +215,14 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
           <Square className="w-5 h-5" fill="currentColor" />
         </button>
 
-        <div className="w-14 h-14" aria-hidden="true" />
+        <button
+          onClick={() => setConfirmingDiscard(true)}
+          aria-label="Discard recording"
+          className="w-14 h-14 rounded-full bg-surface border border-border flex items-center justify-center text-textSecondary hover:text-white hover:border-accent/50 transition-all active:scale-95"
+        >
+          <Trash2 className="w-5 h-5" />
+        </button>
       </div>
-
-      <button
-        onClick={() => setConfirmingDiscard(true)}
-        className="text-textMuted text-xs font-medium hover:text-textSecondary transition-colors"
-      >
-        Discard recording
-      </button>
 
       <button
         onClick={() => setConfirmingDiscard(true)}
