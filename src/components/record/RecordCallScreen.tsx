@@ -203,10 +203,11 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
         </p>
       </div>
 
-      {/* Controls -- pinned toward the bottom via the flex-1 spacer above,
-          with extra bottom padding on mobile specifically (pb-12 vs the
-          md:pb-0 + md:justify-center centered layout on desktop). */}
-      <div className="flex items-center gap-6 mb-10">
+      {/* Controls -- pinned toward the bottom via the flex-1 spacer above
+          on mobile (pb-24), and pushed down independently on desktop via
+          mt-16 since md:justify-center otherwise centers this whole block
+          tightly under the timer. */}
+      <div className="flex items-center gap-6 mb-10 mt-10 md:mt-16">
         <button
           onClick={isPaused ? resume : pause}
           disabled={isRequesting}
