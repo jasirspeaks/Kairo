@@ -60,7 +60,7 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
     const result = await stop();
     if (!result) {
       setSubmitPhase('error');
-      setSubmitError('We didn\u2019t capture any audio. Please try recording again.');
+      setSubmitError('We didn\'t capture any audio. Please try recording again.');
       return;
     }
 
@@ -105,7 +105,7 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
         <div className="w-14 h-14 rounded-full bg-red-400/10 border border-red-400/20 flex items-center justify-center mb-6">
           <AlertCircle className="w-6 h-6 text-red-400" />
         </div>
-        <p className="text-textPrimary font-display font-semibold text-lg mb-2">Couldn\u2019t process that recording</p>
+        <p className="text-textPrimary font-display font-semibold text-lg mb-2">Couldn't process that recording</p>
         <p className="text-textSecondary text-sm max-w-xs mb-8">{submitError}</p>
         <button
           onClick={onClose}
@@ -124,7 +124,7 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
         <div className="w-14 h-14 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-6">
           <Mic className="w-6 h-6 text-amber-400" />
         </div>
-        <p className="text-textPrimary font-display font-semibold text-lg mb-2">Can\u2019t start recording</p>
+        <p className="text-textPrimary font-display font-semibold text-lg mb-2">Can't start recording</p>
         <p className="text-textSecondary text-sm max-w-xs mb-8">{errorMessage}</p>
         <button onClick={onClose} className="text-primary text-sm font-medium">
           Go back
@@ -139,7 +139,7 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
       <div className="fixed inset-0 z-50 bg-bg/95 flex flex-col items-center justify-center px-6 text-center">
         <p className="text-textPrimary font-display font-semibold text-lg mb-2">Discard this recording?</p>
         <p className="text-textSecondary text-sm max-w-xs mb-8">
-          This can\u2019t be undone. The call won\u2019t be saved or reviewed.
+          This can't be undone. The call won't be saved or reviewed.
         </p>
         <div className="flex gap-3">
           <button
@@ -163,34 +163,44 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
   return (
     <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center px-6 pt-24 pb-24 md:pt-0 md:pb-0 md:justify-center">
       <div className="flex-1 md:flex-none flex flex-col items-center justify-center">
+        {/* Live waveform with pulsating glow behind it */}
+        <div className="relative flex items-center justify-center mb-8">
+          <div
+            className={cn(
+              'absolute w-64 h-24 rounded-full',
+              isRecording && 'animate-pulse-soft'
+            )}
+            style={{
+              background: 'radial-gradient(ellipse, rgba(205,184,255,0.18) 0%, rgba(205,184,255,0) 70%)',
+            }}
+          />
+          <div className="relative flex items-center justify-center gap-[3px] h-14 w-full max-w-xs">
+            {levels.map((level, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'w-[3px] rounded-full flex-shrink-0 transition-colors duration-300',
+                  isRecording ? 'bg-primary' : 'bg-textMuted'
+                )}
+                style={{
+                  height: `${Math.max(6, level * 100)}%`,
+                  opacity: isPaused ? 0.35 : 1,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+
         <p className={cn(
-          'text-sm font-medium mb-6 tracking-wide',
+          'text-sm font-medium mb-4 tracking-wide',
           isRecording ? 'text-textPrimary' : 'text-textSecondary'
         )}>
-          {isRequesting ? 'Waiting for microphone access\u2026' : isPaused ? 'Paused' : 'Recording\u2026'}
+          {isRequesting ? 'Waiting for microphone access...' : isPaused ? 'Paused' : 'Recording...'}
         </p>
 
-        <p className="font-mono text-4xl text-textPrimary tabular-nums mb-10">
+        <p className="font-mono text-4xl text-textPrimary tabular-nums">
           {formatElapsed(elapsedMs)}
         </p>
-
-        {/* Live waveform -- standalone bar row now that there's no circle
-            to fit inside, so bars run full amplitude with no edge taper. */}
-        <div className="flex items-center justify-center gap-[3px] h-14 w-full max-w-xs">
-          {levels.map((level, i) => (
-            <div
-              key={i}
-              className={cn(
-                'w-[3px] rounded-full flex-shrink-0 transition-colors duration-300',
-                isRecording ? 'bg-primary' : 'bg-textMuted'
-              )}
-              style={{
-                height: `${Math.max(6, level * 100)}%`,
-                opacity: isPaused ? 0.35 : 1,
-              }}
-            />
-          ))}
-        </div>
       </div>
 
       {/* Controls -- pinned toward the bottom via the flex-1 spacer above,

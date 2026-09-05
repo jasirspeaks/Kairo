@@ -316,13 +316,13 @@ export function describeRecordingError(rawError: string | undefined): string {
     return 'That recording was too long to process in one pass. Try a shorter call, or paste the transcript instead.';
   }
   if (rawError.includes('too short')) {
-    return 'We couldn\u2019t get enough from that recording to review it. Make sure the call was actually captured, then try again.';
+    return 'We couldn\'t get enough from that recording to review it. Make sure the call was actually captured, then try again.';
   }
   if (rawError.includes('Failed to download recording')) {
-    return 'We couldn\u2019t retrieve your recording. Please try recording again.';
+    return 'We couldn\'t retrieve your recording. Please try recording again.';
   }
   if (rawError.includes('Gemini')) {
-    return 'Kairo couldn\u2019t process that recording right now. Please try again in a moment.';
+    return 'Kairo couldn\'t process that recording right now. Please try again in a moment.';
   }
   return rawError;
 }

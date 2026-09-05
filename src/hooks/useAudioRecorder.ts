@@ -106,7 +106,7 @@ export function useAudioRecorder(): UseAudioRecorderResult {
     if (!mimeType) {
       stream.getTracks().forEach(t => t.stop());
       setStatus('error');
-      setErrorMessage('This browser doesn\u2019t support in-browser recording. Try uploading a recording instead.');
+      setErrorMessage('This browser doesn\'t support in-browser recording. Try uploading a recording instead.');
       return;
     }
 
