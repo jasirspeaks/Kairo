@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
+import { getAuthErrorMessage } from '../../lib/authHelpers';
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -25,9 +26,10 @@ export function ForgotPassword() {
     // exists -- confirming/denying account existence here is a user
     // enumeration vector. Supabase itself doesn't error on unknown emails
     // for this call, but we treat it as success either way as defense in
-    // depth.
+    // depth. We only show `error` for genuine failures (e.g. malformed
+    // request), and even then via the safe mapper, never raw SDK text.
     if (error) {
-      setError(error.message);
+      setError(getAuthErrorMessage(error));
     } else {
       setSent(true);
     }
@@ -75,16 +77,18 @@ export function ForgotPassword() {
             </Button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="animate-fade-in">
+          <form onSubmit={handleSubmit} className="animate-fade-in" autoComplete="on">
             <div className="mb-4">
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="email"
+                  name="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="you@company.com"
                   className="input-field pl-10"
+                  autoComplete="username"
                   autoFocus
                   required
                 />

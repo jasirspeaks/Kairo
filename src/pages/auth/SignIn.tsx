@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
+import { Captcha } from '../../components/auth/Captcha';
+import { getAuthErrorMessage } from '../../lib/authHelpers';
 
 export function SignIn() {
   const navigate = useNavigate();
@@ -12,16 +14,22 @@ export function SignIn() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: captchaToken ? { captchaToken } : undefined,
+    });
 
     if (error) {
-      setError(error.message);
+      // Never surface error.message directly -- map to safe, generic copy.
+      setError(getAuthErrorMessage(error));
       setLoading(false);
     } else {
       navigate('/app/dashboard');
@@ -91,7 +99,7 @@ export function SignIn() {
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSignIn} className="animate-fade-in">
+          <form onSubmit={handleSignIn} className="animate-fade-in" autoComplete="on">
             <button
               type="button"
               onClick={() => setShowEmailForm(false)}
@@ -106,10 +114,12 @@ export function SignIn() {
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="email"
+                  name="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="you@company.com"
                   className="input-field pl-10"
+                  autoComplete="username"
                   autoFocus
                   required
                 />
@@ -118,10 +128,12 @@ export function SignIn() {
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="password"
+                  name="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="input-field pl-10"
+                  autoComplete="current-password"
                   required
                 />
               </div>
@@ -132,6 +144,9 @@ export function SignIn() {
                 Forgot password?
               </Link>
             </div>
+
+            {/* No-op until VITE_TURNSTILE_SITE_KEY is set -- see Captcha.tsx */}
+            <Captcha onVerify={setCaptchaToken} />
 
             <Button type="submit" loading={loading} className="w-full" size="lg">
               Sign In

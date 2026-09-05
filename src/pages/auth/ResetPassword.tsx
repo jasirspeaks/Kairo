@@ -3,8 +3,21 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Lock, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
+import { getAuthErrorMessage, checkPasswordStrength, PasswordStrength } from '../../lib/authHelpers';
 
 const MIN_PASSWORD_LENGTH = 8;
+
+const STRENGTH_COLOR: Record<PasswordStrength, string> = {
+  weak: 'bg-red-400',
+  fair: 'bg-amber-400',
+  strong: 'bg-emerald-400',
+};
+
+const STRENGTH_WIDTH: Record<PasswordStrength, string> = {
+  weak: 'w-1/3',
+  fair: 'w-2/3',
+  strong: 'w-full',
+};
 
 // Clicking the emailed reset link redirects here with the recovery token
 // in the URL. Supabase's client picks that up automatically (via
@@ -24,6 +37,8 @@ export function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+
+  const strength = password ? checkPasswordStrength(password) : null;
 
   useEffect(() => {
     let resolved = false;
@@ -54,6 +69,11 @@ export function ResetPassword() {
     e.preventDefault();
     setError('');
 
+    const check = checkPasswordStrength(password);
+    if (!check.isAcceptable) {
+      setError(check.message);
+      return;
+    }
     if (password.length < MIN_PASSWORD_LENGTH) {
       setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
@@ -68,7 +88,8 @@ export function ResetPassword() {
     setLoading(false);
 
     if (error) {
-      setError(error.message);
+      // Never surface error.message directly -- map to safe, generic copy.
+      setError(getAuthErrorMessage(error));
     } else {
       setSuccess(true);
       setTimeout(() => navigate('/app/dashboard'), 2000);
@@ -111,32 +132,48 @@ export function ResetPassword() {
         )}
 
         {status === 'valid' && !success && (
-          <form onSubmit={handleSubmit} className="animate-fade-in">
-            <div className="space-y-3 mb-4">
+          <form onSubmit={handleSubmit} className="animate-fade-in" autoComplete="on">
+            <div className="space-y-3 mb-1.5">
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="password"
+                  name="new-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="New password"
                   className="input-field pl-10"
+                  autoComplete="new-password"
                   autoFocus
                   required
+                  minLength={MIN_PASSWORD_LENGTH}
                 />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="password"
+                  name="confirm-password"
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
                   className="input-field pl-10"
+                  autoComplete="new-password"
                   required
+                  minLength={MIN_PASSWORD_LENGTH}
                 />
               </div>
             </div>
+
+            {strength && (
+              <div className="mb-4 px-0.5">
+                <div className="h-1 w-full bg-border rounded-full overflow-hidden mb-1.5">
+                  <div className={`h-full rounded-full transition-all duration-300 ${STRENGTH_COLOR[strength.strength]} ${STRENGTH_WIDTH[strength.strength]}`} />
+                </div>
+                <p className="text-textMuted text-footnote">{strength.message}</p>
+              </div>
+            )}
+            {!strength && <div className="mb-4" />}
 
             <Button type="submit" loading={loading} className="w-full" size="lg">
               Update Password

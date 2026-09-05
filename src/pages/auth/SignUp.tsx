@@ -3,6 +3,20 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
+import { Captcha } from '../../components/auth/Captcha';
+import { getAuthErrorMessage, checkPasswordStrength, PasswordStrength } from '../../lib/authHelpers';
+
+const STRENGTH_COLOR: Record<PasswordStrength, string> = {
+  weak: 'bg-red-400',
+  fair: 'bg-amber-400',
+  strong: 'bg-emerald-400',
+};
+
+const STRENGTH_WIDTH: Record<PasswordStrength, string> = {
+  weak: 'w-1/3',
+  fair: 'w-2/3',
+  strong: 'w-full',
+};
 
 export function SignUp() {
   const navigate = useNavigate();
@@ -13,20 +27,34 @@ export function SignUp() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+
+  const strength = password ? checkPasswordStrength(password) : null;
 
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError('');
+
+    const check = checkPasswordStrength(password);
+    if (!check.isAcceptable) {
+      setError(check.message);
+      return;
+    }
+
+    setLoading(true);
 
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name } }
+      options: {
+        data: { full_name: name },
+        ...(captchaToken ? { captchaToken } : {}),
+      },
     });
 
     if (error) {
-      setError(error.message);
+      // Never surface error.message directly -- map to safe, generic copy.
+      setError(getAuthErrorMessage(error));
       setLoading(false);
     } else {
       navigate('/onboarding');
@@ -96,7 +124,7 @@ export function SignUp() {
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSignUp} className="animate-fade-in">
+          <form onSubmit={handleSignUp} className="animate-fade-in" autoComplete="on">
             <button
               type="button"
               onClick={() => setShowEmailForm(false)}
@@ -106,15 +134,17 @@ export function SignUp() {
               Back
             </button>
 
-            <div className="space-y-3 mb-4">
+            <div className="space-y-3 mb-1.5">
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="text"
+                  name="name"
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="Full name"
                   className="input-field pl-10"
+                  autoComplete="name"
                   autoFocus
                   required
                 />
@@ -123,10 +153,12 @@ export function SignUp() {
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="email"
+                  name="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="you@company.com"
                   className="input-field pl-10"
+                  autoComplete="username"
                   required
                 />
               </div>
@@ -134,15 +166,30 @@ export function SignUp() {
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
                 <input
                   type="password"
+                  name="new-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="Min. 8 characters"
                   className="input-field pl-10"
+                  autoComplete="new-password"
                   required
                   minLength={8}
                 />
               </div>
             </div>
+
+            {strength && (
+              <div className="mb-4 px-0.5">
+                <div className="h-1 w-full bg-border rounded-full overflow-hidden mb-1.5">
+                  <div className={`h-full rounded-full transition-all duration-300 ${STRENGTH_COLOR[strength.strength]} ${STRENGTH_WIDTH[strength.strength]}`} />
+                </div>
+                <p className="text-textMuted text-footnote">{strength.message}</p>
+              </div>
+            )}
+            {!strength && <div className="mb-4" />}
+
+            {/* No-op until VITE_TURNSTILE_SITE_KEY is set -- see Captcha.tsx */}
+            <Captcha onVerify={setCaptchaToken} />
 
             <Button type="submit" loading={loading} className="w-full" size="lg">
               Create Account
