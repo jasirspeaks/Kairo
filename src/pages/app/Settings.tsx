@@ -693,7 +693,7 @@ export function Settings() {
                       Trial ended, upgrade to continue using Kairo.
                     </p>
                     <a
-                      href={`mailto:hello@kairoiq.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
+                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
                       className="inline-flex items-center justify-center flex-shrink-0 font-medium rounded-lg transition-all duration-200 active:scale-95 text-xs px-4 py-2 bg-primary hover:bg-primaryLight text-white hover:shadow-purple-glow"
                     >
                       Upgrade
@@ -705,7 +705,7 @@ export function Settings() {
                   <p className="text-textMuted text-xs">
                     Ready to upgrade early?{' '}
                     <a
-                      href={`mailto:hello@kairoiq.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
+                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
                       className="text-primary hover:text-white transition-colors font-medium"
                     >
                       Get in touch
