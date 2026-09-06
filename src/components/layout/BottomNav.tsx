@@ -1,9 +1,7 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings as SettingsIcon, FolderOpen, Inbox, Plus, Lock } from 'lucide-react';
+import { LayoutDashboard, Settings as SettingsIcon, FolderOpen, Inbox, Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useAuth } from '../../hooks/useAuth';
-import { useSubscription } from '../../hooks/useSubscription';
 
 const TABS = [
   { path: '/app/dashboard', label: 'Home', icon: LayoutDashboard },
@@ -16,8 +14,6 @@ const TABS = [
 export function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-  const { canWrite } = useSubscription(user?.id);
 
   function isActive(path: string) {
     if (path === '/app/deals') return location.pathname.startsWith('/app/deals');
@@ -35,22 +31,12 @@ export function BottomNav() {
             return (
               <button
                 key={path}
-                onClick={() => canWrite && navigate(path)}
-                disabled={!canWrite}
-                className="flex-1 flex items-center justify-center min-w-[44px] disabled:cursor-not-allowed"
-                aria-label={canWrite ? 'New Deal' : 'New Deal — trial ended'}
+                onClick={() => navigate(path)}
+                className="flex-1 flex items-center justify-center min-w-[44px]"
+                aria-label="New Deal"
               >
-                <div
-                  className={cn(
-                    'w-11 h-11 rounded-full flex items-center justify-center transition-transform duration-150 ease-spring',
-                    canWrite
-                      ? 'bg-primary shadow-purple-glow-sm active:scale-95'
-                      : 'bg-surfaceHigh'
-                  )}
-                >
-                  {canWrite
-                    ? <Icon className="w-5 h-5 text-white" />
-                    : <Lock className="w-4 h-4 text-textMuted" />}
+                <div className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shadow-purple-glow-sm active:scale-95 transition-transform duration-150 ease-spring">
+                  <Icon className="w-5 h-5 text-white" />
                 </div>
               </button>
             );

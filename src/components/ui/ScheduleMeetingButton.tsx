@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Lock, X, CheckCircle2 } from 'lucide-react';
+import { Calendar, X, CheckCircle2 } from 'lucide-react';
 import { checkCalendarConnected, syncGoogleCalendar } from '../../lib/kairo';
 import { supabase } from '../../lib/supabase';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from './Button';
-import { UpgradeBanner } from './UpgradeBanner';
+import { UpgradeModal } from './UpgradeModal';
 
 const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/r';
 
@@ -34,7 +34,7 @@ export function ScheduleMeetingButton({ userId, dealId, className, variant = 'se
   const { canWrite } = useSubscription(userId);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const awaitingReturn = useRef(false);
 
@@ -68,7 +68,7 @@ export function ScheduleMeetingButton({ userId, dealId, className, variant = 'se
     // intents insert below; opening Google Calendar itself is harmless
     // and left alone, but there's no reason to invite that click either.
     if (!canWrite) {
-      setShowUpgrade(true);
+      setShowUpgradeModal(true);
       return;
     }
 
@@ -103,14 +103,14 @@ export function ScheduleMeetingButton({ userId, dealId, className, variant = 'se
         <button
           onClick={handleClick}
           className={className || 'w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary'}
-          aria-label={canWrite ? 'Schedule Next Meeting' : 'Schedule Next Meeting — trial ended'}
+          aria-label="Schedule Next Meeting"
         >
-          {canWrite ? <Calendar className="w-4 h-4" /> : <Lock className="w-3.5 h-3.5" />}
+          <Calendar className="w-4 h-4" />
         </button>
         {showPrompt && (
           <CalendarConnectPrompt onClose={() => setShowPrompt(false)} onGoToSettings={() => navigate('/app/settings')} />
         )}
-        {showUpgrade && <UpgradeBanner action="to schedule a meeting" className="mt-2" />}
+        <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
         {confirmationBanner}
       </>
     );
@@ -119,12 +119,12 @@ export function ScheduleMeetingButton({ userId, dealId, className, variant = 'se
   return (
     <>
       <Button variant="secondary" size={size} className={className} onClick={handleClick}>
-        {canWrite ? <Calendar className="w-4 h-4" /> : <Lock className="w-4 h-4" />} Schedule Next Meeting
+        <Calendar className="w-4 h-4" /> Schedule Next Meeting
       </Button>
       {showPrompt && (
         <CalendarConnectPrompt onClose={() => setShowPrompt(false)} onGoToSettings={() => navigate('/app/settings')} />
       )}
-      {showUpgrade && <UpgradeBanner action="to schedule a meeting" className="mt-2" />}
+      <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
       {confirmationBanner}
     </>
   );

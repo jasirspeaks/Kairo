@@ -14,7 +14,6 @@ import {
   EyeOff,
   Clock,
   CreditCard,
-  Lock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
@@ -118,9 +117,10 @@ export function Settings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Arrives via NewDealRoute's redirect when someone hits a blocked write
-  // surface directly. Briefly highlights the Plan section so it's obvious
-  // why they landed on Settings instead of where they clicked.
+  // Arrives via UpgradeModal's "Upgrade" button (shown when someone
+  // clicks a blocked write action anywhere in the app). Briefly
+  // highlights the Plan section so it's obvious where to look after
+  // landing on Settings.
   useEffect(() => {
     if (searchParams.get('upgrade') === '1') {
       setHighlightPlan(true);
@@ -688,34 +688,24 @@ export function Settings() {
                 )}
 
                 {(isExpired || subscription.status === 'past_due' || subscription.status === 'canceled') && (
-                  <div className="flex items-start gap-2 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
-                    <Lock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-textPrimary text-xs font-medium">
-                        {subscription.status === 'past_due' ? 'Payment past due' : 'Your trial has ended'}
-                      </p>
-                      <p className="text-textSecondary text-xs mt-0.5">
-                        Kairo is in read-only mode — everything you've already added is still here, but adding new deals, calls, and meetings is paused until you upgrade.
-                      </p>
-                    </div>
+                  <div className="flex items-center justify-between gap-3 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
+                    <p className="text-textPrimary text-xs font-medium">
+                      Trial ended, upgrade to continue using Kairo.
+                    </p>
+                    <a
+                      href={`mailto:hello@kairoiq.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
+                      className="inline-flex items-center justify-center flex-shrink-0 font-medium rounded-lg transition-all duration-200 active:scale-95 text-xs px-4 py-2 bg-primary hover:bg-primaryLight text-white hover:shadow-purple-glow"
+                    >
+                      Upgrade
+                    </a>
                   </div>
-                )}
-
-                {!canWrite && (
-                  <a
-                    href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
-                    className="inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 active:scale-95 text-sm px-5 py-2.5 bg-primary hover:bg-primaryLight text-white hover:shadow-purple-glow"
-                  >
-                    <CreditCard className="w-4 h-4" />
-                    Upgrade — $59/mo
-                  </a>
                 )}
 
                 {canWrite && subscription.status === 'trialing' && (
                   <p className="text-textMuted text-xs">
                     Ready to upgrade early?{' '}
                     <a
-                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
+                      href={`mailto:hello@kairoiq.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
                       className="text-primary hover:text-white transition-colors font-medium"
                     >
                       Get in touch

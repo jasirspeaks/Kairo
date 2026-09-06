@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
-import { useSubscription } from './hooks/useSubscription';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 // Pages
@@ -40,20 +39,6 @@ function OnboardingRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// New Deal is a pure write surface -- there's nothing on this page worth
-// showing read-only, unlike Deal Review or Call Review. Once the trial
-// (or subscription) has lapsed, send the user to Dashboard instead of
-// rendering a form whose submit buttons would just fail against RLS.
-// This is a UX redirect, not the enforcement -- the database's
-// has_write_access() check is what actually blocks the insert either way.
-function NewDealRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  const { canWrite, loading } = useSubscription(user?.id);
-  if (loading) return null;
-  if (!canWrite) return <Navigate to="/app/dashboard?upgrade=1" replace />;
-  return <>{children}</>;
-}
-
 function RootRoute() {
   const { user, profile, loading } = useAuth();
   if (loading) return (
@@ -85,7 +70,7 @@ export default function App() {
               <Routes>
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="inbox" element={<Inbox />} />
-                <Route path="new" element={<NewDealRoute><NewDeal /></NewDealRoute>} />
+                <Route path="new" element={<NewDeal />} />
                 <Route path="deals" element={<Deals />} />
                 <Route path="deals/:dealId" element={<DealReview />} />
                 <Route path="deals/:dealId/calls/:callId" element={<Review />} />

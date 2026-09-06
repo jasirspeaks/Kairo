@@ -4,10 +4,12 @@ import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Layers, Calen
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
+import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { TopBar } from '../../components/layout/TopBar';
 import { RecordCallScreen } from '../../components/record/RecordCallScreen';
+import { UpgradeModal } from '../../components/ui/UpgradeModal';
 import { DEAL_STAGES, DealStage } from '../../types';
 
 type Step = 'deal' | 'transcript' | 'record' | 'awaiting-meeting' | 'scheduled';
@@ -26,6 +28,8 @@ const AWAIT_MEETING_POLL_MS = 1500;
 export function NewDeal() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+  const { canWrite } = useSubscription(user?.id);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [step, setStep] = useState<Step>('deal');
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -174,6 +178,7 @@ export function NewDeal() {
   // detection of whether the meeting was actually created -- it just sends
   // the user straight to Dashboard as soon as they're back in Kairo.
   async function handleScheduleFirstMeeting() {
+    if (!canWrite) { setShowUpgradeModal(true); return; }
     if (!calendarConnected) {
       setShowConnectPrompt(true);
       return;
@@ -215,11 +220,13 @@ export function NewDeal() {
   function handleUploadFirstCall(e: React.FormEvent) {
     e.preventDefault();
     if (!dealName.trim() || !companyName.trim()) return;
+    if (!canWrite) { setShowUpgradeModal(true); return; }
     setStep('transcript');
   }
 
   function handleRecordNow() {
     if (!dealName.trim() || !companyName.trim()) return;
+    if (!canWrite) { setShowUpgradeModal(true); return; }
     setError('');
     setStep('record');
   }
@@ -241,6 +248,7 @@ export function NewDeal() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
+    if (!canWrite) { setShowUpgradeModal(true); return; }
 
     const text = transcript.trim();
 
@@ -635,6 +643,8 @@ export function NewDeal() {
           </Button>
         </form>
       )}
+
+      <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
     </div>
   );
 }
