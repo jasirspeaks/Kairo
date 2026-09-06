@@ -13,11 +13,15 @@ import {
   Eye,
   EyeOff,
   Clock,
+  CreditCard,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useSubscription } from '../../hooks/useSubscription';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
 import { TopBar } from '../../components/layout/TopBar';
+import { formatDate } from '../../lib/utils';
 
 type FirefliesStatus = 'pending' | 'active' | 'invalid' | 'disconnected';
 
@@ -36,7 +40,9 @@ interface FirefliesConnectionState {
 
 export function Settings() {
   const { user, profile, signOut, refetchProfile } = useAuth();
+  const { subscription, loading: subscriptionLoading, canWrite, isExpired, trialDaysLeft } = useSubscription(user?.id);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [highlightPlan, setHighlightPlan] = useState(false);
 
   // --- Profile / Selling Context ---
   // Both live in the same `profiles` row, so they share one dirty-check
@@ -108,6 +114,19 @@ export function Settings() {
       searchParams.delete('calendar');
       setSearchParams(searchParams, { replace: true });
       setTimeout(() => setCalendarBanner(null), 4000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Arrives via NewDealRoute's redirect when someone hits a blocked write
+  // surface directly. Briefly highlights the Plan section so it's obvious
+  // why they landed on Settings instead of where they clicked.
+  useEffect(() => {
+    if (searchParams.get('upgrade') === '1') {
+      setHighlightPlan(true);
+      searchParams.delete('upgrade');
+      setSearchParams(searchParams, { replace: true });
+      setTimeout(() => setHighlightPlan(false), 2500);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -615,6 +634,97 @@ export function Settings() {
                 </form>
               )}
             </div>
+          </div>
+        </section>
+
+        {/* --- Plan --- */}
+        {/* Status-only for now — no payment gateway connected yet, so
+            there's nothing to click through to. Once Stripe is wired up,
+            the mailto fallback below gets replaced with a real Checkout
+            link/button; the status states themselves don't need to change. */}
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">Plan</h2>
+          <div
+            className={`card p-5 md:p-7 transition-shadow duration-500 ${
+              highlightPlan ? 'ring-2 ring-primary/50 shadow-purple-glow-sm' : ''
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <CreditCard className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-semibold text-textPrimary">Subscription</h3>
+            </div>
+
+            {subscriptionLoading ? (
+              <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse mt-4" />
+            ) : !subscription ? (
+              <p className="text-textMuted text-xs mt-4">
+                Couldn't load your subscription status. Refresh the page, or reach out if this persists.
+              </p>
+            ) : (
+              <div className="space-y-4 mt-4">
+                {subscription.status === 'trialing' && (
+                  <div className="flex items-start gap-2 bg-primary/8 border border-primary/20 rounded-lg px-4 py-3">
+                    <Clock className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-textPrimary text-xs font-medium">
+                        {trialDaysLeft === 0
+                          ? 'Your trial ends today'
+                          : `${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'} left in your trial`}
+                      </p>
+                      <p className="text-textSecondary text-xs mt-0.5">
+                        Trial ends {formatDate(subscription.trial_end)}. You can view everything in Kairo after that — adding new deals, calls, and meetings pauses until you upgrade.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {subscription.status === 'active' && (
+                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span className="text-emerald-400 text-xs font-medium">
+                      Active{subscription.current_period_end ? ` — renews ${formatDate(subscription.current_period_end)}` : ''}
+                    </span>
+                  </div>
+                )}
+
+                {(isExpired || subscription.status === 'past_due' || subscription.status === 'canceled') && (
+                  <div className="flex items-start gap-2 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
+                    <Lock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-textPrimary text-xs font-medium">
+                        {subscription.status === 'past_due' ? 'Payment past due' : 'Your trial has ended'}
+                      </p>
+                      <p className="text-textSecondary text-xs mt-0.5">
+                        Kairo is in read-only mode — everything you've already added is still here, but adding new deals, calls, and meetings is paused until you upgrade.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {!canWrite && (
+                  <a
+                    href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
+                    className="inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-200 active:scale-95 text-sm px-5 py-2.5 bg-primary hover:bg-primaryLight text-white hover:shadow-purple-glow"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    Upgrade — $59/mo
+                  </a>
+                )}
+
+                {canWrite && subscription.status === 'trialing' && (
+                  <p className="text-textMuted text-xs">
+                    Ready to upgrade early?{' '}
+                    <a
+                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent('Upgrading my Kairo plan')}&body=${encodeURIComponent(`Hi, I'd like to upgrade my Kairo account (${profile?.email ?? ''}) to a paid plan.`)}`}
+                      className="text-primary hover:text-white transition-colors font-medium"
+                    >
+                      Get in touch
+                    </a>
+                    .
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </section>
 

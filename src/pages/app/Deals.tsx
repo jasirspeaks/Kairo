@@ -213,8 +213,8 @@ export function Deals() {
               onChange={e => setStatusFilter(e.target.value as StatusFilter)}
               className="input-field text-sm"
             >
-              <option value="active">Active deals</option>
               <option value="all">All statuses</option>
+              <option value="active">Active deals</option>
               <option value="Healthy">Healthy</option>
               <option value="Promising">Promising</option>
               <option value="At Risk">At Risk</option>

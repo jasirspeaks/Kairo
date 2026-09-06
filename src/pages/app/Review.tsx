@@ -7,6 +7,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
+import { useSubscription } from '../../hooks/useSubscription';
 import { Deal, Conversation, DEAL_STAGES, DealStage } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
@@ -14,6 +15,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { ScheduleMeetingButton } from '../../components/ui/ScheduleMeetingButton';
+import { UpgradeBanner } from '../../components/ui/UpgradeBanner';
 import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { formatDate } from '../../lib/utils';
 
@@ -33,6 +35,7 @@ export function Review() {
   const { dealId, callId } = useParams();
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+  const { canWrite } = useSubscription(user?.id);
 
   const [deal, setDeal] = useState<Deal | null>(null);
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -94,6 +97,11 @@ export function Review() {
   async function handleAddCall(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !deal || !newTranscript.trim()) return;
+    // Belt-and-suspenders: the button is already disabled when !canWrite,
+    // but this also avoids spending a Gemini call before RLS would reject
+    // the insert anyway, in case this handler is ever reached some other
+    // way (e.g. re-enabled client-side).
+    if (!canWrite) { setError('Your trial has ended. Upgrade to add another call.'); return; }
 
     const text = newTranscript.trim();
     if (text.length < 100) { setError('Transcript is too short.'); return; }
@@ -375,14 +383,27 @@ export function Review() {
             call for this deal -- an older Call Review is a historical
             record, not the place to add the next one. */}
         {isLatestCall && (
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
-            <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="flex-1" />
-            <Button onClick={() => setAddingCall(true)} variant="secondary" className="flex-1">
-              <Plus className="w-4 h-4" /> Add Call
-            </Button>
-            <Button onClick={() => setRecordingNow(true)} variant="secondary" className="flex-1">
-              <Mic className="w-4 h-4" /> Record Now
-            </Button>
+          <div className="flex flex-col gap-2 pt-1">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="flex-1" />
+              <Button
+                onClick={() => canWrite && setAddingCall(true)}
+                variant="secondary"
+                className="flex-1"
+                disabled={!canWrite}
+              >
+                <Plus className="w-4 h-4" /> Add Call
+              </Button>
+              <Button
+                onClick={() => canWrite && setRecordingNow(true)}
+                variant="secondary"
+                className="flex-1"
+                disabled={!canWrite}
+              >
+                <Mic className="w-4 h-4" /> Record Now
+              </Button>
+            </div>
+            {!canWrite && <UpgradeBanner action="to add another call" />}
           </div>
         )}
       </div>

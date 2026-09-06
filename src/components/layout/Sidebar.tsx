@@ -1,9 +1,11 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Plus, FolderOpen, Settings, Inbox
+  LayoutDashboard, Plus, FolderOpen, Settings, Inbox, Lock
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../hooks/useAuth';
+import { useSubscription } from '../../hooks/useSubscription';
 
 const NAV_ITEMS = [
   { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -15,6 +17,8 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const { canWrite } = useSubscription(user?.id);
 
   function isActive(path: string) {
     if (path === '/app/deals') {
@@ -59,13 +63,23 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* New Deal — accent action, pinned to bottom */}
+      {/* New Deal — accent action, pinned to bottom. Disabled once the
+          trial/subscription has lapsed; RLS blocks the actual insert
+          regardless, but disabling here avoids sending the user into a
+          form that can't submit. */}
       <div className="px-3 pb-5 pt-3 border-t border-border">
         <button
-          onClick={() => navigate('/app/new')}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primaryHover transition-colors duration-200 shadow-purple-glow-sm"
+          onClick={() => canWrite && navigate('/app/new')}
+          disabled={!canWrite}
+          title={canWrite ? undefined : 'Your trial has ended — upgrade to add new deals'}
+          className={cn(
+            'w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors duration-200',
+            canWrite
+              ? 'text-white bg-primary hover:bg-primaryHover shadow-purple-glow-sm'
+              : 'text-textMuted bg-surfaceHigh cursor-not-allowed'
+          )}
         >
-          <Plus className="w-4 h-4" />
+          {canWrite ? <Plus className="w-4 h-4" /> : <Lock className="w-3.5 h-3.5" />}
           New Deal
         </button>
       </div>

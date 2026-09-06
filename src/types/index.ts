@@ -179,6 +179,20 @@ export interface Profile {
   created_at: string;
 }
 
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired';
+
+export interface Subscription {
+  user_id: string;
+  status: SubscriptionStatus;
+  trial_start: string;
+  trial_end: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  current_period_end: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Conversation {
   id: string;
   user_id: string;
