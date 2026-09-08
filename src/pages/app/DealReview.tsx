@@ -245,7 +245,8 @@ function StakeholdersPanel({ stakeholders }: { stakeholders: Stakeholder[] }) {
 type DealReviewTab = 'action_plan' | 'evolution' | 'stakeholders';
 
 function ActionPlanPanel({ dealState }: { dealState: DealState }) {
-  const hasMissing = dealState.what_youre_missing && dealState.what_youre_missing.length > 0;
+  const missing = dealState.what_youre_missing ?? [];
+  const hasMissing = missing.length > 0;
   const hasFollowUp = !!dealState.key_follow_up_message;
   const hasNote = !!dealState.manager_note;
 
@@ -259,7 +260,7 @@ function ActionPlanPanel({ dealState }: { dealState: DealState }) {
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-widest text-amber-400 mb-3">What's Still Missing</h3>
           <div className="space-y-3">
-            {dealState.what_youre_missing.map((item, i) => (
+            {missing.map((item, i) => (
               <div key={i} className="flex items-start gap-3">
                 <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
@@ -297,10 +298,9 @@ function ActionPlanPanel({ dealState }: { dealState: DealState }) {
   );
 }
 
-function DealReviewTabs({
-  dealState, calls, stakeholders, activeTab, onTabChange,
+function DealReviewTabBar({
+  calls, stakeholders, activeTab, onTabChange,
 }: {
-  dealState: DealState;
   calls: Conversation[];
   stakeholders: Stakeholder[];
   activeTab: DealReviewTab;
@@ -315,25 +315,36 @@ function DealReviewTabs({
   ];
 
   return (
-    <div className="card p-4 md:p-5 w-full">
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {TABS.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => onTabChange(tab.key)}
-            className={cn(
-              'flex-1 min-w-[100px] text-center px-4 py-2 rounded-full text-xs font-semibold transition-colors truncate border',
-              activeTab === tab.key
-                ? 'bg-primary/10 text-primary border-primary/30'
-                : 'bg-transparent text-textMuted border-border hover:text-textSecondary hover:border-textMuted/40'
-            )}
-          >
-            {tab.label}
-            {tab.count > 0 && <span className="ml-1 opacity-60">{tab.count}</span>}
-          </button>
-        ))}
-      </div>
+    <div className="flex items-center gap-2 flex-wrap">
+      {TABS.map(tab => (
+        <button
+          key={tab.key}
+          onClick={() => onTabChange(tab.key)}
+          className={cn(
+            'text-center px-4 py-2 rounded-full text-xs font-semibold transition-colors border',
+            activeTab === tab.key
+              ? 'bg-primary/10 text-primary border-primary/30'
+              : 'bg-transparent text-textMuted border-border hover:text-textSecondary hover:border-textMuted/40'
+          )}
+        >
+          {tab.label}
+          {tab.count > 0 && <span className="ml-1 opacity-60">{tab.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
 
+function DealReviewTabPanel({
+  dealState, calls, stakeholders, activeTab,
+}: {
+  dealState: DealState;
+  calls: Conversation[];
+  stakeholders: Stakeholder[];
+  activeTab: DealReviewTab;
+}) {
+  return (
+    <div className="card p-4 md:p-5 w-full">
       {activeTab === 'action_plan' && <ActionPlanPanel dealState={dealState} />}
       {activeTab === 'evolution' && <RiskEvolutionPanel calls={calls} />}
       {activeTab === 'stakeholders' && <StakeholdersPanel stakeholders={stakeholders} />}
@@ -589,17 +600,25 @@ export function DealReview() {
         </div>
       )}
 
-      {/* ---- Full-width tab group: Action Plan (default), Risk Evolution,
-          Stakeholders. Pill-shaped tab buttons, one card, same layout on
-          mobile and desktop. Timeline has been removed -- Deal Activity
-          below already covers the chronological read. */}
+      {/* ---- Tab group: Action Plan (default), Risk Evolution,
+          Stakeholders. Pill buttons sit outside and above the content
+          card, sized to their own labels rather than stretched full
+          width. Timeline has been removed -- Deal Activity below already
+          covers the chronological read. */}
       <div className="mb-4 md:mb-5 w-full">
-        <DealReviewTabs
+        <div className="mb-3">
+          <DealReviewTabBar
+            calls={calls}
+            stakeholders={stakeholders}
+            activeTab={reviewTab}
+            onTabChange={setReviewTab}
+          />
+        </div>
+        <DealReviewTabPanel
           dealState={dealState}
           calls={calls}
           stakeholders={stakeholders}
           activeTab={reviewTab}
-          onTabChange={setReviewTab}
         />
       </div>
 
