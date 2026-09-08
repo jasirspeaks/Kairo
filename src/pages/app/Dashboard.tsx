@@ -308,7 +308,7 @@ export function Dashboard() {
           <EmptyState
             icon={<Building2 className="w-6 h-6" />}
             title="No active deals"
-            description="Tap the + button below to add your first deal and paste a call transcript."
+            description="Tap the + button below to add your first deal and start reviewing calls."
           />
         ) : (
           <div className="space-y-6">
@@ -345,7 +345,7 @@ export function Dashboard() {
                 onClick={() => navigate('/app/deals')}
               />
               <StatCard
-                label="Deals At Risk"
+                label="Deals at Risk"
                 value={atRisk.length}
                 icon={<AlertTriangle className="w-4 h-4" />}
                 tone={atRisk.length > 0 ? 'danger' : 'default'}
