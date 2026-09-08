@@ -195,46 +195,6 @@ function RiskEvolutionPanel({ calls }: { calls: Conversation[] }) {
   );
 }
 
-function TimelinePanel({ calls, dealId, navigate }: { calls: Conversation[]; dealId?: string; navigate: (path: string) => void }) {
-  if (calls.length === 0) {
-    return <p className="text-textMuted text-xs py-2">No calls yet.</p>;
-  }
-  return (
-    <div className="space-y-2">
-      {[...calls].reverse().map(call => {
-        const callData = call.analysis_json?.call;
-        return (
-          <button
-            key={call.id}
-            onClick={() => navigate(`/app/deals/${dealId}/calls/${call.id}`)}
-            className="w-full flex items-center justify-between gap-3 bg-surfaceHigh border border-border rounded-lg px-4 py-3 text-left active:scale-[0.99] transition-transform"
-          >
-            <div className="min-w-0">
-              <p className="text-textPrimary text-xs font-medium truncate">
-                {call.deal_stage || 'Call'} · {formatDate(call.created_at)}
-              </p>
-              {callData?.verdict && (
-                <p className="text-textMuted text-xs truncate mt-0.5">{callData.verdict}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {callData?.call_status && (
-                <span
-                  className="text-xs font-semibold px-2 py-0.5 rounded-full border"
-                  style={getStatusStyle(callData.call_status)}
-                >
-                  {callData.call_status}
-                </span>
-              )}
-              <ChevronRight className="w-3.5 h-3.5 text-textMuted" />
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function StakeholdersPanel({ stakeholders }: { stakeholders: Stakeholder[] }) {
   if (stakeholders.length === 0) {
     return (
@@ -275,42 +235,97 @@ function StakeholdersPanel({ stakeholders }: { stakeholders: Stakeholder[] }) {
   );
 }
 
-// Timeline / Risk Evolution / Stakeholders share one card shell with an
-// internal tab switcher instead of three stacked cards with duplicate
-// chrome. One header, one border, one visual unit -- the reader picks
-// which lens they want instead of scanning three near-identical boxes.
-type RailTab = 'timeline' | 'evolution' | 'stakeholders';
+// Action Plan / Risk Evolution / Stakeholders share one full-width card
+// with a pill-style tab switcher instead of three stacked cards with
+// duplicate chrome. One header, one border, one visual unit -- the reader
+// picks which lens they want instead of scanning three near-identical
+// boxes. Action Plan groups What's Still Missing, Next Recommended Action,
+// and Manager Note together since they're causally linked: the gap, the
+// move that closes it, and any human override on that move.
+type DealReviewTab = 'action_plan' | 'evolution' | 'stakeholders';
 
-function SupportingRail({
-  calls, stakeholders, dealId, navigate, activeTab, onTabChange,
+function ActionPlanPanel({ dealState }: { dealState: DealState }) {
+  const hasMissing = dealState.what_youre_missing && dealState.what_youre_missing.length > 0;
+  const hasFollowUp = !!dealState.key_follow_up_message;
+  const hasNote = !!dealState.manager_note;
+
+  if (!hasMissing && !hasFollowUp && !hasNote) {
+    return <p className="text-textMuted text-xs py-2">Nothing outstanding for this deal right now.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {hasMissing && (
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-amber-400 mb-3">What's Still Missing</h3>
+          <div className="space-y-3">
+            {dealState.what_youre_missing.map((item, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
+                </div>
+                <div>
+                  <p className="text-textPrimary text-xs font-medium mb-1">{item.gap}</p>
+                  <p className="text-primary text-xs">Ask: "{item.question_to_answer}"</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasFollowUp && (
+        <div className="rounded-xl border border-primary/20 bg-primary/[0.05] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Target className="w-3.5 h-3.5 text-primary" />
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-primary">Next Recommended Action</h3>
+          </div>
+          <p className="text-textPrimary text-sm leading-relaxed">{dealState.key_follow_up_message}</p>
+        </div>
+      )}
+
+      {hasNote && (
+        <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg bg-surfaceHigh border border-border">
+          <ArrowRight className="w-3.5 h-3.5 text-textMuted flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs text-textMuted font-semibold mb-0.5">Manager Note</p>
+            <p className="text-textSecondary text-xs leading-relaxed">{dealState.manager_note}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DealReviewTabs({
+  dealState, calls, stakeholders, activeTab, onTabChange,
 }: {
+  dealState: DealState;
   calls: Conversation[];
   stakeholders: Stakeholder[];
-  dealId?: string;
-  navigate: (path: string) => void;
-  activeTab: RailTab;
-  onTabChange: (tab: RailTab) => void;
+  activeTab: DealReviewTab;
+  onTabChange: (tab: DealReviewTab) => void;
 }) {
   const evolutionCount = buildEvolution(calls).length;
 
-  const TABS: { key: RailTab; label: string; count: number }[] = [
-    { key: 'timeline', label: 'Timeline', count: calls.length },
+  const TABS: { key: DealReviewTab; label: string; count: number }[] = [
+    { key: 'action_plan', label: 'Action Plan', count: 0 },
     { key: 'evolution', label: 'Risk Evolution', count: evolutionCount },
     { key: 'stakeholders', label: 'Stakeholders', count: stakeholders.length },
   ];
 
   return (
-    <div className="card p-4">
-      <div className="flex items-center gap-1 mb-4 -mx-1">
+    <div className="card p-4 md:p-5 w-full">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         {TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => onTabChange(tab.key)}
             className={cn(
-              'flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors truncate',
+              'flex-1 min-w-[100px] text-center px-4 py-2 rounded-full text-xs font-semibold transition-colors truncate border',
               activeTab === tab.key
-                ? 'bg-primary/10 text-primary'
-                : 'text-textMuted hover:text-textSecondary'
+                ? 'bg-primary/10 text-primary border-primary/30'
+                : 'bg-transparent text-textMuted border-border hover:text-textSecondary hover:border-textMuted/40'
             )}
           >
             {tab.label}
@@ -319,7 +334,7 @@ function SupportingRail({
         ))}
       </div>
 
-      {activeTab === 'timeline' && <TimelinePanel calls={calls} dealId={dealId} navigate={navigate} />}
+      {activeTab === 'action_plan' && <ActionPlanPanel dealState={dealState} />}
       {activeTab === 'evolution' && <RiskEvolutionPanel calls={calls} />}
       {activeTab === 'stakeholders' && <StakeholdersPanel stakeholders={stakeholders} />}
     </div>
@@ -395,7 +410,7 @@ export function DealReview() {
   const [stakeholders, setStakeholders] = useState<Stakeholder[]>([]);
   const [nextMeeting, setNextMeeting] = useState<{ start_time: string; title: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [railTab, setRailTab] = useState<RailTab>('timeline');
+  const [reviewTab, setReviewTab] = useState<DealReviewTab>('action_plan');
 
   useEffect(() => {
     if (!dealId) return;
@@ -574,75 +589,22 @@ export function DealReview() {
         </div>
       )}
 
-      {/* ---- Main two-column layout. Left: what's missing + next action,
-          paired since they're causally linked (the gap, then the move
-          that closes it). Right: supporting rail as a single tabbed card. */}
-      <div className="md:grid md:grid-cols-[1fr_320px] md:gap-5 md:items-start">
-        <div className="space-y-4 md:space-y-5 min-w-0">
-          {dealState.what_youre_missing && dealState.what_youre_missing.length > 0 && (
-            <div className="card p-4 md:p-6">
-              <h2 className="section-label mb-3">What's Still Missing</h2>
-              <div className="space-y-3">
-                {dealState.what_youre_missing.map((item, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="w-5 h-5 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-amber-400 text-xs font-bold">{i + 1}</span>
-                    </div>
-                    <div>
-                      <p className="text-textPrimary text-xs font-medium mb-1">{item.gap}</p>
-                      <p className="text-primary text-xs">Ask: "{item.question_to_answer}"</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {dealState.key_follow_up_message && (
-            <div className="rounded-xl border border-primary/20 bg-primary/[0.05] p-4 md:p-6">
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="w-3.5 h-3.5 text-primary" />
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-primary">Next Recommended Action</h2>
-              </div>
-              <p className="text-textPrimary text-sm leading-relaxed">{dealState.key_follow_up_message}</p>
-            </div>
-          )}
-
-          {dealState.manager_note && (
-            <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg bg-surfaceHigh border border-border">
-              <ArrowRight className="w-3.5 h-3.5 text-textMuted flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs text-textMuted font-semibold mb-0.5">Manager Note</p>
-                <p className="text-textSecondary text-xs leading-relaxed">{dealState.manager_note}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Desktop only: Deal Activity stays in the left column, right
-              after the findings. On mobile it moves below the supporting
-              rail (see outside this column) so the tabbed Timeline /
-              Risk Evolution / Stakeholders card comes first. */}
-          <div className="hidden md:block">
-            <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
-          </div>
-        </div>
-
-        <div className="mt-4 md:mt-0 md:sticky md:top-4">
-          <SupportingRail
-            calls={calls}
-            stakeholders={stakeholders}
-            dealId={dealId}
-            navigate={navigate}
-            activeTab={railTab}
-            onTabChange={setRailTab}
-          />
-        </div>
+      {/* ---- Full-width tab group: Action Plan (default), Risk Evolution,
+          Stakeholders. Pill-shaped tab buttons, one card, same layout on
+          mobile and desktop. Timeline has been removed -- Deal Activity
+          below already covers the chronological read. */}
+      <div className="mb-4 md:mb-5 w-full">
+        <DealReviewTabs
+          dealState={dealState}
+          calls={calls}
+          stakeholders={stakeholders}
+          activeTab={reviewTab}
+          onTabChange={setReviewTab}
+        />
       </div>
 
-      {/* Mobile only: Deal Activity at the very end of the page. */}
-      <div className="md:hidden mt-4">
-        <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
-      </div>
+      {/* ---- Deal Activity: chronological read, always at the bottom. */}
+      <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
     </div>
   );
 }
