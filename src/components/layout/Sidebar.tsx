@@ -89,7 +89,7 @@ export function Sidebar() {
             <button
               onClick={() => setCollapsed(true)}
               aria-label="Collapse sidebar"
-              className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh transition-colors duration-200"
+              className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh transition-colors duration-200"
             >
               <ChevronsLeft className="w-4 h-4" />
             </button>
