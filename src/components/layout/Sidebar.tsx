@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Plus, FolderOpen, Settings, Inbox, ChevronLeft, LogOut
+  LayoutDashboard, Plus, FolderOpen, Settings, Inbox, ChevronsLeft, ChevronsRight, LogOut
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
@@ -54,42 +54,48 @@ export function Sidebar() {
         collapsed ? 'w-[76px]' : 'w-64'
       )}
     >
-      {/* Logo + collapse toggle */}
+      {/* Logo — collapsed state: hovering the logo reveals a right-pointing
+          double-chevron; clicking it expands the sidebar.
+          Expanded state: logo is static, and a dedicated, always-visible
+          double-chevron button sits to its right to collapse the sidebar. */}
       <div className={cn('py-6 border-b border-border flex items-center', collapsed ? 'px-4 justify-center' : 'px-5 justify-between')}>
-        <div className={cn('flex items-center gap-2.5 min-w-0', collapsed && 'gap-0')}>
-          <img
-            src="/logo-mark.png"
-            alt="Kairo"
-            className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
-          />
-          {!collapsed && (
-            <span className="font-display font-bold text-xl text-textPrimary tracking-tight truncate">
-              Kairo
-            </span>
-          )}
-        </div>
-        {!collapsed && (
-          <button
-            onClick={() => setCollapsed(true)}
-            aria-label="Collapse sidebar"
-            className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh transition-colors duration-200"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      {collapsed && (
-        <div className="px-3 pt-3">
+        {collapsed ? (
           <button
             onClick={() => setCollapsed(false)}
             aria-label="Expand sidebar"
-            className="w-full h-9 flex items-center justify-center rounded-lg text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh transition-colors duration-200"
+            className="group relative w-8 h-8 flex-shrink-0 rounded-lg overflow-hidden"
           >
-            <ChevronLeft className="w-4 h-4 rotate-180" />
+            <img
+              src="/logo-mark.png"
+              alt="Kairo"
+              className="absolute inset-0 w-8 h-8 rounded-lg object-contain transition-opacity duration-150 group-hover:opacity-0"
+            />
+            <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-surfaceHigh text-textPrimary opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              <ChevronsRight className="w-4 h-4" />
+            </span>
           </button>
-        </div>
-      )}
+        ) : (
+          <>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                src="/logo-mark.png"
+                alt="Kairo"
+                className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+              />
+              <span className="font-display font-bold text-xl text-textPrimary tracking-tight truncate">
+                Kairo
+              </span>
+            </div>
+            <button
+              onClick={() => setCollapsed(true)}
+              aria-label="Collapse sidebar"
+              className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh transition-colors duration-200"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+          </>
+        )}
+      </div>
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1">
@@ -124,13 +130,17 @@ export function Sidebar() {
         <button
           onClick={() => navigate('/app/new')}
           title={collapsed ? 'New Deal' : undefined}
-          className={cn(
-            'w-full flex items-center rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primaryHover transition-colors duration-200 shadow-purple-glow-sm',
-            collapsed ? 'justify-center px-0 py-2.5' : 'justify-center gap-2 px-3 py-2.5'
-          )}
+          className="w-full flex items-center justify-center rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primaryHover transition-colors duration-200 shadow-purple-glow-sm px-0 py-2.5"
         >
           <Plus className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && 'New Deal'}
+          <span
+            className={cn(
+              'overflow-hidden whitespace-nowrap transition-all duration-200',
+              collapsed ? 'max-w-0 opacity-0 ml-0' : 'max-w-[140px] opacity-100 ml-2'
+            )}
+          >
+            New Deal
+          </span>
         </button>
       </div>
 
