@@ -87,37 +87,54 @@ function MeetingCard({ meeting }: { meeting: ScheduledMeeting & { deal_name?: st
 
 // Dashboard skeleton — simplified shapes, but matched to the actual
 // sections and responsive layout so nothing jumps/reflows once real
-// content lands: an Upcoming Meetings row (horizontally scrollable cards,
-// same width/height as MeetingCard), a stat row that switches from 2x2 on
-// mobile to one row of four on desktop (same breakpoint as StatCard's
-// grid), and a Deals Requiring Attention list. Every block shares the
-// `.skeleton` class, whose glow band wipes diagonally in sync.
+// content lands. Rather than guessing fixed pixel heights, each skeleton
+// block reuses the exact same padding/spacing classes as its real
+// counterpart (MeetingCard, StatCard, DealRow) with invisible placeholder
+// content sized to the tallest line each block can hold, so height is
+// derived the same way the real content derives it, on both breakpoints.
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
-      {/* Upcoming Meetings */}
+      {/* Upcoming Meetings — same card padding/line-stack as MeetingCard */}
       <div>
         <div className="h-3.5 w-32 rounded bg-surfaceHigh mb-3" />
         <div className="flex gap-3 overflow-hidden">
           {[1, 2, 3].map(i => (
-            <div key={i} className="skeleton flex-shrink-0 w-48 h-[74px]" />
+            <div key={i} className="skeleton flex-shrink-0 w-48 px-3.5 py-3 flex flex-col gap-1.5">
+              <div className="h-3.5 w-12 rounded bg-transparent" />
+              <div className="h-3.5 w-3/4 rounded bg-transparent" />
+              <div className="h-3 w-1/2 rounded bg-transparent" />
+            </div>
           ))}
         </div>
       </div>
 
-      {/* Stat row: 2x2 on mobile, one row of four on desktop */}
+      {/* Stat row — same grid + StatCard padding/line-stack */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className="skeleton h-[104px]" />
+          <div key={i} className="skeleton p-4 flex flex-col gap-3">
+            <div className="w-9 h-9 rounded-lg bg-transparent flex-shrink-0" />
+            <div className="space-y-1.5">
+              <div className="h-6 w-14 rounded bg-transparent" />
+              <div className="h-3 w-16 rounded bg-transparent" />
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Deals Requiring Attention */}
+      {/* Deals Requiring Attention — same row padding as DealRow */}
       <div>
         <div className="h-3.5 w-44 rounded bg-surfaceHigh mb-3" />
         <div className="space-y-2">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="skeleton h-16" />
+            <div key={i} className="skeleton flex items-center gap-3 pl-3 pr-4 py-3">
+              <div className="w-1 self-stretch rounded-full bg-transparent flex-shrink-0" />
+              <div className="flex-1 space-y-1.5 py-0.5">
+                <div className="h-3.5 w-1/3 rounded bg-transparent" />
+                <div className="h-3 w-1/2 rounded bg-transparent" />
+              </div>
+              <div className="w-14 h-5 rounded-full bg-transparent flex-shrink-0" />
+            </div>
           ))}
         </div>
       </div>

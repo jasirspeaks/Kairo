@@ -90,8 +90,8 @@ module.exports = {
         sheetUp: { '0%': { transform: 'translateY(100%)' }, '100%': { transform: 'translateY(0)' } },
         pulseSoft: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.5' } },
         shimmer: {
-          '0%': { backgroundPosition: '-100% -100%' },
-          '100%': { backgroundPosition: '100% 100%' },
+          '0%': { transform: 'translate(-60%, -60%)' },
+          '100%': { transform: 'translate(60%, 60%)' },
         },
       }
     },
