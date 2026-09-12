@@ -28,10 +28,8 @@ module.exports = {
         textMuted: '#7A7290',
       },
       fontFamily: {
-        // Single family across UI and headings — hierarchy comes from
-        // size/weight/tracking, not a separate decorative display face.
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        display: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Geist', 'system-ui', 'sans-serif'],
+        display: ['Geist', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       fontSize: {
