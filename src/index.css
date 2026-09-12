@@ -58,20 +58,21 @@ body {
   .score-badge {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
   }
-  /* Skeleton loading block — Twitter/X-style diagonal shine. Each block is
-     its own gradient + animation instance (rather than one overlay sweeping
-     across a shared parent), so blocks of different sizes/positions in the
-     Dashboard grid all catch the same moving light at the same moment. */
+  /* Skeleton loading block — a single soft glow band that wipes diagonally
+     (top-left to bottom-right) across each block. background-size is
+     oversized on both axes so the band travels on a true diagonal rather
+     than a horizontal shimmer, and every block shares the same animation
+     timing so the sweep reads as one continuous pass across the page. */
   .skeleton {
     @apply bg-surface border border-border rounded-xl relative overflow-hidden;
     background-image: linear-gradient(
-      105deg,
-      #1A1625 40%,
-      #282235 50%,
-      #1A1625 60%
+      135deg,
+      #1A1625 35%,
+      #2D2640 50%,
+      #1A1625 65%
     );
-    background-size: 300% 100%;
-    animation: shimmer 1.8s ease-in-out infinite;
+    background-size: 250% 250%;
+    animation: shimmer 2s ease-in-out infinite;
   }
 }
 
