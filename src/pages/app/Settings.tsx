@@ -7,6 +7,7 @@ import {
   Calendar,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   LogOut,
   Loader2,
   RefreshCw,
@@ -19,6 +20,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
+import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
+import { DeleteAccountModal } from '../../components/ui/DeleteAccountModal';
 import { TopBar } from '../../components/layout/TopBar';
 import { formatDate } from '../../lib/utils';
 
@@ -76,6 +79,9 @@ export function Settings() {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [secretRevealed, setSecretRevealed] = useState(false);
+
+  // --- Account deletion ---
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   const isDirty =
     name !== initialValues.name ||
@@ -301,6 +307,14 @@ export function Settings() {
     setWhoYouAre(initialValues.whoYouAre);
   }
 
+  // Integrations pull-down opens by default whenever either service needs
+  // attention (invalid key, pending first webhook) so the person isn't
+  // hunting behind a closed disclosure for something that's actually
+  // broken right now. Otherwise it stays closed -- most visits to
+  // Settings aren't about integrations at all.
+  const integrationsNeedsAttention =
+    fireflies?.status === 'invalid' || fireflies?.status === 'pending';
+
   return (
     <div className="animate-fade-in">
       <div className="-mx-4 md:hidden">
@@ -331,16 +345,16 @@ export function Settings() {
         </div>
       )}
 
-      {/* One continuous page. No nav chrome, no section switching — each
-          zone below uses width in whatever way its own content calls for,
-          rather than forcing a uniform card width across unrelated
-          content types. Bottom padding clears the sticky save bar and
-          (on mobile) the bottom nav. */}
-      <div className="space-y-10 pb-28 md:pb-24 max-w-4xl">
+      {/* One continuous page, sharing AppLayout's own max-w-5xl container
+          instead of imposing a narrower width of its own -- this is what
+          keeps Settings visually aligned with every other page instead of
+          looking like a separate, narrower app. Bottom padding clears the
+          sticky save bar and (on mobile) the bottom nav. */}
+      <div className="space-y-6 pb-28 md:pb-24">
         {/* --- Profile --- */}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">Profile</h2>
-          <div className="card p-5 md:p-7">
+          <div className="card p-5 md:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-textSecondary mb-1.5">Name</label>
@@ -383,7 +397,7 @@ export function Settings() {
         {/* --- Selling Context --- */}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">Selling Context</h2>
-          <div className="card p-5 md:p-7">
+          <div className="card p-5 md:p-6">
             <p className="text-textMuted text-xs mb-4">
               Kairo uses this to frame deal reviews more accurately for your specific situation.
             </p>
@@ -392,249 +406,260 @@ export function Settings() {
               value={whatYouSell}
               onChange={e => setWhatYouSell(e.target.value)}
               placeholder="e.g. SaaS product for HR teams, B2B consulting for fintech companies, marketing agency services..."
-              className="input-field min-h-44 md:min-h-52 resize-none"
+              className="input-field min-h-32 md:min-h-36 resize-none"
             />
             <p className="text-textMuted text-xs mt-1.5">Be specific — the more context, the sharper the analysis.</p>
           </div>
         </section>
 
         {/* --- Integrations --- */}
+        {/* Calendar and Fireflies collapse behind one pull-down. Neither
+            is something most people touch after initial setup, so this
+            keeps the page from spending permanent vertical space on two
+            cards most visits don't need -- it only takes the room it
+            needs, open or closed. */}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">Integrations</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-            {/* Calendar */}
-            <div className="card p-5 md:p-7">
-              <div className="flex items-center gap-2 mb-1">
-                <Calendar className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-semibold text-textPrimary">Calendar</h3>
-              </div>
-              <p className="text-textMuted text-xs mb-4">
-                Connect your calendar so upcoming meetings show up in your Inbox — assign them to a deal before the call happens, and Kairo reviews the call automatically once it's done.
-              </p>
-
-              {checkingCalendar ? (
-                <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
-              ) : calendarConnected ? (
-                <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span className="text-emerald-400 text-xs font-medium">Google Calendar connected</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleDisconnectCalendar}
-                    disabled={disconnectingCalendar}
-                    className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50"
-                  >
-                    {disconnectingCalendar ? 'Disconnecting…' : 'Disconnect'}
-                  </button>
+          <CollapsibleSection
+            title="Calendar & Fireflies"
+            defaultOpen={integrationsNeedsAttention}
+            accent={integrationsNeedsAttention ? 'amber' : 'default'}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start pt-4">
+              {/* Calendar */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Calendar className="w-4 h-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-textPrimary">Calendar</h3>
                 </div>
-              ) : (
-                <a href={calendarConnectUrl}>
-                  <Button type="button" variant="secondary" className="w-full sm:w-auto">
-                    <Calendar className="w-4 h-4" />
-                    Connect Google Calendar
-                  </Button>
-                </a>
-              )}
-            </div>
+                <p className="text-textMuted text-xs mb-4">
+                  Connect your calendar so upcoming meetings show up in your Inbox — assign them to a deal before the call happens, and Kairo reviews the call automatically once it's done.
+                </p>
 
-            {/* Fireflies */}
-            <div className="card p-5 md:p-7">
-              <div className="flex items-center gap-2 mb-1">
-                <Zap className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-semibold text-textPrimary">Fireflies</h3>
-              </div>
-              <p className="text-textMuted text-xs mb-4">
-                Connect your Fireflies account so calls are transcribed and reviewed automatically once the meeting happens.
-              </p>
-
-              {checkingFireflies ? (
-                <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
-              ) : fireflies?.connected ? (
-                <div className="space-y-4">
-                  {fireflies.status === 'invalid' ? (
-                    <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
-                      <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-red-400 text-xs font-medium">
-                          Fireflies rejected the stored key{fireflies.email ? ` for ${fireflies.email}` : ''}.
-                        </p>
-                        {fireflies.last_error && (
-                          <p className="text-textMuted text-xs mt-0.5">{fireflies.last_error}</p>
-                        )}
-                        <p className="text-textMuted text-xs mt-1.5">
-                          Reconnect below with a valid key, or recheck if you've fixed it on Fireflies' side.
-                        </p>
-                      </div>
+                {checkingCalendar ? (
+                  <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
+                ) : calendarConnected ? (
+                  <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span className="text-emerald-400 text-xs font-medium">Google Calendar connected</span>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                        <span className="text-emerald-400 text-xs font-medium truncate">
-                          Connected{fireflies.email ? ` as ${fireflies.email}` : ''}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleDisconnectFireflies}
-                        disabled={disconnectingFireflies}
-                        className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50 flex-shrink-0 ml-3"
-                      >
-                        {disconnectingFireflies ? 'Disconnecting…' : 'Disconnect'}
-                      </button>
-                    </div>
-                  )}
-
-                  {fireflies.status !== 'invalid' && (
                     <button
                       type="button"
-                      onClick={handleRevalidateFireflies}
-                      disabled={revalidating}
-                      className="flex items-center gap-1.5 text-xs text-textMuted hover:text-textSecondary transition-colors disabled:opacity-50"
+                      onClick={handleDisconnectCalendar}
+                      disabled={disconnectingCalendar}
+                      className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50"
                     >
-                      <RefreshCw className={`w-3 h-3 ${revalidating ? 'animate-spin' : ''}`} />
-                      {revalidating ? 'Checking…' : 'Recheck connection'}
+                      {disconnectingCalendar ? 'Disconnecting…' : 'Disconnect'}
                     </button>
-                  )}
+                  </div>
+                ) : (
+                  <a href={calendarConnectUrl}>
+                    <Button type="button" variant="secondary" className="w-full sm:w-auto">
+                      <Calendar className="w-4 h-4" />
+                      Connect Google Calendar
+                    </Button>
+                  </a>
+                )}
+              </div>
 
-                  {fireflies.status === 'invalid' && (
-                    <form onSubmit={handleConnectFireflies} className="space-y-2">
-                      <label className="block text-xs font-medium text-textSecondary">Fireflies API key</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="password"
-                          value={apiKeyInput}
-                          onChange={e => setApiKeyInput(e.target.value)}
-                          placeholder="Paste your Fireflies API key"
-                          className="input-field font-mono text-xs"
-                          autoComplete="off"
-                        />
-                        <Button type="submit" variant="secondary" loading={connectingFireflies} className="flex-shrink-0">
-                          Reconnect
-                        </Button>
-                      </div>
-                      {firefliesFormError && (
-                        <p className="text-red-400 text-xs flex items-center gap-1.5">
-                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                          {firefliesFormError}
-                        </p>
-                      )}
-                    </form>
-                  )}
+              {/* Fireflies */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Zap className="w-4 h-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-textPrimary">Fireflies</h3>
+                </div>
+                <p className="text-textMuted text-xs mb-4">
+                  Connect your Fireflies account so calls are transcribed and reviewed automatically once the meeting happens.
+                </p>
 
-                  {fireflies.status === 'pending' && (
-                    <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3">
-                      <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-amber-400 text-xs">
-                        Waiting for the first call from Fireflies. Follow the setup steps below — this banner clears automatically once a webhook comes through.
-                      </p>
-                    </div>
-                  )}
-
-                  {fireflies.webhook_url && (
-                    <>
-                      <div>
-                        <label className="block text-xs font-medium text-textSecondary mb-1.5">Webhook URL</label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={fireflies.webhook_url}
-                            readOnly
-                            className="input-field font-mono text-xs"
-                            onFocus={e => e.target.select()}
-                          />
-                          <button
-                            type="button"
-                            onClick={copyWebhookUrl}
-                            className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
-                            aria-label="Copy webhook URL"
-                          >
-                            {copiedUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                          </button>
+                {checkingFireflies ? (
+                  <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
+                ) : fireflies?.connected ? (
+                  <div className="space-y-4">
+                    {fireflies.status === 'invalid' ? (
+                      <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
+                        <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-red-400 text-xs font-medium">
+                            Fireflies rejected the stored key{fireflies.email ? ` for ${fireflies.email}` : ''}.
+                          </p>
+                          {fireflies.last_error && (
+                            <p className="text-textMuted text-xs mt-0.5">{fireflies.last_error}</p>
+                          )}
+                          <p className="text-textMuted text-xs mt-1.5">
+                            Reconnect below with a valid key, or recheck if you've fixed it on Fireflies' side.
+                          </p>
                         </div>
                       </div>
+                    ) : (
+                      <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span className="text-emerald-400 text-xs font-medium truncate">
+                            Connected{fireflies.email ? ` as ${fireflies.email}` : ''}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleDisconnectFireflies}
+                          disabled={disconnectingFireflies}
+                          className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50 flex-shrink-0 ml-3"
+                        >
+                          {disconnectingFireflies ? 'Disconnecting…' : 'Disconnect'}
+                        </button>
+                      </div>
+                    )}
 
-                      {fireflies.webhook_secret && (
+                    {fireflies.status !== 'invalid' && (
+                      <button
+                        type="button"
+                        onClick={handleRevalidateFireflies}
+                        disabled={revalidating}
+                        className="flex items-center gap-1.5 text-xs text-textMuted hover:text-textSecondary transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${revalidating ? 'animate-spin' : ''}`} />
+                        {revalidating ? 'Checking…' : 'Recheck connection'}
+                      </button>
+                    )}
+
+                    {fireflies.status === 'invalid' && (
+                      <form onSubmit={handleConnectFireflies} className="space-y-2">
+                        <label className="block text-xs font-medium text-textSecondary">Fireflies API key</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="password"
+                            value={apiKeyInput}
+                            onChange={e => setApiKeyInput(e.target.value)}
+                            placeholder="Paste your Fireflies API key"
+                            className="input-field font-mono text-xs"
+                            autoComplete="off"
+                          />
+                          <Button type="submit" variant="secondary" loading={connectingFireflies} className="flex-shrink-0">
+                            Reconnect
+                          </Button>
+                        </div>
+                        {firefliesFormError && (
+                          <p className="text-red-400 text-xs flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                            {firefliesFormError}
+                          </p>
+                        )}
+                      </form>
+                    )}
+
+                    {fireflies.status === 'pending' && (
+                      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3">
+                        <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-amber-400 text-xs">
+                          Waiting for the first call from Fireflies. Follow the setup steps below — this banner clears automatically once a webhook comes through.
+                        </p>
+                      </div>
+                    )}
+
+                    {fireflies.webhook_url && (
+                      <>
                         <div>
-                          <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                            Webhook secret
-                          </label>
+                          <label className="block text-xs font-medium text-textSecondary mb-1.5">Webhook URL</label>
                           <div className="flex items-center gap-2">
                             <input
-                              type={secretRevealed ? 'text' : 'password'}
-                              value={fireflies.webhook_secret}
+                              type="text"
+                              value={fireflies.webhook_url}
                               readOnly
                               className="input-field font-mono text-xs"
                               onFocus={e => e.target.select()}
                             />
                             <button
                               type="button"
-                              onClick={() => setSecretRevealed(r => !r)}
+                              onClick={copyWebhookUrl}
                               className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
-                              aria-label={secretRevealed ? 'Hide secret' : 'Reveal secret'}
+                              aria-label="Copy webhook URL"
                             >
-                              {secretRevealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={copyWebhookSecret}
-                              className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
-                              aria-label="Copy webhook secret"
-                            >
-                              {copiedSecret ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                              {copiedUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                             </button>
                           </div>
-                          <p className="text-textMuted text-xs mt-1.5">
-                            This is shown only until your first call comes through — copy it now, you won't be able to view it again later.
-                          </p>
                         </div>
-                      )}
 
-                      <div className="bg-surfaceHigh border border-border rounded-lg p-4 space-y-2">
-                        <p className="text-textPrimary text-xs font-semibold">Setup steps</p>
-                        <ol className="text-textSecondary text-xs leading-relaxed list-decimal list-inside space-y-1">
-                          <li>Log into your Fireflies account and go to <span className="font-medium text-textPrimary">Settings → Developer Settings</span>.</li>
-                          <li>Find the <span className="font-medium text-textPrimary">Webhook</span> section and click Configure.</li>
-                          <li>Paste the <span className="font-medium text-textPrimary">Webhook URL</span> above into the URL field.</li>
-                          <li>Paste the <span className="font-medium text-textPrimary">Webhook secret</span> above into the secret key field — do not click Fireflies' "generate" button, it will create a different secret Kairo won't recognize and every call will fail with a 401.</li>
-                          <li>Under events to send, select <span className="font-medium text-textPrimary">Transcription Completed</span>.</li>
-                          <li>Click Save. New calls will now be reviewed automatically once Fireflies finishes processing them.</li>
-                        </ol>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <form onSubmit={handleConnectFireflies} className="space-y-2">
-                  <label className="block text-xs font-medium text-textSecondary">Fireflies API key</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="password"
-                      value={apiKeyInput}
-                      onChange={e => setApiKeyInput(e.target.value)}
-                      placeholder="Paste your Fireflies API key"
-                      className="input-field font-mono text-xs"
-                      autoComplete="off"
-                    />
-                    <Button type="submit" variant="secondary" loading={connectingFireflies} className="flex-shrink-0">
-                      {connectingFireflies ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
-                    </Button>
+                        {fireflies.webhook_secret && (
+                          <div>
+                            <label className="block text-xs font-medium text-textSecondary mb-1.5">
+                              Webhook secret
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type={secretRevealed ? 'text' : 'password'}
+                                value={fireflies.webhook_secret}
+                                readOnly
+                                className="input-field font-mono text-xs"
+                                onFocus={e => e.target.select()}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setSecretRevealed(r => !r)}
+                                className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
+                                aria-label={secretRevealed ? 'Hide secret' : 'Reveal secret'}
+                              >
+                                {secretRevealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={copyWebhookSecret}
+                                className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
+                                aria-label="Copy webhook secret"
+                              >
+                                {copiedSecret ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                              </button>
+                            </div>
+                            <p className="text-textMuted text-xs mt-1.5">
+                              This is shown only until your first call comes through — copy it now, you won't be able to view it again later.
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="bg-surfaceHigh border border-border rounded-lg p-4 space-y-2">
+                          <p className="text-textPrimary text-xs font-semibold">Setup steps</p>
+                          <ol className="text-textSecondary text-xs leading-relaxed list-decimal list-inside space-y-1">
+                            <li>Log into your Fireflies account and go to <span className="font-medium text-textPrimary">Settings → Developer Settings</span>.</li>
+                            <li>Find the <span className="font-medium text-textPrimary">Webhook</span> section and click Configure.</li>
+                            <li>Paste the <span className="font-medium text-textPrimary">Webhook URL</span> above into the URL field.</li>
+                            <li>Paste the <span className="font-medium text-textPrimary">Webhook secret</span> above into the secret key field — do not click Fireflies' "generate" button, it will create a different secret Kairo won't recognize and every call will fail with a 401.</li>
+                            <li>Under events to send, select <span className="font-medium text-textPrimary">Transcription Completed</span>.</li>
+                            <li>Click Save. New calls will now be reviewed automatically once Fireflies finishes processing them.</li>
+                          </ol>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  {firefliesFormError && (
-                    <p className="text-red-400 text-xs flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                      {firefliesFormError}
+                ) : (
+                  <form onSubmit={handleConnectFireflies} className="space-y-2">
+                    <label className="block text-xs font-medium text-textSecondary">Fireflies API key</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        value={apiKeyInput}
+                        onChange={e => setApiKeyInput(e.target.value)}
+                        placeholder="Paste your Fireflies API key"
+                        className="input-field font-mono text-xs"
+                        autoComplete="off"
+                      />
+                      <Button type="submit" variant="secondary" loading={connectingFireflies} className="flex-shrink-0">
+                        {connectingFireflies ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Connect'}
+                      </Button>
+                    </div>
+                    {firefliesFormError && (
+                      <p className="text-red-400 text-xs flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                        {firefliesFormError}
+                      </p>
+                    )}
+                    <p className="text-textMuted text-xs">
+                      Find your API key in Fireflies under <span className="font-medium text-textSecondary">Settings → Developer Settings</span>. Kairo verifies it before saving.
                     </p>
-                  )}
-                  <p className="text-textMuted text-xs">
-                    Find your API key in Fireflies under <span className="font-medium text-textSecondary">Settings → Developer Settings</span>. Kairo verifies it before saving.
-                  </p>
-                </form>
-              )}
+                  </form>
+                )}
+              </div>
             </div>
-          </div>
+          </CollapsibleSection>
         </section>
 
         {/* --- Plan --- */}
@@ -645,7 +670,7 @@ export function Settings() {
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">Plan</h2>
           <div
-            className={`card p-5 md:p-7 transition-shadow duration-500 ${
+            className={`card p-5 md:p-6 transition-shadow duration-500 ${
               highlightPlan ? 'ring-2 ring-primary/50 shadow-purple-glow-sm' : ''
             }`}
           >
@@ -719,11 +744,9 @@ export function Settings() {
         </section>
 
         {/* --- Account --- */}
-        {/* Deliberately the quietest section on the page — least-used
-            action, lowest visual weight, tucked at the very bottom. */}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">Account</h2>
-          <div className="card px-5 md:px-7 py-3.5 flex items-center justify-between">
+          <div className="card px-5 md:px-6 py-3.5 flex items-center justify-between">
             <span className="text-xs text-textMuted">Signed in as {profile?.email}</span>
             <button
               type="button"
@@ -735,7 +758,40 @@ export function Settings() {
             </button>
           </div>
         </section>
+
+        {/* --- Danger Zone --- */}
+        {/* Its own section rather than tucked at the bottom of Account --
+            still the last thing on the page (lowest-frequency action),
+            but red-tinted at rest (not just on hover) so its weight is
+            never mistaken for an ordinary action like Sign Out above it. */}
+        <section>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-red-400/70 mb-3">Danger Zone</h2>
+          <div className="card border-red-500/20 px-5 md:px-6 py-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-red-400 text-xs font-medium">Delete account</p>
+              <p className="text-textMuted text-xs mt-0.5">
+                Permanently deletes every deal, call, and transcript. This cannot be undone.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              className="flex-shrink-0"
+              onClick={() => setDeleteModalOpen(true)}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Delete Account
+            </Button>
+          </div>
+        </section>
       </div>
+
+      <DeleteAccountModal
+        open={deleteModalOpen}
+        email={profile?.email || user?.email || ''}
+        onClose={() => setDeleteModalOpen(false)}
+      />
 
       {/* Unified save bar — appears only while Profile or Selling Context
           have unsaved edits. Fixed above the mobile bottom nav / safe
