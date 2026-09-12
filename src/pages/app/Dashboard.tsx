@@ -85,17 +85,42 @@ function MeetingCard({ meeting }: { meeting: ScheduledMeeting & { deal_name?: st
   );
 }
 
-// Dashboard skeleton — a minimal placeholder, not a pixel mirror of the
-// real layout. Three plain blocks (meetings row, stat row, deals list)
-// roughly reserve the same vertical space so content doesn't jump on
-// arrival, but skip replicating every icon/badge/dot. Each block shares
-// the `.skeleton` class, whose glow band wipes diagonally in sync.
+// Dashboard skeleton — simplified shapes, but matched to the actual
+// sections and responsive layout so nothing jumps/reflows once real
+// content lands: an Upcoming Meetings row (horizontally scrollable cards,
+// same width/height as MeetingCard), a stat row that switches from 2x2 on
+// mobile to one row of four on desktop (same breakpoint as StatCard's
+// grid), and a Deals Requiring Attention list. Every block shares the
+// `.skeleton` class, whose glow band wipes diagonally in sync.
 function DashboardSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="skeleton h-20" />
-      <div className="skeleton h-24" />
-      <div className="skeleton h-64" />
+      {/* Upcoming Meetings */}
+      <div>
+        <div className="h-3.5 w-32 rounded bg-surfaceHigh mb-3" />
+        <div className="flex gap-3 overflow-hidden">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="skeleton flex-shrink-0 w-48 h-[74px]" />
+          ))}
+        </div>
+      </div>
+
+      {/* Stat row: 2x2 on mobile, one row of four on desktop */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="skeleton h-[104px]" />
+        ))}
+      </div>
+
+      {/* Deals Requiring Attention */}
+      <div>
+        <div className="h-3.5 w-44 rounded bg-surfaceHigh mb-3" />
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="skeleton h-16" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

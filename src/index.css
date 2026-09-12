@@ -58,21 +58,24 @@ body {
   .score-badge {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
   }
-  /* Skeleton loading block — a single soft glow band that wipes diagonally
-     (top-left to bottom-right) across each block. background-size is
-     oversized on both axes so the band travels on a true diagonal rather
-     than a horizontal shimmer, and every block shares the same animation
+  /* Skeleton loading block — a bright diagonal glow band sweeping
+     top-left to bottom-right. The gradient's middle stop uses the brand
+     primary at low opacity over a lighter base, with a wide background-size
+     on both axes so the band travels on a genuine diagonal (not just a
+     horizontal shimmer). All skeleton blocks share the same animation
      timing so the sweep reads as one continuous pass across the page. */
   .skeleton {
-    @apply bg-surface border border-border rounded-xl relative overflow-hidden;
+    @apply bg-surfaceHigh border border-border rounded-xl relative overflow-hidden;
     background-image: linear-gradient(
       135deg,
-      #1A1625 35%,
-      #2D2640 50%,
-      #1A1625 65%
+      #231D32 30%,
+      #423876 47%,
+      #8B6CFF66 50%,
+      #423876 53%,
+      #231D32 70%
     );
-    background-size: 250% 250%;
-    animation: shimmer 2s ease-in-out infinite;
+    background-size: 260% 260%;
+    animation: shimmer 2.2s ease-in-out infinite;
   }
 }
 
