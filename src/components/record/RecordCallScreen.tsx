@@ -171,7 +171,7 @@ export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose,
               isRecording && 'animate-pulse-soft'
             )}
             style={{
-              background: 'radial-gradient(ellipse, rgba(205,184,255,0.18) 0%, rgba(205,184,255,0) 70%)',
+              background: 'radial-gradient(ellipse, rgba(191,163,232,0.18) 0%, rgba(191,163,232,0) 70%)',
             }}
           />
           <div className="relative flex items-center justify-center gap-[3px] h-14 w-full max-w-xs">

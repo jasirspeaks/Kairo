@@ -9,8 +9,8 @@
 }
 
 body {
-  background-color: #121018;
-  color: #F6F4FC;
+  background-color: #0D0715;
+  color: #F7F2FC;
   font-family: 'Geist', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -20,14 +20,14 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #121018;
+  background: #0D0715;
 }
 ::-webkit-scrollbar-thumb {
-  background: #322A45;
+  background: #302044;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #8B6CFF;
+  background: #7042C5;
 }
 
 @layer components {
@@ -77,9 +77,9 @@ body {
     background: linear-gradient(
       135deg,
       transparent 42%,
-      #8B6CFF14 48%,
-      #8B6CFF2E 50%,
-      #8B6CFF14 52%,
+      #7042C514 48%,
+      #7042C52E 50%,
+      #7042C514 52%,
       transparent 58%
     );
     @apply animate-shimmer;

@@ -5,27 +5,27 @@ module.exports = {
     extend: {
       colors: {
         // Blueprint dark palette — locked values, do not adjust ad hoc.
-        bg: '#121018',
-        surface: '#1A1625',
-        surfaceSecondary: '#231D32',
+        bg: '#0D0715',
+        surface: '#160D21',
+        surfaceSecondary: '#211333',
         // Kept for backward compatibility with existing components — a
         // slightly-raised dark surface, analogous to the old light-mode
         // "surfaceHigh" (was a step lighter than surface; here too).
-        surfaceHigh: '#282235',
-        border: '#322A45',
-        primary: '#8B6CFF',
-        primaryHover: '#9A7BFF',
+        surfaceHigh: '#241931',
+        border: '#302044',
+        primary: '#7042C5',
+        primaryHover: '#8050D9',
         // Kept for backward compatibility — same role as primaryHover,
         // used by existing Button.tsx hover states.
-        primaryLight: '#9A7BFF',
-        accent: '#8B6CFF',
-        glow: '#CDB8FF',
-        textPrimary: '#F6F4FC',
-        textSecondary: '#B6ADC8',
+        primaryLight: '#8050D9',
+        accent: '#7042C5',
+        glow: '#BFA3E8',
+        textPrimary: '#F7F2FC',
+        textSecondary: '#B4A7C2',
         // Derived, not in the Blueprint's token list: a muted tertiary tone
         // for the quietest text (timestamps, placeholder copy). Sits between
         // textSecondary and border in lightness.
-        textMuted: '#7A7290',
+        textMuted: '#796B8A',
       },
       fontFamily: {
         sans: ['Geist', 'system-ui', 'sans-serif'],
@@ -58,8 +58,8 @@ module.exports = {
         // Glows recalculated for a dark surface — light-mode drop-shadow
         // rgba values (dark shadow on white) read as muddy here; these are
         // ambient light glows instead, matching the primary/glow accents.
-        'purple-glow': '0 0 24px rgba(139, 108, 255, 0.35)',
-        'purple-glow-sm': '0 0 12px rgba(139, 108, 255, 0.25)',
+        'purple-glow': '0 0 24px rgba(112, 66, 197, 0.35)',
+        'purple-glow-sm': '0 0 12px rgba(112, 66, 197, 0.25)',
         'card': '0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 8px rgba(0, 0, 0, 0.16)',
         'card-hover': '0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28)',
         'nav': '0 -1px 0 rgba(255, 255, 255, 0.04), 0 -8px 24px rgba(0, 0, 0, 0.3)',
