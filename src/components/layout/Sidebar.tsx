@@ -1,17 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  LayoutDashboard, Plus, FolderOpen, Settings, Inbox, ChevronsLeft, ChevronsRight, LogOut
-} from 'lucide-react';
+import { Plus, ChevronsLeft, ChevronsRight, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
-
-const NAV_ITEMS = [
-  { path: '/app/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/app/deals', label: 'Deals', icon: FolderOpen },
-  { path: '/app/inbox', label: 'Inbox', icon: Inbox },
-  { path: '/app/settings', label: 'Settings', icon: Settings },
-];
+import { NAV_ITEMS } from '../../config/navItems';
 
 const COLLAPSE_KEY = 'kairo-sidebar-collapsed';
 
@@ -110,11 +102,11 @@ export function Sidebar() {
                 'w-full flex items-center rounded-lg text-sm font-medium transition-all duration-200 text-left',
                 collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5',
                 active
-                  ? 'text-primary bg-primary/10 border border-primary/20'
+                  ? 'text-white bg-primary shadow-purple-glow-sm'
                   : 'text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh'
               )}
             >
-              <Icon className={cn('w-4 h-4 flex-shrink-0', active ? 'text-primary' : '')} />
+              <Icon className={cn('w-4 h-4 flex-shrink-0', active ? 'text-white' : '')} />
               {!collapsed && label}
             </button>
           );

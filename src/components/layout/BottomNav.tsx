@@ -1,14 +1,18 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings as SettingsIcon, FolderOpen, Inbox, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { NAV_ITEMS } from '../../config/navItems';
 
+// Same four destinations as the sidebar, with the New Deal FAB inserted
+// between Deals and Inbox. Dashboard keeps the shorter "Home" label here
+// since space is tighter in the bottom bar.
 const TABS = [
-  { path: '/app/dashboard', label: 'Home', icon: LayoutDashboard },
-  { path: '/app/deals', label: 'Deals', icon: FolderOpen },
+  { ...NAV_ITEMS[0], label: 'Home' },
+  NAV_ITEMS[1],
   { path: '/app/new', label: '', icon: Plus, isFab: true },
-  { path: '/app/inbox', label: 'Inbox', icon: Inbox },
-  { path: '/app/settings', label: 'Settings', icon: SettingsIcon },
+  NAV_ITEMS[2],
+  NAV_ITEMS[3],
 ];
 
 export function BottomNav() {
@@ -49,7 +53,14 @@ export function BottomNav() {
               onClick={() => navigate(path)}
               className="flex-1 flex flex-col items-center justify-center gap-1 min-w-[44px] min-h-[44px] py-1"
             >
-              <Icon className={cn('w-5 h-5', active ? 'text-primary' : 'text-textMuted')} />
+              <span
+                className={cn(
+                  'flex items-center justify-center rounded-full transition-colors duration-150',
+                  active ? 'bg-primary w-9 h-7 shadow-purple-glow-sm' : 'w-9 h-7'
+                )}
+              >
+                <Icon className={cn('w-5 h-5', active ? 'text-white' : 'text-textMuted')} />
+              </span>
               <span className={cn('text-[10px] font-medium', active ? 'text-primary' : 'text-textMuted')}>
                 {label}
               </span>
