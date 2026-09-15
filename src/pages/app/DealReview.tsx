@@ -166,32 +166,69 @@ function PillarStrip({ pillars }: { pillars: DealPillars | null }) {
 }
 
 // --- Risk Evolution: a real timeline, not repeated card blocks --------
-// One row per call that has a what_changed_since_last_call payload, in
-// order. Each row is a single scannable line: a trend glyph (net risk
-// direction for that call), the call's label/date, and resolved/persisting/
-// new counts as compact pills. Expanding a row reveals the actual items.
+// One row per call. Calls after the first use their real
+// what_changed_since_last_call payload (a true diff against the prior
+// call). The first call has no prior state to diff against -- call-review
+// deliberately omits that field on call #1, so instead of hiding Risk
+// Evolution entirely until call #2, we synthesize a single "first read"
+// entry from that call's own highest_priority_risk and what_youre_missing.
+// It's framed as a first read, not a change, since there's nothing yet to
+// compare against.
 
 type EvolutionEntry = {
   call: Conversation;
   resolved: string[];
   persists: string[];
   newRisks: string[];
+  isFirstRead: boolean;
 };
 
 function buildEvolution(calls: Conversation[]): EvolutionEntry[] {
   return calls
-    .map(call => {
+    .map((call, i) => {
       const changed = call.analysis_json?.what_changed_since_last_call;
-      if (!changed) return null;
-      const hasContent = changed.resolved.length || changed.persists.length || changed.new_risks.length;
-      if (!hasContent) return null;
-      return { call, resolved: changed.resolved, persists: changed.persists, newRisks: changed.new_risks };
+
+      if (changed) {
+        const hasContent = changed.resolved.length || changed.persists.length || changed.new_risks.length;
+        if (!hasContent) return null;
+        return {
+          call,
+          resolved: changed.resolved,
+          persists: changed.persists,
+          newRisks: changed.new_risks,
+          isFirstRead: false,
+        };
+      }
+
+      // No diff payload -- only synthesize a first-read entry for the
+      // actual first call (i === 0). A later call missing this field is
+      // an upstream data gap, not a first call, so it's skipped rather
+      // than mislabeled.
+      if (i !== 0) return null;
+
+      const risk = call.analysis_json?.deal?.highest_priority_risk?.risk;
+      const gaps = (call.analysis_json?.deal?.what_youre_missing ?? [])
+        .map((m: any) => m?.gap)
+        .filter(Boolean);
+
+      if (!risk && gaps.length === 0) return null;
+
+      return {
+        call,
+        resolved: [],
+        persists: [risk, ...gaps].filter(Boolean),
+        newRisks: [],
+        isFirstRead: true,
+      };
     })
     .filter((e): e is EvolutionEntry => e !== null)
     .reverse(); // newest first
 }
 
 function evolutionTrend(entry: EvolutionEntry): { icon: React.ReactNode; color: string; label: string } {
+  if (entry.isFirstRead) {
+    return { icon: <Minus className="w-3.5 h-3.5" />, color: '#8B93A7', label: 'First read' };
+  }
   const net = entry.resolved.length - entry.newRisks.length;
   if (net > 0) return { icon: <TrendingUp className="w-3.5 h-3.5" />, color: '#3DD68C', label: 'Improving' };
   if (net < 0) return { icon: <TrendingDown className="w-3.5 h-3.5" />, color: '#FF667A', label: 'Worsening' };
@@ -249,7 +286,7 @@ function EvolutionRow({ entry, defaultOpen }: { entry: EvolutionEntry; defaultOp
           {entry.persists.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-amber-400 mb-1.5 flex items-center gap-1.5">
-                <Clock className="w-3 h-3" /> Still open
+                <Clock className="w-3 h-3" /> {entry.isFirstRead ? 'What we found' : 'Still open'}
               </p>
               <div className="space-y-1">
                 {entry.persists.map((item, i) => (

@@ -44,6 +44,7 @@ type Review = {
     recommended_next_action: string;
     manager_note: string;
     status_reason: string;
+    pillars?: unknown;
   };
   supporting_evidence?: string[];
   stakeholder_signals?: Array<{
@@ -87,6 +88,7 @@ export async function writeBackDealReview(
     manager_note: review.deal.manager_note,
     supporting_evidence: review.supporting_evidence ?? [],
     last_review_summary: review.deal.status_reason,
+    pillars: review.deal.pillars ?? null,
     updated_at: new Date().toISOString(),
   };
 

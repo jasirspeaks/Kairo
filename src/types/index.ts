@@ -134,6 +134,7 @@ export interface DealLevelReview {
   what_youre_missing: MissingInfo[];
   recommended_next_action: string;
   manager_note: string;
+  pillars?: DealPillars;
 }
 
 // The full extraction call-review produces on every call, including the
