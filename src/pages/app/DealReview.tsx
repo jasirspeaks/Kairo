@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
-import { Deal, DealState, Conversation, Stakeholder } from '../../types';
+import { Deal, DealState, Conversation, Stakeholder, DealPillars, PillarState } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
@@ -62,6 +62,107 @@ function buildActivity(calls: Conversation[], stakeholders: Stakeholder[]): Acti
     ...stakeholders.map((s): ActivityItem => ({ kind: 'stakeholder', id: s.id, at: s.created_at, stakeholder: s })),
   ];
   return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+}
+
+// --- What We Know So Far: five-pillar qualification strip -------------
+// One full-width bar per pillar. Bar length and color are driven by the
+// continuous 0-100 confidence score, not the status label -- status
+// still exists in the data for the Dashboard's cross-deal aggregate, but
+// this strip deliberately shows no status word, just the bar and a
+// chevron, so the read is purely visual. not_yet_relevant pillars get a
+// flat hatched bar instead of a point on the red-to-green scale, since
+// "too early to know" isn't a point of weakness.
+
+const PILLAR_LABELS: Record<keyof DealPillars, string> = {
+  compelling_event: 'Compelling Event',
+  economic_buyer: 'Economic Buyer',
+  decision_process: 'Decision Process',
+  budget: 'Budget',
+  champion: 'Champion',
+};
+
+const PILLAR_ORDER: (keyof DealPillars)[] = [
+  'compelling_event', 'economic_buyer', 'decision_process', 'budget', 'champion',
+];
+
+function pillarBarColor(confidence: number): string {
+  if (confidence >= 67) return '#3DD68C';
+  if (confidence >= 34) return '#F6B23E';
+  return '#FF667A';
+}
+
+function PillarBar({ label, pillar }: { label: string; pillar: PillarState }) {
+  const [open, setOpen] = useState(false);
+  const isNotYetRelevant = pillar.status === 'not_yet_relevant';
+  const hasEvidence = !!pillar.evidence;
+
+  return (
+    <div className="border-b border-border last:border-b-0">
+      <button
+        onClick={() => hasEvidence && setOpen(v => !v)}
+        className={cn(
+          'w-full text-left py-3',
+          hasEvidence ? 'cursor-pointer' : 'cursor-default'
+        )}
+      >
+        <div className="flex items-center justify-between gap-3 mb-1.5">
+          <span className="text-textPrimary text-xs font-semibold">{label}</span>
+          {hasEvidence && (
+            <ChevronRight
+              className={cn('w-3.5 h-3.5 text-textMuted transition-transform flex-shrink-0', open && 'rotate-90')}
+            />
+          )}
+        </div>
+        <div className="h-1.5 rounded-full bg-surfaceHigh overflow-hidden">
+          {isNotYetRelevant ? (
+            <div
+              className="h-full w-full rounded-full"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(45deg, #3A3450 0, #3A3450 5px, #2A2438 5px, #2A2438 10px)',
+              }}
+            />
+          ) : (
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${pillar.confidence}%`, backgroundColor: pillarBarColor(pillar.confidence) }}
+            />
+          )}
+        </div>
+      </button>
+
+      {open && hasEvidence && (
+        <div className="pb-3 -mt-0.5 animate-fade-in">
+          <p className="text-textSecondary text-xs leading-relaxed bg-surfaceHigh border border-border rounded-lg px-3 py-2.5">
+            {pillar.evidence}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PillarStrip({ pillars }: { pillars: DealPillars | null }) {
+  if (!pillars) {
+    return (
+      <div className="card p-4 md:p-5 mb-4 md:mb-5 w-full">
+        <h2 className="section-label mb-1">What We Know So Far</h2>
+        <p className="text-textMuted text-xs">
+          Pillar tracking will appear after this deal's next call review.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-4 md:p-5 mb-4 md:mb-5 w-full">
+      <h2 className="section-label mb-2">What We Know So Far</h2>
+      <div>
+        {PILLAR_ORDER.map(key => (
+          <PillarBar key={key} label={PILLAR_LABELS[key]} pillar={pillars[key]} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // --- Risk Evolution: a real timeline, not repeated card blocks --------
@@ -599,6 +700,12 @@ export function DealReview() {
           )}
         </div>
       )}
+
+      {/* ---- What We Know So Far: five-pillar qualification strip.
+          Sits between the hero risk card and the tab group -- ambient
+          state like the health score, not a drill-down, so it's never
+          hidden behind a tab. */}
+      <PillarStrip pillars={dealState.pillars} />
 
       {/* ---- Tab group: Action Plan (default), Risk Evolution,
           Stakeholders. Pill buttons sit outside and above the content

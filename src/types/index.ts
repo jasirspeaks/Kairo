@@ -152,6 +152,27 @@ export interface DealReview {
   supporting_evidence: string[];
 }
 
+// Five-pillar qualification snapshot from the most recent call review.
+// Populated by call-review v24+; null on deals last reviewed before that,
+// until their next call review. Additive to what_youre_missing, not a
+// replacement -- see /areas/kairo.md for the full status/confidence
+// calibration this is built against.
+export type PillarStatus = 'confirmed' | 'partial' | 'unconfirmed' | 'not_yet_relevant';
+
+export interface PillarState {
+  status: PillarStatus;
+  confidence: number; // 0-100, continuous within the band implied by status
+  evidence: string;
+}
+
+export interface DealPillars {
+  compelling_event: PillarState;
+  economic_buyer: PillarState;
+  decision_process: PillarState;
+  budget: PillarState;
+  champion: PillarState;
+}
+
 export interface DealState {
   id: string;
   deal_id: string;
@@ -166,6 +187,7 @@ export interface DealState {
   manager_note: string | null;
   supporting_evidence: string[] | null;
   last_review_summary: string | null;
+  pillars: DealPillars | null;
   updated_at: string;
 }
 
