@@ -130,7 +130,13 @@ serve(async (req) => {
     }
 
     const body = JSON.parse(rawBody);
-    console.log('Fireflies webhook received:', rawBody);
+    // Log metadata only -- rawBody/transcript text is customer call content
+    // and must never land in function logs (Security & Compliance Part 10).
+    console.log('Fireflies webhook received:', {
+      meetingId: body.meetingId ?? body.meeting_id ?? body.id ?? null,
+      eventType: body.eventType ?? body.event ?? body.type ?? null,
+      bodyBytes: rawBody.length,
+    });
 
     const meetingId: string | undefined = body.meetingId ?? body.meeting_id ?? body.id;
     const eventType: string | undefined = body.eventType ?? body.event ?? body.type;
