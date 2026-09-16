@@ -2,6 +2,8 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../hooks/useAuth';
+import { useInboxCount } from '../../hooks/useInboxCount';
 import { NAV_ITEMS } from '../../config/navItems';
 
 // Same four destinations as the sidebar, with the New Deal FAB inserted
@@ -18,6 +20,8 @@ const TABS = [
 export function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const inboxCount = useInboxCount(user?.id);
 
   function isActive(path: string) {
     if (path === '/app/deals') return location.pathname.startsWith('/app/deals');
@@ -47,6 +51,7 @@ export function BottomNav() {
           }
 
           const active = isActive(path);
+          const showBadge = path === '/app/inbox' && inboxCount > 0;
           return (
             <button
               key={path}
@@ -55,11 +60,16 @@ export function BottomNav() {
             >
               <span
                 className={cn(
-                  'flex items-center justify-center rounded-full transition-colors duration-150',
+                  'relative flex items-center justify-center rounded-full transition-colors duration-150',
                   active ? 'bg-primary w-9 h-7 shadow-purple-glow-sm' : 'w-9 h-7'
                 )}
               >
                 <Icon className={cn('w-5 h-5', active ? 'text-white' : 'text-textMuted')} />
+                {showBadge && (
+                  <span className="absolute top-0 right-1 min-w-[15px] h-[15px] px-[3px] rounded-full bg-red-500 text-white text-[9px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
+                    {inboxCount > 9 ? '9+' : inboxCount}
+                  </span>
+                )}
               </span>
               <span className={cn('text-[10px] font-medium', active ? 'text-primary' : 'text-textMuted')}>
                 {label}

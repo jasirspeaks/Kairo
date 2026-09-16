@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Inbox as InboxIcon, Building2, ArrowRight, CalendarClock } from 'lucide-react';
+import { Inbox as InboxIcon, Building2, CalendarClock, ClipboardCheck, Layers, DollarSign } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, syncGoogleCalendar } from '../../lib/kairo';
-import { Deal, Conversation, PendingCall } from '../../types';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage, syncGoogleCalendar } from '../../lib/kairo';
+import { Deal, Conversation, PendingCall, DEAL_STAGES, DealStage } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -58,8 +58,13 @@ export function Inbox() {
 
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [selectedDealId, setSelectedDealId] = useState('');
+  // Call stage for the Existing Deal path -- only meaningful once a deal is
+  // selected, so it's disabled until selectedDealId is set (see resetSheetState).
+  const [existingCallStage, setExistingCallStage] = useState<DealStage>('Qualification');
   const [newDealName, setNewDealName] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [newDealStage, setNewDealStage] = useState<DealStage>('Qualification');
+  const [newDealValue, setNewDealValue] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
 
@@ -127,9 +132,21 @@ export function Inbox() {
   function resetSheetState() {
     setMode('existing');
     setSelectedDealId('');
+    setExistingCallStage('Qualification');
     setNewDealName('');
     setNewCompanyName('');
+    setNewDealStage('Qualification');
+    setNewDealValue('');
     setError('');
+  }
+
+  // Selecting a deal in the Existing Deal section defaults the call-stage
+  // picker to that deal's current stage, matching the prefill pattern used
+  // on the Add Call sheet (Review.tsx).
+  function handleSelectExistingDeal(dealId: string) {
+    setSelectedDealId(dealId);
+    const deal = deals.find(d => d.id === dealId);
+    if (deal) setExistingCallStage(deal.deal_stage);
   }
 
   function closeSheet() {
@@ -162,12 +179,16 @@ export function Inbox() {
 
     try {
       if (mode === 'new') {
+        const parsedValue = newDealValue.trim() ? Number(newDealValue.replace(/[,$]/g, '')) : null;
+
         const { data: deal, error: dealError } = await supabase
           .from('deals')
           .insert({
             user_id: user.id,
             deal_name: newDealName.trim(),
             company_name: newCompanyName.trim(),
+            deal_stage: newDealStage,
+            deal_value: parsedValue,
             status: 'active',
             risk_level: 'none',
           })
@@ -177,6 +198,15 @@ export function Inbox() {
         if (dealError || !deal) throw new Error('Failed to create deal.');
         dealId = deal.id;
         createdDealId = deal.id;
+      } else if (existingCallStage) {
+        // No call has happened yet for this path -- this just updates the
+        // deal's current stage to reflect where the upcoming call sits.
+        // The conversation row (and its own deal_stage) gets created later
+        // when the Fireflies webhook matches the transcript back to this deal.
+        await supabase
+          .from('deals')
+          .update({ deal_stage: existingCallStage, updated_at: new Date().toISOString() })
+          .eq('id', dealId);
       }
 
       const { error: updateError } = await supabase
@@ -226,12 +256,16 @@ export function Inbox() {
 
     try {
       if (mode === 'new') {
+        const parsedValue = newDealValue.trim() ? Number(newDealValue.replace(/[,$]/g, '')) : null;
+
         const { data: deal, error: dealError } = await supabase
           .from('deals')
           .insert({
             user_id: user.id,
             deal_name: newDealName.trim(),
             company_name: newCompanyName.trim(),
+            deal_stage: newDealStage,
+            deal_value: parsedValue,
             status: 'active',
             risk_level: 'none',
           })
@@ -251,6 +285,10 @@ export function Inbox() {
 
       if (!dealRow) throw new Error('Deal not found.');
 
+      // The stage this call is reviewed at -- the picked stage for an
+      // existing deal, or the stage just set on a brand-new deal.
+      const callStage: DealStage = mode === 'existing' ? existingCallStage : newDealStage;
+
       const { data: existingCalls } = await supabase
         .from('conversations')
         .select('*')
@@ -263,7 +301,7 @@ export function Inbox() {
       const review = await reviewCall(selectedCall.transcript, {
         deal_name: dealRow.deal_name,
         company_name: dealRow.company_name,
-        deal_stage: dealRow.deal_stage,
+        deal_stage: callStage,
         previous_review: previousReview,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
@@ -276,6 +314,7 @@ export function Inbox() {
         .insert({
           user_id: user.id,
           deal_id: dealId,
+          deal_stage: callStage,
           title: selectedCall.title || `Call ${calls.length + 1} — ${new Date().toLocaleDateString()}`,
           input_type: 'transcript',
           transcript: selectedCall.transcript,
@@ -292,7 +331,12 @@ export function Inbox() {
       await saveDealState(dealId, user.id, review);
       await saveStakeholders(dealId, user.id, review);
 
+      // Same auto-promotion to Closed Won/Lost as the Add Call flow --
+      // the user can only pick through "Decision" manually.
+      const resolvedStage = resolveDealStage(callStage, review.deal.status);
+
       await supabase.from('deals').update({
+        deal_stage: resolvedStage,
         risk_level: getRiskLevel(review.deal.status),
         updated_at: new Date().toISOString(),
       }).eq('id', dealId);
@@ -380,10 +424,9 @@ export function Inbox() {
           ) : (
             <div className="space-y-2">
               {meetings.map(meeting => (
-                <button
+                <div
                   key={meeting.id}
-                  onClick={() => openMeeting(meeting)}
-                  className="card-hover w-full flex items-center gap-3 px-4 py-3 text-left group min-h-[64px]"
+                  className="card flex items-center gap-3 px-4 py-3 min-h-[64px]"
                 >
                   <div className="w-8 h-8 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
                     <CalendarClock className="w-4 h-4 text-primary" />
@@ -396,8 +439,17 @@ export function Inbox() {
                       {formatMeetingTime(meeting.start_time)}
                     </p>
                   </div>
-                  <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-primary transition-colors flex-shrink-0" />
-                </button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openMeeting(meeting)}
+                    className="flex-shrink-0"
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5" />
+                    Assign
+                  </Button>
+                </div>
               ))}
             </div>
           )
@@ -410,10 +462,9 @@ export function Inbox() {
         ) : (
           <div className="space-y-2">
             {pendingCalls.map(call => (
-              <button
+              <div
                 key={call.id}
-                onClick={() => openCall(call)}
-                className="card-hover w-full flex items-center gap-3 px-4 py-3 text-left group min-h-[64px]"
+                className="card flex items-center gap-3 px-4 py-3 min-h-[64px]"
               >
                 <div className="w-8 h-8 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
                   <InboxIcon className="w-4 h-4 text-primary" />
@@ -426,8 +477,17 @@ export function Inbox() {
                     {call.meeting_date ? formatDate(call.meeting_date) : formatDate(call.created_at)}
                   </p>
                 </div>
-                <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-primary transition-colors flex-shrink-0" />
-              </button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => openCall(call)}
+                  className="flex-shrink-0"
+                >
+                  <ClipboardCheck className="w-3.5 h-3.5" />
+                  Assign
+                </Button>
+              </div>
             ))}
           </div>
         )}
@@ -474,21 +534,39 @@ export function Inbox() {
 
             <form onSubmit={selectedMeeting ? handleAssignMeeting : handleAssignCall} className="space-y-4">
               {mode === 'existing' ? (
-                <div>
-                  <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal</label>
-                  <select
-                    value={selectedDealId}
-                    onChange={e => setSelectedDealId(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="">Select a deal</option>
-                    {deals.map(deal => (
-                      <option key={deal.id} value={deal.id}>
-                        {deal.deal_name} — {deal.company_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal</label>
+                    <select
+                      value={selectedDealId}
+                      onChange={e => handleSelectExistingDeal(e.target.value)}
+                      className="input-field"
+                    >
+                      <option value="">Select a deal</option>
+                      {deals.map(deal => (
+                        <option key={deal.id} value={deal.id}>
+                          {deal.deal_name} — {deal.company_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Call Stage</label>
+                    <div className="relative">
+                      <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
+                      <select
+                        value={existingCallStage}
+                        onChange={e => setExistingCallStage(e.target.value as DealStage)}
+                        disabled={!selectedDealId}
+                        className="input-field pl-10 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {DEAL_STAGES.map(stage => (
+                          <option key={stage} value={stage}>{stage}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </>
               ) : (
                 <>
                   <div>
@@ -517,6 +595,37 @@ export function Inbox() {
                         value={newCompanyName}
                         onChange={e => setNewCompanyName(e.target.value)}
                         placeholder="e.g. Acme Corp"
+                        className="input-field pl-10"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
+                    <div className="relative">
+                      <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
+                      <select
+                        value={newDealStage}
+                        onChange={e => setNewDealStage(e.target.value as DealStage)}
+                        className="input-field pl-10 appearance-none"
+                      >
+                        {DEAL_STAGES.map(stage => (
+                          <option key={stage} value={stage}>{stage}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-textSecondary mb-1.5">
+                      Deal Value <span className="text-textMuted">(optional)</span>
+                    </label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted" />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={newDealValue}
+                        onChange={e => setNewDealValue(e.target.value)}
+                        placeholder="e.g. 25000"
                         className="input-field pl-10"
                       />
                     </div>

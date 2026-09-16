@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, ChevronsLeft, ChevronsRight, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
+import { useInboxCount } from '../../hooks/useInboxCount';
 import { NAV_ITEMS } from '../../config/navItems';
 
 const COLLAPSE_KEY = 'kairo-sidebar-collapsed';
@@ -10,7 +11,8 @@ const COLLAPSE_KEY = 'kairo-sidebar-collapsed';
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { profile, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
+  const inboxCount = useInboxCount(user?.id);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === 'true';
@@ -93,6 +95,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-1">
         {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
           const active = isActive(path);
+          const showBadge = path === '/app/inbox' && inboxCount > 0;
           return (
             <button
               key={path}
@@ -106,8 +109,17 @@ export function Sidebar() {
                   : 'text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh'
               )}
             >
-              <Icon className={cn('w-4 h-4 flex-shrink-0', active ? 'text-white' : '')} />
-              {!collapsed && label}
+              <span className="relative flex-shrink-0">
+                <Icon className={cn('w-4 h-4', active ? 'text-white' : '')} />
+                {showBadge && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-[3px] rounded-full bg-red-500 text-white text-[9px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
+                    {inboxCount > 9 ? '9+' : inboxCount}
+                  </span>
+                )}
+              </span>
+              {!collapsed && (
+                <span className="flex-1">{label}</span>
+              )}
             </button>
           );
         })}
