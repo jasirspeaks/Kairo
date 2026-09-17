@@ -474,7 +474,7 @@ export function Inbox() {
                     size="sm"
                     variant="secondary"
                     onClick={() => openMeeting(meeting)}
-                    className="flex-shrink-0 !text-primary !border-primary/40 hover:!border-primary"
+                    className="flex-shrink-0"
                   >
                     <ClipboardCheck className="w-3.5 h-3.5" />
                     Assign
@@ -512,7 +512,7 @@ export function Inbox() {
                   size="sm"
                   variant="secondary"
                   onClick={() => openCall(call)}
-                  className="flex-shrink-0 !text-primary !border-primary/40 hover:!border-primary"
+                  className="flex-shrink-0"
                 >
                   <ClipboardCheck className="w-3.5 h-3.5" />
                   Assign
