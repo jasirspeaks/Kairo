@@ -1,16 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Inbox as InboxIcon, Building2, CalendarClock, ClipboardCheck, Layers, DollarSign } from 'lucide-react';
+import { CalendarClock, Building2, ClipboardCheck, Layers, DollarSign, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage, syncGoogleCalendar } from '../../lib/kairo';
-import { Deal, Conversation, PendingCall, DEAL_STAGES, DealStage } from '../../types';
+import { syncGoogleCalendar } from '../../lib/kairo';
+import { Deal, DEAL_STAGES, DealStage } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
-import { formatDate, cn } from '../../lib/utils';
+import { cn } from '../../lib/utils';
 
 interface ScheduledMeeting {
   id: string;
@@ -25,8 +24,6 @@ interface ScheduledMeeting {
   created_at: string;
 }
 
-type InboxTab = 'upcoming' | 'unmatched';
-
 function formatMeetingTime(startTime: string | null): string {
   if (!startTime) return 'No time set';
   const date = new Date(startTime);
@@ -40,21 +37,14 @@ function formatMeetingTime(startTime: string | null): string {
 }
 
 export function Inbox() {
-  const navigate = useNavigate();
-  const { user, profile } = useAuth();
-
-  const [tab, setTab] = useState<InboxTab>('upcoming');
+  const { user } = useAuth();
 
   const [meetings, setMeetings] = useState<ScheduledMeeting[]>([]);
-  const [pendingCalls, setPendingCalls] = useState<PendingCall[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  // Shared assignment sheet state -- used for both an upcoming meeting
-  // (selectedMeeting) and a fallback unmatched call (selectedCall).
   const [selectedMeeting, setSelectedMeeting] = useState<ScheduledMeeting | null>(null);
-  const [selectedCall, setSelectedCall] = useState<PendingCall | null>(null);
 
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [selectedDealId, setSelectedDealId] = useState('');
@@ -75,12 +65,12 @@ export function Inbox() {
   }, [user]);
 
   // Keeps the open Inbox page current without a manual reload: re-runs
-  // fetchData() (not syncAndFetch()) whenever scheduled_meetings or
-  // pending_calls changes for this user, so a write from any source --
-  // this page's own assignment actions, calendar sync from another tab,
-  // Fireflies webhook write-back -- shows up immediately. Deliberately does
-  // NOT call syncGoogleCalendar() here; this only reacts to rows already in
-  // the database, same scope as the nav badge's subscription.
+  // fetchData() (not syncAndFetch()) whenever scheduled_meetings changes for
+  // this user, so a write from any source -- this page's own assignment
+  // actions, calendar sync from another tab, Fireflies webhook write-back --
+  // shows up immediately. Deliberately does NOT call syncGoogleCalendar()
+  // here; this only reacts to rows already in the database, same scope as
+  // the nav badge's subscription.
   //
   // The callback re-checks `user` itself (not just the outer effect guard)
   // because a stray event can fire after `user` flips to null (sign-out,
@@ -103,11 +93,6 @@ export function Inbox() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${uid}` },
-        () => { if (user) fetchData(); }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'pending_calls', filter: `user_id=eq.${uid}` },
         () => { if (user) fetchData(); }
       )
       .subscribe();
@@ -135,20 +120,16 @@ export function Inbox() {
   }
 
   async function fetchData() {
-    const [{ data: upcoming }, { data: pending }, { data: dealsData }] = await Promise.all([
+    // Both unassigned AND assigned meetings are shown here -- assigned ones
+    // just render with a green "Assigned" button instead of a purple
+    // "Assign" one. Only cancelled meetings are excluded.
+    const [{ data: allMeetings }, { data: dealsData }] = await Promise.all([
       supabase
         .from('scheduled_meetings')
         .select('*')
         .eq('user_id', user!.id)
-        .eq('status', 'unassigned')
         .is('cancelled_at', null)
         .order('start_time', { ascending: true }),
-      supabase
-        .from('pending_calls')
-        .select('*')
-        .eq('user_id', user!.id)
-        .eq('status', 'unmatched')
-        .order('created_at', { ascending: false }),
       supabase
         .from('deals')
         .select('*')
@@ -156,20 +137,13 @@ export function Inbox() {
         .eq('status', 'active')
         .order('updated_at', { ascending: false }),
     ]);
-    setMeetings(upcoming || []);
-    setPendingCalls(pending || []);
+    setMeetings(allMeetings || []);
     setDeals(dealsData || []);
   }
 
   function openMeeting(meeting: ScheduledMeeting) {
+    if (meeting.status === 'assigned') return;
     setSelectedMeeting(meeting);
-    setSelectedCall(null);
-    resetSheetState();
-  }
-
-  function openCall(call: PendingCall) {
-    setSelectedCall(call);
-    setSelectedMeeting(null);
     resetSheetState();
   }
 
@@ -195,7 +169,6 @@ export function Inbox() {
 
   function closeSheet() {
     setSelectedMeeting(null);
-    setSelectedCall(null);
     resetSheetState();
   }
 
@@ -276,134 +249,6 @@ export function Inbox() {
     }
   }
 
-  // Fallback path: an unmatched finished call with no pre-assigned meeting
-  // behind it. Same as before -- assigning here runs the review immediately
-  // since the transcript already exists.
-  async function handleAssignCall(e: React.FormEvent) {
-    e.preventDefault();
-    if (!user || !selectedCall) return;
-
-    if (mode === 'existing' && !selectedDealId) {
-      setError('Select a deal to assign this call to.');
-      return;
-    }
-    if (mode === 'new' && (!newDealName.trim() || !newCompanyName.trim())) {
-      setError('Deal name and company name are required.');
-      return;
-    }
-
-    setProcessing(true);
-    setError('');
-
-    let dealId = selectedDealId;
-    let createdDealId: string | null = null;
-
-    try {
-      if (mode === 'new') {
-        const parsedValue = newDealValue.trim() ? Number(newDealValue.replace(/[,$]/g, '')) : null;
-
-        const { data: deal, error: dealError } = await supabase
-          .from('deals')
-          .insert({
-            user_id: user.id,
-            deal_name: newDealName.trim(),
-            company_name: newCompanyName.trim(),
-            deal_stage: newDealStage,
-            deal_value: parsedValue,
-            status: 'active',
-            risk_level: 'none',
-          })
-          .select()
-          .single();
-
-        if (dealError || !deal) throw new Error('Failed to create deal.');
-        dealId = deal.id;
-        createdDealId = deal.id;
-      }
-
-      const { data: dealRow } = await supabase
-        .from('deals')
-        .select('*')
-        .eq('id', dealId)
-        .single();
-
-      if (!dealRow) throw new Error('Deal not found.');
-
-      // The stage this call is reviewed at -- the picked stage for an
-      // existing deal, or the stage just set on a brand-new deal.
-      const callStage: DealStage = mode === 'existing' ? existingCallStage : newDealStage;
-
-      const { data: existingCalls } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('deal_id', dealId)
-        .order('created_at', { ascending: true });
-
-      const calls: Conversation[] = existingCalls || [];
-      const previousReview = calls.length > 0 ? calls[calls.length - 1].analysis_json : null;
-
-      const review = await reviewCall(selectedCall.transcript, {
-        deal_name: dealRow.deal_name,
-        company_name: dealRow.company_name,
-        deal_stage: callStage,
-        previous_review: previousReview,
-        seller_context: {
-          what_you_sell: profile?.what_you_sell || undefined,
-          who_you_are: profile?.who_you_are || undefined,
-        },
-      });
-
-      const { data: newConv, error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          user_id: user.id,
-          deal_id: dealId,
-          deal_stage: callStage,
-          title: selectedCall.title || `Call ${calls.length + 1} — ${new Date().toLocaleDateString()}`,
-          input_type: 'transcript',
-          transcript: selectedCall.transcript,
-          status: 'complete',
-          analysis_json: review,
-        })
-        .select()
-        .single();
-
-      if (convError || !newConv) throw new Error('Failed to save conversation.');
-
-      // review.deal already IS the deal's current state -- computed with
-      // the full prior history as context. No aggregation function needed.
-      await saveDealState(dealId, user.id, review);
-      await saveStakeholders(dealId, user.id, review);
-
-      // Same auto-promotion to Closed Won/Lost as the Add Call flow --
-      // the user can only pick through "Decision" manually.
-      const resolvedStage = resolveDealStage(callStage, review.deal.status);
-
-      await supabase.from('deals').update({
-        deal_stage: resolvedStage,
-        risk_level: getRiskLevel(review.deal.status),
-        updated_at: new Date().toISOString(),
-      }).eq('id', dealId);
-
-      await supabase.from('pending_calls').update({
-        status: 'matched',
-        matched_deal_id: dealId,
-        matched_conversation_id: newConv.id,
-        updated_at: new Date().toISOString(),
-      }).eq('id', selectedCall.id);
-
-      navigate(`/app/deals/${dealId}/calls/${newConv.id}`);
-
-    } catch (err: any) {
-      if (createdDealId) {
-        await supabase.from('deals').delete().eq('id', createdDealId);
-      }
-      setError(err.message || 'Something went wrong.');
-    } finally {
-      setProcessing(false);
-    }
-  }
-
   if (processing) return (
     <div className="min-h-[calc(100vh-64px)]">
       <LoadingState phase="analyzing" />
@@ -424,50 +269,21 @@ export function Inbox() {
           </p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setTab('upcoming')}
-            className={cn(
-              'flex items-center gap-1.5 px-3.5 py-2 rounded-full border text-xs font-medium transition-colors min-h-[36px]',
-              tab === 'upcoming'
-                ? 'bg-primary/10 border-primary/30 text-primary'
-                : 'bg-surface border-border text-textSecondary'
-            )}
-          >
-            <CalendarClock className="w-3.5 h-3.5" />
-            Upcoming Meetings
-            <span className="text-[10px] text-textMuted">{meetings.length}</span>
-          </button>
-          <button
-            onClick={() => setTab('unmatched')}
-            className={cn(
-              'flex items-center gap-1.5 px-3.5 py-2 rounded-full border text-xs font-medium transition-colors min-h-[36px]',
-              tab === 'unmatched'
-                ? 'bg-primary/10 border-primary/30 text-primary'
-                : 'bg-surface border-border text-textSecondary'
-            )}
-          >
-            <InboxIcon className="w-3.5 h-3.5" />
-            Unmatched Calls
-            <span className="text-[10px] text-textMuted">{pendingCalls.length}</span>
-          </button>
-        </div>
-
         {loading ? (
           <div className="space-y-2">
             {[1, 2, 3].map(i => <div key={i} className="card h-20 animate-pulse" />)}
           </div>
-        ) : tab === 'upcoming' ? (
-          meetings.length === 0 ? (
-            <EmptyState
-              icon={<CalendarClock className="w-6 h-6" />}
-              title={syncing ? 'Syncing your calendar…' : 'No upcoming meetings'}
-              description="Connect your calendar in Settings, or check back once you've scheduled your next call."
-            />
-          ) : (
-            <div className="space-y-2">
-              {meetings.map(meeting => (
+        ) : meetings.length === 0 ? (
+          <EmptyState
+            icon={<CalendarClock className="w-6 h-6" />}
+            title={syncing ? 'Syncing your calendar…' : 'No meetings yet'}
+            description="Connect your calendar in Settings, or check back once you've scheduled your next call."
+          />
+        ) : (
+          <div className="space-y-2">
+            {meetings.map(meeting => {
+              const isAssigned = meeting.status === 'assigned';
+              return (
                 <div
                   key={meeting.id}
                   className="card flex items-center gap-3 px-4 py-3 min-h-[64px]"
@@ -483,70 +299,46 @@ export function Inbox() {
                       {formatMeetingTime(meeting.start_time)}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => openMeeting(meeting)}
-                    className="flex-shrink-0"
-                  >
-                    <ClipboardCheck className="w-3.5 h-3.5" />
-                    Assign
-                  </Button>
+                  {isAssigned ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled
+                      className="flex-shrink-0 !bg-transparent !border-emerald-500 !text-emerald-400 !opacity-100 disabled:!opacity-100 disabled:cursor-default"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Assigned
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => openMeeting(meeting)}
+                      className="flex-shrink-0 !bg-transparent !border-primary !text-primary hover:!bg-primary/8"
+                    >
+                      <ClipboardCheck className="w-3.5 h-3.5" />
+                      Assign
+                    </Button>
+                  )}
                 </div>
-              ))}
-            </div>
-          )
-        ) : pendingCalls.length === 0 ? (
-          <EmptyState
-            icon={<InboxIcon className="w-6 h-6" />}
-            title="No unmatched calls"
-            description="Calls that finish without a pre-assigned meeting behind them will show up here."
-          />
-        ) : (
-          <div className="space-y-2">
-            {pendingCalls.map(call => (
-              <div
-                key={call.id}
-                className="card flex items-center gap-3 px-4 py-3 min-h-[64px]"
-              >
-                <div className="w-8 h-8 rounded-lg bg-primary/8 border border-primary/15 flex items-center justify-center flex-shrink-0">
-                  <InboxIcon className="w-4 h-4 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-textPrimary text-sm font-medium truncate">
-                    {call.title || 'Untitled Call'}
-                  </p>
-                  <p className="text-textMuted text-xs mt-0.5">
-                    {call.meeting_date ? formatDate(call.meeting_date) : formatDate(call.created_at)}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => openCall(call)}
-                  className="flex-shrink-0"
-                >
-                  <ClipboardCheck className="w-3.5 h-3.5" />
-                  Assign
-                </Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Assign sheet -- shared UI for both an upcoming meeting and a fallback unmatched call */}
+      {/* Assign sheet */}
       <BottomSheet
-        open={!!selectedMeeting || !!selectedCall}
+        open={!!selectedMeeting}
         onClose={closeSheet}
-        title={selectedMeeting ? 'Assign Meeting' : 'Assign Call'}
+        title="Assign Meeting"
       >
-        {(selectedMeeting || selectedCall) && (
+        {selectedMeeting && (
           <>
             <p className="text-textSecondary text-sm mb-4 truncate">
-              {selectedMeeting ? (selectedMeeting.title || 'Untitled meeting') : (selectedCall?.title || 'Untitled Call')}
+              {selectedMeeting.title || 'Untitled meeting'}
             </p>
 
             <div className="flex gap-2 mb-5">
@@ -576,7 +368,7 @@ export function Inbox() {
               </button>
             </div>
 
-            <form onSubmit={selectedMeeting ? handleAssignMeeting : handleAssignCall} className="space-y-4">
+            <form onSubmit={handleAssignMeeting} className="space-y-4">
               {mode === 'existing' ? (
                 <>
                   <div>
@@ -684,7 +476,7 @@ export function Inbox() {
               )}
 
               <Button type="submit" className="w-full" size="lg">
-                {selectedMeeting ? 'Assign Meeting' : 'Review This Call'}
+                Assign Meeting
               </Button>
             </form>
           </>
