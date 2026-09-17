@@ -58,15 +58,10 @@ export function BottomNav() {
               onClick={() => navigate(path)}
               className="flex-1 flex flex-col items-center justify-center gap-1 min-w-[44px] min-h-[44px] py-1"
             >
-              <span
-                className={cn(
-                  'relative flex items-center justify-center rounded-full transition-colors duration-150',
-                  active ? 'bg-primary w-9 h-7 shadow-purple-glow-sm' : 'w-9 h-7'
-                )}
-              >
-                <Icon className={cn('w-5 h-5', active ? 'text-white' : 'text-textMuted')} />
+              <span className="relative flex items-center justify-center w-9 h-8">
+                <Icon className={cn('w-6 h-6', active ? 'text-primary' : 'text-textMuted')} />
                 {showBadge && (
-                  <span className="absolute top-0 right-1 min-w-[15px] h-[15px] px-[3px] rounded-full bg-red-500 text-white text-[9px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
+                  <span className="absolute -top-1 right-0 min-w-[18px] h-[18px] px-[4px] rounded-full bg-red-500 text-white text-[11px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
                     {inboxCount > 9 ? '9+' : inboxCount}
                   </span>
                 )}
