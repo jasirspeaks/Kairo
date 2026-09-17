@@ -46,8 +46,18 @@ export function useInboxCount(userId: string | undefined) {
     // (see the one-time SQL step run in the Supabase dashboard). One channel,
     // two table subscriptions -- either firing just re-runs the same count
     // query rather than trying to patch the count incrementally.
+    //
+    // Channel name includes a random suffix, not just userId: this hook is
+    // called independently by both Sidebar and BottomNav for the same user
+    // at the same time. Supabase treats a channel name as a singleton key --
+    // two `.channel()` calls with the identical name return the SAME
+    // underlying channel object, so the second caller's `.on()` registrations
+    // land on a channel the first caller already `.subscribe()`d, which
+    // throws ("cannot add postgres_changes callbacks ... after subscribe()").
+    // A unique name per hook instance gives each consumer its own channel.
+    const channelId = Math.random().toString(36).slice(2);
     const channel = supabase
-      .channel(`inbox-count-${userId}`)
+      .channel(`inbox-count-${userId}-${channelId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${userId}` },

@@ -81,20 +81,34 @@ export function Inbox() {
   // Fireflies webhook write-back -- shows up immediately. Deliberately does
   // NOT call syncGoogleCalendar() here; this only reacts to rows already in
   // the database, same scope as the nav badge's subscription.
+  //
+  // The callback re-checks `user` itself (not just the outer effect guard)
+  // because a stray event can fire after `user` flips to null (sign-out,
+  // token-refresh hiccup) but before this effect's cleanup has unsubscribed
+  // the channel -- fetchData() dereferences user!.id, so without this guard
+  // that race throws and trips the ErrorBoundary.
   useEffect(() => {
     if (!user) return;
+    const uid = user.id;
+    // Unique suffix, same reasoning as useInboxCount: a shared channel name
+    // is a singleton in the Supabase client, so if this effect ever runs
+    // twice concurrently for the same user (Strict Mode double-invoke in
+    // dev, a fast route re-mount), the second `.channel()` call would return
+    // the first's already-subscribed channel and its `.on()` calls would
+    // throw. A random suffix guarantees each mount gets its own channel.
+    const channelId = Math.random().toString(36).slice(2);
 
     const channel = supabase
-      .channel(`inbox-page-${user.id}`)
+      .channel(`inbox-page-${uid}-${channelId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${user.id}` },
-        () => fetchData()
+        { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${uid}` },
+        () => { if (user) fetchData(); }
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'pending_calls', filter: `user_id=eq.${user.id}` },
-        () => fetchData()
+        { event: '*', schema: 'public', table: 'pending_calls', filter: `user_id=eq.${uid}` },
+        () => { if (user) fetchData(); }
       )
       .subscribe();
 
