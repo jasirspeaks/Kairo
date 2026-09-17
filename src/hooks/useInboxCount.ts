@@ -1,15 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
-// How often the nav badge re-checks the Inbox count in the background.
-// Cheap two-count query, not worth wiring a realtime subscription for.
-const POLL_MS = 30_000;
-
 // Total items still needing assignment across both Inbox tabs --
 // unassigned upcoming meetings + unmatched calls. Used by Sidebar and
 // BottomNav to show a notification badge on the Inbox nav item. Each
 // consumer calls this independently (same pattern as useAuth/useSubscription
 // elsewhere) rather than threading the count through props.
+//
+// Kept in sync via a Realtime subscription on scheduled_meetings and
+// pending_calls (filtered to this user), rather than polling -- any INSERT/
+// UPDATE/DELETE on either table re-runs the same count query. This makes the
+// badge reflect whatever wrote to those tables (calendar sync, Fireflies
+// webhook write-back, the Inbox page's own assignment actions, etc.)
+// immediately, from any tab. This does NOT trigger a Google Calendar pull --
+// it only reacts to rows already in the database.
 export function useInboxCount(userId: string | undefined) {
   const [count, setCount] = useState(0);
 
@@ -35,9 +39,30 @@ export function useInboxCount(userId: string | undefined) {
       setCount(0);
       return;
     }
+
     fetchCount(userId);
-    const interval = setInterval(() => fetchCount(userId), POLL_MS);
-    return () => clearInterval(interval);
+
+    // Requires both tables to be added to the supabase_realtime publication
+    // (see the one-time SQL step run in the Supabase dashboard). One channel,
+    // two table subscriptions -- either firing just re-runs the same count
+    // query rather than trying to patch the count incrementally.
+    const channel = supabase
+      .channel(`inbox-count-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${userId}` },
+        () => fetchCount(userId)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pending_calls', filter: `user_id=eq.${userId}` },
+        () => fetchCount(userId)
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userId, fetchCount]);
 
   return count;

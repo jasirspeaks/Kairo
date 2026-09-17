@@ -74,6 +74,36 @@ export function Inbox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Keeps the open Inbox page current without a manual reload: re-runs
+  // fetchData() (not syncAndFetch()) whenever scheduled_meetings or
+  // pending_calls changes for this user, so a write from any source --
+  // this page's own assignment actions, calendar sync from another tab,
+  // Fireflies webhook write-back -- shows up immediately. Deliberately does
+  // NOT call syncGoogleCalendar() here; this only reacts to rows already in
+  // the database, same scope as the nav badge's subscription.
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`inbox-page-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${user.id}` },
+        () => fetchData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pending_calls', filter: `user_id=eq.${user.id}` },
+        () => fetchData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   async function syncAndFetch() {
     setLoading(true);
     await syncCalendar();
@@ -444,7 +474,7 @@ export function Inbox() {
                     size="sm"
                     variant="secondary"
                     onClick={() => openMeeting(meeting)}
-                    className="flex-shrink-0"
+                    className="flex-shrink-0 !text-primary !border-primary/40 hover:!border-primary"
                   >
                     <ClipboardCheck className="w-3.5 h-3.5" />
                     Assign
@@ -482,7 +512,7 @@ export function Inbox() {
                   size="sm"
                   variant="secondary"
                   onClick={() => openCall(call)}
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 !text-primary !border-primary/40 hover:!border-primary"
                 >
                   <ClipboardCheck className="w-3.5 h-3.5" />
                   Assign
