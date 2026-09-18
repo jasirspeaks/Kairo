@@ -5,7 +5,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { syncGoogleCalendar } from '../../lib/kairo';
 import { Deal, DEAL_STAGES, DealStage } from '../../types';
 import { Button } from '../../components/ui/Button';
-import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
@@ -19,7 +18,7 @@ interface ScheduledMeeting {
   start_time: string | null;
   end_time: string | null;
   attendees: any | null;
-  status: 'unassigned' | 'assigned';
+  status: 'unassigned' | 'assigned' | 'completed';
   deal_id: string | null;
   created_at: string;
 }
@@ -122,12 +121,19 @@ export function Inbox() {
   async function fetchData() {
     // Both unassigned AND assigned meetings are shown here -- assigned ones
     // just render with a green "Assigned" button instead of a purple
-    // "Assign" one. Only cancelled meetings are excluded.
+    // "Assign" one. Cancelled meetings are excluded, and so are 'completed'
+    // ones: fireflies-webhook flips an assigned meeting to 'completed' once
+    // the call actually happens and gets auto-reviewed onto its deal, at
+    // which point it belongs on that deal's own review/timeline, not here.
+    // Without this filter a completed meeting's status no longer matches
+    // 'assigned', so it would render as a stale, clickable "Assign" card
+    // instead of disappearing.
     const [{ data: allMeetings }, { data: dealsData }] = await Promise.all([
       supabase
         .from('scheduled_meetings')
         .select('*')
         .eq('user_id', user!.id)
+        .in('status', ['unassigned', 'assigned'])
         .is('cancelled_at', null)
         .order('start_time', { ascending: true }),
       supabase
@@ -248,12 +254,6 @@ export function Inbox() {
       setProcessing(false);
     }
   }
-
-  if (processing) return (
-    <div className="min-h-[calc(100vh-64px)]">
-      <LoadingState phase="analyzing" />
-    </div>
-  );
 
   return (
     <>
@@ -475,7 +475,7 @@ export function Inbox() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" size="lg">
+              <Button type="submit" className="w-full" size="lg" loading={processing} disabled={processing}>
                 Assign Meeting
               </Button>
             </form>
