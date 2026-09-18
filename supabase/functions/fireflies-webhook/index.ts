@@ -204,7 +204,7 @@ serve(async (req) => {
             matchedMeeting = closest;
           } else {
             console.log(
-              `Ambiguous match for user ${userId}: closest candidates ${closest.distanceMs}ms and ${secondClosest.distanceMs}ms apart from meeting time -- falling back to Inbox.`
+              `Ambiguous match for user ${userId}: closest candidates ${closest.distanceMs}ms and ${secondClosest.distanceMs}ms apart from meeting time -- dropping, no unmatched-call fallback.`
             );
           }
         }
@@ -218,7 +218,7 @@ serve(async (req) => {
           .single();
 
         if (!deal) {
-          console.error('Matched scheduled_meeting points to a missing deal, falling back to Inbox.');
+          console.error('Matched scheduled_meeting points to a missing deal, dropping (no unmatched-call fallback).');
         } else {
           const { data: sellerProfile } = await supabase
             .from('profiles')
@@ -260,7 +260,7 @@ serve(async (req) => {
           const reviewData = await reviewRes.json();
 
           if (!reviewRes.ok || !reviewData.review) {
-            console.error('Auto-review failed, falling back to Inbox:', reviewData);
+            console.error('Auto-review failed, dropping (no unmatched-call fallback):', reviewData);
           } else {
             const review = reviewData.review;
 
@@ -300,24 +300,24 @@ serve(async (req) => {
         }
       }
     } catch (matchErr) {
-      console.error('Auto-match/review block failed, falling back to Inbox:', matchErr);
+      console.error('Auto-match/review block failed, dropping (no unmatched-call fallback):', matchErr);
     }
 
-    const { error: insertError } = await supabase.from('pending_calls').insert({
-      user_id: userId,
-      source: 'fireflies',
-      external_id: transcriptData.id ?? meetingId,
+    // No auto-match found, and the Inbox no longer has an "Unmatched Calls"
+    // surface to review these from -- so there's nothing to hand this call
+    // off to. Log metadata only (never transcript text, same rule as the
+    // request-received log above) so an unmatched call is still visible in
+    // function logs for support/debugging, then drop it. This is a
+    // deliberate behavior change: prior to this, unmatched calls were
+    // persisted in `pending_calls` for later manual assignment; that table
+    // and workflow are retired.
+    console.log('Fireflies call could not be auto-matched to a deal; no Inbox fallback, dropping:', {
+      userId,
+      meetingId,
+      externalId: transcriptData.id ?? meetingId,
       title: transcriptData.title ?? null,
-      transcript: transcriptText,
-      participants: transcriptData.participants ?? null,
-      meeting_date: transcriptData.dateString ?? null,
-      status: 'unmatched',
+      meetingDate: transcriptData.dateString ?? null,
     });
-
-    if (insertError) {
-      console.error('pending_calls insert error:', insertError);
-      return jsonRes({ error: 'Failed to store call' }, 500);
-    }
 
     return jsonRes({ ok: true, auto_matched: false });
   } catch (err) {

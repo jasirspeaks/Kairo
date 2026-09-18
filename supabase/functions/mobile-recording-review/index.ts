@@ -6,15 +6,9 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
-// Same model chain as call-review, used here only for the transcription
-// step (not extraction). GEMINI_MODEL override, if set, pins both this
-// function and call-review to the same single model.
 const GEMINI_MODEL_OVERRIDE = Deno.env.get('GEMINI_MODEL');
 const TRANSCRIBE_MODEL = GEMINI_MODEL_OVERRIDE || 'gemini-3.6-flash';
 
-// Gemini inline request cap is 20MB total (audio + prompt). Stay under
-// that with margin for the prompt text and base64 overhead (~33% larger
-// than raw bytes).
 const INLINE_LIMIT_BYTES = 18 * 1024 * 1024;
 
 const corsHeaders = {
@@ -52,10 +46,6 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// Transcribes via Gemini inline audio input. Separate from call-review's
-// extraction call -- this call's only job is producing clean text with
-// speaker labels; call-review (invoked afterward) does the actual deal
-// analysis on that text, exactly as it does for Fireflies transcripts.
 async function transcribeInline(audioBytes: ArrayBuffer, mimeType: string): Promise<string> {
   const audioB64 = arrayBufferToBase64(audioBytes);
 
@@ -95,11 +85,6 @@ async function transcribeInline(audioBytes: ArrayBuffer, mimeType: string): Prom
   return text;
 }
 
-// Files API path for recordings >=18MB. Uploads to Gemini's Files API,
-// polls until ACTIVE, then references the file in a generateContent call.
-// NOTE: Files API objects expire after 48 hours. This function always
-// re-uploads from the Storage original rather than caching a Gemini file
-// reference anywhere, so retries are always safe regardless of timing.
 async function transcribeViaFilesApi(audioBytes: ArrayBuffer, mimeType: string): Promise<string> {
   const uploadResp = await fetch(
     `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`,
@@ -126,8 +111,6 @@ async function transcribeViaFilesApi(audioBytes: ArrayBuffer, mimeType: string):
     throw new Error('Gemini Files API upload did not return a usable file reference');
   }
 
-  // Poll until the file is ACTIVE (Gemini processes uploaded audio
-  // asynchronously before it's usable in generateContent).
   let state = uploaded.file?.state;
   let attempts = 0;
   while (state !== 'ACTIVE' && attempts < 20) {
@@ -216,8 +199,6 @@ serve(async (req) => {
       userId = user.id;
     }
 
-    // Load the conversation row -- created by the client before calling
-    // this function, with deal_id and audio_url already set.
     const { data: conversation, error: convFetchError } = await supabase
       .from('conversations')
       .select('id, deal_id, user_id, audio_url, status')
@@ -245,8 +226,6 @@ serve(async (req) => {
       .update({ status: 'processing' })
       .eq('id', conversationId);
 
-    // audio_url is a Storage path (e.g. "{user_id}/{deal_id}/{conversation_id}.m4a"),
-    // not a public URL -- this bucket is private. Download via service role.
     const { data: fileData, error: downloadError } = await supabase
       .storage
       .from('recordings')
@@ -269,8 +248,6 @@ serve(async (req) => {
       throw new Error('Transcribed audio is too short to review');
     }
 
-    // Fetch deal + seller context, same shape call-review expects --
-    // matches how fireflies-webhook assembles this before calling call-review.
     const { data: deal } = await supabase
       .from('deals')
       .select('*')
