@@ -54,6 +54,17 @@ export async function reviewCall(
 // already IS the deal's current state -- computed by call-review with the
 // full prior history as context. No aggregation function, no second AI
 // call. Call this right after every successful reviewCall().
+//
+// DUPLICATE LOGIC WARNING: this is a client-side re-implementation of the
+// same write-back that supabase/functions/_shared/deal-writeback.ts does
+// for the Fireflies-webhook and mobile-recording-review paths. They cannot
+// share code (this runs in the browser bundle; that runs in Deno), but the
+// `stateRow` shape here MUST be kept field-for-field identical to that
+// file's `stateRow`. A field added to one and not the other silently
+// breaks Deal Review for whichever entry point (New Deal upload / Review's
+// "Add Call" / Fireflies / mobile) uses the file that didn't get the
+// update -- this is exactly how `pillars` went missing here previously.
+// If you add a field to either file, add it to both in the same change.
 export async function saveDealState(dealId: string, userId: string, review: DealReview): Promise<void> {
   const { data: existing } = await supabase
     .from('deal_state')
@@ -74,6 +85,7 @@ export async function saveDealState(dealId: string, userId: string, review: Deal
     manager_note: review.deal.manager_note,
     supporting_evidence: review.supporting_evidence ?? [],
     last_review_summary: review.deal.status_reason,
+    pillars: review.deal.pillars ?? null,
     updated_at: new Date().toISOString(),
   };
 

@@ -63,6 +63,15 @@ type Review = {
 // here) and for handling their own errors; this throws on failures rather
 // than swallowing them, matching the original block's behavior of logging
 // and continuing where the original used try/catch at the call site.
+//
+// DUPLICATE LOGIC WARNING: src/lib/kairo.ts has its own client-side
+// saveDealState() that does this same deal_state upsert for the New Deal
+// upload and Review "Add Call" flows (it can't call this function directly
+// -- this runs in Deno, that runs in the browser). Its `stateRow` MUST stay
+// field-for-field identical to this one's. Adding a field here without
+// mirroring it there previously caused `pillars` to silently go missing
+// from Deal Review for every deal reviewed via manual upload. If you add a
+// field to either file, add it to both in the same change.
 export async function writeBackDealReview(
   supabase: SupabaseClient,
   dealId: string,
