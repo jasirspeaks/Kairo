@@ -130,7 +130,21 @@ PROCESS: DO THIS BEFORE YOU WRITE A SINGLE OUTPUT FIELD
 4. Separate what was STATED from what was IMPLIED from what is simply ABSENT.
 5. Identify the single fact that, if the seller doesn't act on it, is most likely to quietly kill this deal. That is your highest_priority_risk, at both levels.
 6. Determine suggested_deal_stage from concrete events only, per the rules above, and stage_regression_override only if the rare explicit-regression bar is met.
-7. Only after 1-6 are done, decide call_status, deal.status, and health_score. Never decide the status first and rationalize evidence toward it.
+7. Only after 1-6 are done, decide call_status, deal.status, and deal.pillars.
+
+DEAL HEALTH SCORE (deal.health_score): DERIVED, NOT INDEPENDENTLY CHOSEN
+
+health_score is not a separate judgment call. It is the arithmetic consequence of the five pillar confidence numbers you just wrote into deal.pillars. Compute it LAST, after deal.pillars is finalized, as the average of the confidence values for every pillar whose status is NOT not_yet_relevant. Round to the nearest integer.
+
+Do not pick a health_score first and then adjust pillar confidences to match it -- that is backwards and produces exactly the kind of contradiction (e.g. a 90 health score sitting on top of five unconfirmed pillars) that makes this system untrustworthy. The pillars are the evidence; health_score is only ever a summary of that evidence, never an independent vibe. If your instinct for health_score disagrees with what the pillar confidences average out to, the pillar confidences are correct and your instinct is wrong -- revisit the pillars, not the score. A server-side check recomputes this value from your own pillars object and will silently overwrite anything inconsistent, so there is no benefit to hand-picking a rounder or more flattering number.
+
+Never decide deal.status or health_score before finishing deal.pillars. Never let today's tone push either upward without pillar evidence behind it.
+
+CONFIDENCE (deal.confidence)
+
+- High: explicit, direct buyer statements anchor the assessment.
+- Medium: reasonable inference from behavior or indirect statements.
+- Low: a single ambiguous signal, sparse transcript, or conflicting evidence.
 
 SPEAKER IDENTIFICATION
 
@@ -172,22 +186,7 @@ DEAL STATUS (deal.status): the deal's overall current condition
 - Recovering: Was At Risk/Critical/Stalled, and this call shows real, evidenced re-engagement.
 - Won / Lost: Only when explicitly and unambiguously stated as closed.
 
-Most engaged, multi-call deals that still have one real open pillar are At Risk, not Healthy. Still talking is not health.
-
-DEAL HEALTH SCORE (deal.health_score)
-
-Integer 0-100, tied directly to how many of the five pillars are confirmed with real evidence:
-- 80-100: 4-5 pillars confirmed with concrete evidence.
-- 60-79: 3 pillars confirmed, real forward motion on the rest.
-- 40-59: 1-2 pillars confirmed or genuinely thin/early signal.
-- 20-39: 0-1 pillars confirmed despite multiple calls, or a specific named blocker present.
-- 0-19: An explicit deal-threatening fact is on the table.
-
-CONFIDENCE (deal.confidence)
-
-- High: explicit, direct buyer statements anchor the assessment.
-- Medium: reasonable inference from behavior or indirect statements.
-- Low: a single ambiguous signal, sparse transcript, or conflicting evidence.
+Most engaged, multi-call deals that still have one real open pillar are At Risk, not Healthy. Still talking is not health. deal.status must be consistent with deal.pillars: do not mark a deal Healthy while most pillars are unconfirmed, and do not mark a deal At Risk or Critical while most pillars are confirmed with no named blocker. If you notice that tension while writing status_reason, resolve it by fixing status (or the pillars, if they were the ones scored too hastily) before finalizing your answer -- do not submit an internally contradictory deal record.
 
 FIELD-BY-FIELD RULES
 
@@ -351,6 +350,87 @@ function normalizePillars(raw: unknown): Json {
   return result;
 }
 
+// ---- Health score / status <-> pillar reconciliation -------------------
+//
+// health_score and deal.status used to be independent judgment calls the
+// model made alongside deal.pillars, with nothing enforcing agreement
+// between them. In practice this let a deal render with health_score: 90
+// and deal.status: "Healthy" while every one of its five pillars sat at
+// "unconfirmed" -- internally contradictory, and confusing on Deal Review
+// where the pillar bars and the health ring are shown side by side.
+//
+// health_score is now DERIVED, not trusted from the model: it is always
+// recomputed here as the average confidence across every pillar whose
+// status isn't not_yet_relevant, rounded to the nearest integer. This
+// makes the number and the bars agree by construction, regardless of what
+// the model returned -- the SYSTEM_PROMPT above tells the model to do the
+// same arithmetic itself, but this is the actual enforcement, since a
+// model instruction alone doesn't guarantee compliance on every call.
+//
+// deal.status has no single deterministic formula the way health_score
+// does (it also depends on named blockers, momentum, and history, which
+// aren't captured in the pillar object alone) so it isn't overwritten
+// outright. Instead, an obviously contradictory combination -- a status
+// implying broad pillar strength while pillar evidence says otherwise, or
+// vice versa -- is corrected to the nearest status the health_score
+// actually supports. This only fires on a clear mismatch; it never
+// second-guesses a status that's plausibly consistent with the pillars.
+function averagePillarConfidence(pillars: Json): number | null {
+  const entries = PILLAR_KEYS
+    .map((key) => pillars[key] as { status: string; confidence: number })
+    .filter((p) => p.status !== 'not_yet_relevant');
+
+  if (entries.length === 0) return null;
+
+  const sum = entries.reduce((acc, p) => acc + p.confidence, 0);
+  return Math.round(sum / entries.length);
+}
+
+// Status bands mirror the SYSTEM_PROMPT's own health_score rubric:
+// 80-100 -> Healthy-caliber evidence, 60-79 -> Promising-caliber, etc.
+// Used only to catch a clearly contradictory deal.status, not to replace
+// deal.status's own richer judgment (named blockers, momentum, closed
+// deals) with a pure function of the pillar average.
+const STATUSES_IMPLYING_STRONG_PILLARS = new Set(['Healthy']);
+const STATUSES_IMPLYING_WEAK_PILLARS = new Set(['Critical']);
+// Won/Lost/Recovering/Unknown are exempt from this check entirely --
+// they describe deal trajectory or closure, not a pillar-evidence level,
+// so a mismatch against the raw pillar average is expected and correct.
+const STATUS_EXEMPT_FROM_PILLAR_CHECK = new Set(['Won', 'Lost', 'Recovering', 'Unknown']);
+
+function reconcileHealthAndStatusWithPillars(deal: Json): Json {
+  const pillars = deal.pillars as Json;
+  const derivedScore = averagePillarConfidence(pillars);
+
+  // No non-"not_yet_relevant" pillars at all is degenerate (shouldn't
+  // happen given PILLAR_KEYS always has 5 entries and not every deal can
+  // be not_yet_relevant on all five) -- if it ever does, leave the
+  // model's own health_score in place rather than inventing a number.
+  if (derivedScore !== null) {
+    deal.health_score = derivedScore;
+  }
+
+  const status = deal.status as string;
+  const score = deal.health_score as number;
+
+  if (!STATUS_EXEMPT_FROM_PILLAR_CHECK.has(status)) {
+    // Status says the deal looks strong (Healthy) but the derived score
+    // says otherwise (this is exactly the bug this whole function exists
+    // to catch) -- downgrade to the status the evidence actually supports.
+    if (STATUSES_IMPLYING_STRONG_PILLARS.has(status) && score < 60) {
+      deal.status = score >= 40 ? 'Promising' : 'At Risk';
+    }
+    // Status says the deal is in serious trouble (Critical) but the
+    // derived score says pillars are actually mostly confirmed -- an
+    // equally real contradiction the other direction.
+    if (STATUSES_IMPLYING_WEAK_PILLARS.has(status) && score >= 60) {
+      deal.status = score >= 80 ? 'Healthy' : 'Promising';
+    }
+  }
+
+  return deal;
+}
+
 function normalizeCall(raw: unknown): Json {
   const call = raw as Json | undefined;
   if (!call || typeof call !== 'object') throw new Error('Missing call object.');
@@ -410,6 +490,15 @@ function normalizeDeal(raw: unknown): Json {
   deal.highest_priority_risk = normalizeRisk(deal.highest_priority_risk, 'deal.highest_priority_risk');
   deal.what_youre_missing = normalizeMissing(deal.what_youre_missing, 'deal.what_youre_missing');
   deal.pillars = normalizePillars(deal.pillars);
+
+  // Recompute health_score from deal.pillars, and correct deal.status if
+  // it flatly contradicts what the pillars show. Must run after
+  // deal.pillars is normalized (needs the cleaned confidence numbers) and
+  // after deal.status/deal.health_score's own basic type checks above.
+  const reconciled = reconcileHealthAndStatusWithPillars(deal);
+  deal.health_score = reconciled.health_score;
+  deal.status = reconciled.status;
+
   deal.suggested_deal_stage = normalizeSuggestedStage(deal.suggested_deal_stage);
   deal.stage_regression_override = deal.stage_regression_override === true;
 
