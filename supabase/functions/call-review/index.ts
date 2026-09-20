@@ -10,6 +10,24 @@ const MODEL_CHAIN = GEMINI_MODEL_OVERRIDE
   ? [GEMINI_MODEL_OVERRIDE]
   : ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
 
+// Deal Stage values Kairo tracks -- kept in sync manually with DEAL_STAGES
+// in src/types/index.ts. Closed Won/Closed Lost are NEVER produced here;
+// those are derived separately from deal.status in resolveDealStage()
+// (src/lib/kairo.ts) and its edge-function equivalent
+// (_shared/deal-writeback.ts). This list exists so the model's
+// suggested_deal_stage can be validated against a known set.
+const DEAL_STAGE_VALUES = [
+  'Qualification',
+  'Discovery',
+  'Demo',
+  'Evaluation',
+  'Alignment',
+  'Proposal',
+  'Negotiation',
+  'Procurement',
+  'Decision',
+] as const;
+
 const SYSTEM_PROMPT = `You are Kairo.
 
 Kairo is a deal intelligence system. The deal is the object under evaluation. This call is one piece of evidence about it. It is not the thing being reviewed.
@@ -66,6 +84,33 @@ Score pillars against the deal's FULL history when prior deal state is provided,
 
 The pillars object must always contain exactly these five keys, every time, first call or not.
 
+DEAL STAGE INFERENCE (deal.suggested_deal_stage)
+
+Alongside status, health, and pillars, you must also infer what Deal Stage this deal now sits at, based on what has concretely happened across the deal's history (this call plus any prior calls), not what the seller hopes happens next.
+
+The stages, in forward order, are: Qualification, Discovery, Demo, Evaluation, Alignment, Proposal, Negotiation, Procurement, Decision.
+
+- Qualification: Early contact; still establishing whether this is a real fit worth pursuing.
+- Discovery: Actively exploring the buyer's problem, needs, current state -- no demo or solution walkthrough has happened yet.
+- Demo: A product/solution walkthrough has actually been given (not just scheduled).
+- Evaluation: The buyer is actively assessing the solution post-demo -- trials, technical review, comparing options.
+- Alignment: Working to get internal stakeholders (beyond the primary contact) aligned on moving forward.
+- Proposal: A formal proposal, pricing, or scope has actually been sent or presented.
+- Negotiation: Terms, pricing, or scope are being actively negotiated back and forth.
+- Procurement: Commercial/legal process (contracts, security review, procurement) is underway.
+- Decision: Final decision-maker review through waiting on a signature.
+
+Rules for this inference:
+- Base it on concrete events that happened (a demo was given, a proposal was sent, pricing was negotiated), never on what's scheduled, hoped for, or merely discussed as a future step. A demo being scheduled for next week does NOT move the deal to Demo stage; the deal reaches Demo stage only once that demo has actually happened.
+- Stages only ever move forward or stay the same from this inference. If this call shows no clear evidence of forward progress past the deal's current stage, suggested_deal_stage should simply repeat the current stage -- do not infer a forward stage you can't support, and do not infer a backward one.
+- The ONLY exception is stage_regression_override (see below): a rare, explicit case where the deal has genuinely reopened qualification.
+- Do not skip stages you have no evidence for. If a proposal was just sent but there's no evidence Evaluation or Alignment ever concretely happened, it's still reasonable to move to Proposal directly -- infer the furthest concretely-evidenced stage, not a mechanical one-step-at-a-time crawl.
+- If no prior deal state was provided (first call) and no deal_stage is given in context, infer the most concretely evidenced stage from this call alone, defaulting to Qualification if the call is too early to tell.
+
+STAGE REGRESSION OVERRIDE (deal.stage_regression_override)
+
+This is a boolean, defaulting to false. Set it to true ONLY when this call contains explicit, unambiguous evidence that the deal has genuinely regressed and needs to be requalified from an earlier stage than where it currently sits -- for example, the buyer explicitly says the project is being reopened from scratch, a key stated requirement changed such that prior discovery no longer holds, or the buyer explicitly says they need to restart evaluation. This must be a rare, high-confidence call. Do not set this to true merely because a call was quiet, unproductive, or failed to move any pillar forward -- that is simply "no forward progress," which is handled by suggested_deal_stage staying the same, not a regression. When true, suggested_deal_stage should reflect the stage the deal has genuinely fallen back to, and deal.status_reason or deal.manager_note should explain why.
+
 TWO INDEPENDENT LEVELS OF JUDGMENT
 
 You produce two assessments that must NOT mirror each other:
@@ -84,7 +129,8 @@ PROCESS: DO THIS BEFORE YOU WRITE A SINGLE OUTPUT FIELD
 3. If prior deal state was provided, score the same five pillars against the deal's full history, not just today.
 4. Separate what was STATED from what was IMPLIED from what is simply ABSENT.
 5. Identify the single fact that, if the seller doesn't act on it, is most likely to quietly kill this deal. That is your highest_priority_risk, at both levels.
-6. Only after 1-5 are done, decide call_status, deal.status, health_score, and deal.pillars. Never decide the status first and rationalize evidence toward it.
+6. Determine suggested_deal_stage from concrete events only, per the rules above, and stage_regression_override only if the rare explicit-regression bar is met.
+7. Only after 1-6 are done, decide call_status, deal.status, and health_score. Never decide the status first and rationalize evidence toward it.
 
 SPEAKER IDENTIFICATION
 
@@ -92,7 +138,7 @@ Transcripts label speakers as [SELLER] and [BUYER] (or equivalent). If unlabeled
 
 MULTI-CALL CONTEXT
 
-If prior deal state is provided, compare this transcript against it using the five pillars as your comparison lens. Feed this into deal.status_reason, deal.highest_priority_risk, deal.what_youre_missing, deal.manager_note, and deal.pillars.
+If prior deal state is provided, compare this transcript against it using the five pillars as your comparison lens. Feed this into deal.status_reason, deal.highest_priority_risk, deal.what_youre_missing, deal.manager_note, deal.pillars, and deal.suggested_deal_stage.
 
 A pillar that was unconfirmed last call and is STILL unconfirmed this call is a compounding risk, treated with more urgency the second and third time, not the same urgency.
 
@@ -161,6 +207,8 @@ SUPPORTING EVIDENCE: 2-4 of the strongest observations from this transcript at t
 
 PILLARS (deal.pillars): see the dedicated section above. Exactly five keys, every time: compelling_event, economic_buyer, decision_process, budget, champion.
 
+DEAL STAGE (deal.suggested_deal_stage / deal.stage_regression_override): see the dedicated sections above.
+
 STYLE
 
 Sound like a revenue leader who has money riding on this deal. No coaching language, no hedging filler. State things plainly. Be ruthless about specificity. Be economical with words.
@@ -188,6 +236,8 @@ BASE SCHEMA (first call, no what_changed_since_last_call key):
     "what_youre_missing": [ { "gap": "", "question_to_answer": "" } ],
     "recommended_next_action": "",
     "manager_note": "",
+    "suggested_deal_stage": "Qualification | Discovery | Demo | Evaluation | Alignment | Proposal | Negotiation | Procurement | Decision",
+    "stage_regression_override": false,
     "pillars": {
       "compelling_event": { "status": "confirmed | partial | unconfirmed | not_yet_relevant", "confidence": 0, "evidence": "" },
       "economic_buyer": { "status": "confirmed | partial | unconfirmed | not_yet_relevant", "confidence": 0, "evidence": "" },
@@ -205,7 +255,7 @@ BASE SCHEMA (first call, no what_changed_since_last_call key):
 SUBSEQUENT-CALL SCHEMA (include what_changed_since_last_call at the top level, alongside call/deal):
 {
   "call": { ...same shape as above... },
-  "deal": { ...same shape as above, including pillars... },
+  "deal": { ...same shape as above, including pillars, suggested_deal_stage, and stage_regression_override... },
   "what_changed_since_last_call": {
     "resolved": [],
     "persists": [],
@@ -230,6 +280,7 @@ const VALID_CONFIDENCE = new Set(['High', 'Medium', 'Low']);
 const VALID_SENTIMENTS = new Set(['champion', 'supporter', 'neutral', 'skeptic', 'blocker']);
 const VALID_PILLAR_STATUSES = new Set(['confirmed', 'partial', 'unconfirmed', 'not_yet_relevant']);
 const PILLAR_KEYS = ['compelling_event', 'economic_buyer', 'decision_process', 'budget', 'champion'] as const;
+const VALID_DEAL_STAGES = new Set<string>(DEAL_STAGE_VALUES);
 
 type Json = Record<string, unknown>;
 
@@ -328,6 +379,16 @@ function normalizeCall(raw: unknown): Json {
   return call;
 }
 
+// Falls back to 'Qualification' whenever the model omits suggested_deal_stage
+// or returns something outside the known set -- this keeps a malformed
+// response from ever silently regressing a deal (Qualification is always
+// treated as the "no confident stage" floor by the caller's own advance-only
+// comparison, which resolveDealStage-equivalents apply downstream).
+function normalizeSuggestedStage(raw: unknown): string {
+  if (typeof raw === 'string' && VALID_DEAL_STAGES.has(raw)) return raw;
+  return 'Qualification';
+}
+
 function normalizeDeal(raw: unknown): Json {
   const deal = raw as Json | undefined;
   if (!deal || typeof deal !== 'object') throw new Error('Missing deal object.');
@@ -349,6 +410,8 @@ function normalizeDeal(raw: unknown): Json {
   deal.highest_priority_risk = normalizeRisk(deal.highest_priority_risk, 'deal.highest_priority_risk');
   deal.what_youre_missing = normalizeMissing(deal.what_youre_missing, 'deal.what_youre_missing');
   deal.pillars = normalizePillars(deal.pillars);
+  deal.suggested_deal_stage = normalizeSuggestedStage(deal.suggested_deal_stage);
+  deal.stage_regression_override = deal.stage_regression_override === true;
 
   if (typeof deal.recommended_next_action !== 'string') deal.recommended_next_action = '';
 
@@ -611,7 +674,8 @@ serve(async (req) => {
       userMessage += `Deal: ${deal_context.deal_name ?? 'Unknown'}\n`;
       userMessage += `Company: ${deal_context.company_name ?? 'Unknown'}\n`;
       if (deal_context.deal_stage) {
-        userMessage += `Stage: ${deal_context.deal_stage}\n`;
+        userMessage += `Current stage on record: ${deal_context.deal_stage}\n`;
+        userMessage += `(This is the stage Kairo currently has on file. Infer suggested_deal_stage from what has concretely happened -- do not just repeat this value out of default, but do not move backward from it either, except via stage_regression_override.)\n`;
       }
 
       if (deal_context.deal_notes) {

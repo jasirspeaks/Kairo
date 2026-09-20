@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarClock, Building2, ClipboardCheck, Layers, DollarSign, Check } from 'lucide-react';
+import { CalendarClock, Building2, ClipboardCheck, DollarSign, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { syncGoogleCalendar } from '../../lib/kairo';
-import { Deal, DEAL_STAGES, DealStage } from '../../types';
+import { Deal } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { cn } from '../../lib/utils';
+
+// Every new deal starts here -- see the matching constant in NewDeal.tsx.
+// Deal Stage has no manual picker anywhere in Kairo anymore; it's set
+// automatically once the first call is reviewed, from what call-review
+// concretely observed happened.
+const INITIAL_DEAL_STAGE = 'Qualification';
 
 interface ScheduledMeeting {
   id: string;
@@ -47,12 +53,8 @@ export function Inbox() {
 
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [selectedDealId, setSelectedDealId] = useState('');
-  // Call stage for the Existing Deal path -- only meaningful once a deal is
-  // selected, so it's disabled until selectedDealId is set (see resetSheetState).
-  const [existingCallStage, setExistingCallStage] = useState<DealStage>('Qualification');
   const [newDealName, setNewDealName] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
-  const [newDealStage, setNewDealStage] = useState<DealStage>('Qualification');
   const [newDealValue, setNewDealValue] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
@@ -156,21 +158,10 @@ export function Inbox() {
   function resetSheetState() {
     setMode('existing');
     setSelectedDealId('');
-    setExistingCallStage('Qualification');
     setNewDealName('');
     setNewCompanyName('');
-    setNewDealStage('Qualification');
     setNewDealValue('');
     setError('');
-  }
-
-  // Selecting a deal in the Existing Deal section defaults the call-stage
-  // picker to that deal's current stage, matching the prefill pattern used
-  // on the Add Call sheet (Review.tsx).
-  function handleSelectExistingDeal(dealId: string) {
-    setSelectedDealId(dealId);
-    const deal = deals.find(d => d.id === dealId);
-    if (deal) setExistingCallStage(deal.deal_stage);
   }
 
   function closeSheet() {
@@ -181,6 +172,9 @@ export function Inbox() {
   // Assigning an upcoming meeting to a deal -- no transcript exists yet,
   // no AI review runs. This just links the meeting to a deal so the
   // Fireflies webhook can auto-match the transcript later, automatically.
+  // No stage is set here for the existing-deal path -- the deal simply
+  // keeps whatever stage it's already at until its next call is reviewed
+  // and Kairo infers the stage from what actually happened.
   async function handleAssignMeeting(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !selectedMeeting) return;
@@ -210,7 +204,7 @@ export function Inbox() {
             user_id: user.id,
             deal_name: newDealName.trim(),
             company_name: newCompanyName.trim(),
-            deal_stage: newDealStage,
+            deal_stage: INITIAL_DEAL_STAGE,
             deal_value: parsedValue,
             status: 'active',
             risk_level: 'none',
@@ -221,15 +215,6 @@ export function Inbox() {
         if (dealError || !deal) throw new Error('Failed to create deal.');
         dealId = deal.id;
         createdDealId = deal.id;
-      } else if (existingCallStage) {
-        // No call has happened yet for this path -- this just updates the
-        // deal's current stage to reflect where the upcoming call sits.
-        // The conversation row (and its own deal_stage) gets created later
-        // when the Fireflies webhook matches the transcript back to this deal.
-        await supabase
-          .from('deals')
-          .update({ deal_stage: existingCallStage, updated_at: new Date().toISOString() })
-          .eq('id', dealId);
       }
 
       const { error: updateError } = await supabase
@@ -370,39 +355,21 @@ export function Inbox() {
 
             <form onSubmit={handleAssignMeeting} className="space-y-4">
               {mode === 'existing' ? (
-                <>
-                  <div>
-                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal</label>
-                    <select
-                      value={selectedDealId}
-                      onChange={e => handleSelectExistingDeal(e.target.value)}
-                      className="input-field"
-                    >
-                      <option value="">Select a deal</option>
-                      {deals.map(deal => (
-                        <option key={deal.id} value={deal.id}>
-                          {deal.deal_name} — {deal.company_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Call Stage</label>
-                    <div className="relative">
-                      <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
-                      <select
-                        value={existingCallStage}
-                        onChange={e => setExistingCallStage(e.target.value as DealStage)}
-                        disabled={!selectedDealId}
-                        className="input-field pl-10 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {DEAL_STAGES.map(stage => (
-                          <option key={stage} value={stage}>{stage}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </>
+                <div>
+                  <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal</label>
+                  <select
+                    value={selectedDealId}
+                    onChange={e => setSelectedDealId(e.target.value)}
+                    className="input-field"
+                  >
+                    <option value="">Select a deal</option>
+                    {deals.map(deal => (
+                      <option key={deal.id} value={deal.id}>
+                        {deal.deal_name} — {deal.company_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               ) : (
                 <>
                   <div>
@@ -433,21 +400,6 @@ export function Inbox() {
                         placeholder="e.g. Acme Corp"
                         className="input-field pl-10"
                       />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
-                    <div className="relative">
-                      <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
-                      <select
-                        value={newDealStage}
-                        onChange={e => setNewDealStage(e.target.value as DealStage)}
-                        className="input-field pl-10 appearance-none"
-                      >
-                        {DEAL_STAGES.map(stage => (
-                          <option key={stage} value={stage}>{stage}</option>
-                        ))}
-                      </select>
                     </div>
                   </div>
                   <div>

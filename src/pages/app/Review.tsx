@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus, AlertTriangle, CheckCircle, Clock,
-  TrendingDown, Copy, Check, Activity, Layers, Target, Building2, ArrowRight, Mic
+  TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
-import { Deal, Conversation, DEAL_STAGES, DealStage } from '../../types';
+import { Deal, Conversation } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { LoadingState } from '../../components/ui/LoadingState';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -44,7 +44,6 @@ export function Review() {
   const [copied, setCopied] = useState(false);
   const [addingCall, setAddingCall] = useState(false);
   const [newTranscript, setNewTranscript] = useState('');
-  const [newDealStage, setNewDealStage] = useState<DealStage>('Qualification');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
   const [recordingNow, setRecordingNow] = useState(false);
@@ -74,7 +73,6 @@ export function Review() {
     const calls = callsData || [];
     setDeal(dealData);
     setAllCalls(calls);
-    if (dealData?.deal_stage) setNewDealStage(dealData.deal_stage);
 
     const targetCall = callId
       ? calls.find(c => c.id === callId)
@@ -119,7 +117,7 @@ export function Review() {
       const review = await reviewCall(text, {
         deal_name: deal.deal_name,
         company_name: deal.company_name,
-        deal_stage: newDealStage,
+        deal_stage: deal.deal_stage,
         previous_review: previousReview,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
@@ -127,12 +125,16 @@ export function Review() {
         },
       });
 
+      // deal_stage on the new conversation row records the stage the deal
+      // was AT when this call happened, i.e. before this review's own
+      // stage resolution below -- consistent with how it always worked
+      // when a person picked the stage manually before submitting.
       const { data: newConv, error: convError } = await supabase
         .from('conversations')
         .insert({
           user_id: user.id,
           deal_id: deal.id,
-          deal_stage: newDealStage,
+          deal_stage: deal.deal_stage,
           input_type: 'transcript',
           transcript: text,
           status: 'complete',
@@ -145,16 +147,17 @@ export function Review() {
       convId = newConv.id;
 
       // review.deal is already the deal's complete current-state assessment
-      // -- computed with the full prior history as context. Write directly,
-      // no aggregation step.
+      // -- computed by call-review with the full prior history as context.
+      // Write directly, no aggregation step.
       await saveDealState(deal.id, user.id, review);
       await saveStakeholders(deal.id, user.id, review);
 
-      // The user can only pick stages through "Decision" -- if this call's
-      // outcome reads as an unambiguous Won or Lost, promote the deal's
-      // stage to the matching Closed value automatically rather than
-      // leaving it on whatever stage was selected in this form.
-      const resolvedStage = resolveDealStage(newDealStage, review.deal.status);
+      // Deal Stage is now fully automatic: resolveDealStage reads what
+      // call-review concretely observed happened (or infers an unambiguous
+      // Won/Lost close) and only ever advances the deal's stage, or holds
+      // it, from wherever it currently sits -- never moves it backward
+      // except on the model's own rare, explicit regression call.
+      const resolvedStage = resolveDealStage(deal.deal_stage, review);
 
       await supabase.from('deals').update({
         deal_stage: resolvedStage,
@@ -405,24 +408,11 @@ export function Review() {
         )}
       </div>
 
-      {/* Add Call - bottom sheet on mobile, centered dialog on desktop */}
+      {/* Add Call - bottom sheet on mobile, centered dialog on desktop.
+          No Deal Stage picker here anymore -- Kairo infers the stage
+          automatically from what this call shows concretely happened. */}
       <BottomSheet open={addingCall} onClose={() => { setAddingCall(false); setError(''); setNewTranscript(''); }} title="Add Call Transcript">
         <form onSubmit={handleAddCall} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
-            <div className="relative">
-              <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
-              <select
-                value={newDealStage}
-                onChange={e => setNewDealStage(e.target.value as DealStage)}
-                className="input-field pl-10 appearance-none"
-              >
-                {DEAL_STAGES.map(stage => (
-                  <option key={stage} value={stage}>{stage}</option>
-                ))}
-              </select>
-            </div>
-          </div>
           <div>
             <label className="block text-xs font-medium text-textSecondary mb-1.5">
               Transcript

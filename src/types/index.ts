@@ -30,13 +30,17 @@ export type DealStage =
   | 'Closed Won'
   | 'Closed Lost';
 
-// The stages a user can pick from a dropdown (New Deal, Add Call). Closed
-// Won/Closed Lost are deliberately excluded here -- a user never manually
-// sets a deal to closed. Instead, when a call's outcome is unambiguous,
-// Kairo reads the AI's deal.status (Won/Lost) and promotes deal_stage to
-// the matching Closed value automatically. "Decision" is the last
-// user-selectable stage and covers everything from final decision-maker
-// review through waiting on a signature.
+// The stages a user can pick from a dropdown. As of Kairo's automatic
+// stage inference (call-review's deal.suggested_deal_stage), there is no
+// longer a user-facing stage picker anywhere in the app -- deal_stage is
+// set entirely from resolveDealStage() below, driven by what the AI
+// concretely observed happened in each call. This array is kept only for
+// display ordering (e.g. filter dropdowns on the Deals page) and as the
+// source of truth for DEAL_STAGE progression order used by
+// resolveDealStage's advance-only comparison. Closed Won/Closed Lost are
+// deliberately excluded here for that same reason -- they are never a
+// point on the forward-progression scale, only a terminal state set from
+// deal.status.
 export const DEAL_STAGES: DealStage[] = [
   'Qualification',
   'Discovery',
@@ -135,6 +139,20 @@ export interface DealLevelReview {
   recommended_next_action: string;
   manager_note: string;
   pillars?: DealPillars;
+  // Kairo's inferred Deal Stage based on what concretely happened across
+  // the deal's history (this call plus prior calls) -- never based on what
+  // was merely scheduled or discussed as a future step. Always one of
+  // DEAL_STAGES (never Closed Won/Lost -- that's derived from `status`
+  // instead). Populated by call-review v25+; may be absent on reviews
+  // produced before that. See resolveDealStage in lib/kairo.ts for how
+  // this is applied to deals.deal_stage.
+  suggested_deal_stage?: DealStage;
+  // True only on the rare call where the AI found explicit, unambiguous
+  // evidence the deal has genuinely reopened from an earlier stage (e.g.
+  // buyer says the project is being restarted from scratch). When true,
+  // suggested_deal_stage is allowed to move backward from the deal's
+  // current stage; otherwise stage changes are advance-or-hold only.
+  stage_regression_override?: boolean;
 }
 
 // The full extraction call-review produces on every call, including the

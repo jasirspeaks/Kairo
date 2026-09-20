@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Layers, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
+import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
@@ -10,7 +10,6 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { TopBar } from '../../components/layout/TopBar';
 import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { UpgradeModal } from '../../components/ui/UpgradeModal';
-import { DEAL_STAGES, DealStage } from '../../types';
 
 type Step = 'deal' | 'transcript' | 'record' | 'awaiting-meeting' | 'scheduled';
 
@@ -25,6 +24,14 @@ const DESKTOP_MEDIA_QUERY = '(min-width: 768px)';
 const AWAIT_MEETING_TIMEOUT_MS = 20_000;
 const AWAIT_MEETING_POLL_MS = 1500;
 
+// Every new deal starts here. There is no manual Deal Stage picker
+// anywhere in Kairo anymore -- deal_stage is set automatically once the
+// first call is reviewed, from what call-review concretely observed
+// happened (deal.suggested_deal_stage), via resolveDealStage. A brand-new
+// deal with no calls yet simply sits at the earliest stage until that
+// first review runs.
+const INITIAL_DEAL_STAGE = 'Qualification';
+
 export function NewDeal() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
@@ -33,7 +40,6 @@ export function NewDeal() {
   const [step, setStep] = useState<Step>('deal');
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
-  const [dealStage, setDealStage] = useState<DealStage>('Qualification');
   const [dealValue, setDealValue] = useState('');
   const [transcript, setTranscript] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
@@ -152,7 +158,7 @@ export function NewDeal() {
         user_id: user.id,
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
-        deal_stage: dealStage,
+        deal_stage: INITIAL_DEAL_STAGE,
         deal_value: parsedValue,
         status: 'active',
         risk_level: 'none',
@@ -276,7 +282,7 @@ export function NewDeal() {
       const review = await reviewCall(text, {
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
-        deal_stage: dealStage,
+        deal_stage: INITIAL_DEAL_STAGE,
         previous_review: null,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
@@ -289,7 +295,7 @@ export function NewDeal() {
         .insert({
           user_id: user.id,
           deal_id: dealId,
-          deal_stage: dealStage,
+          deal_stage: INITIAL_DEAL_STAGE,
           input_type: 'transcript',
           transcript: text,
           status: 'complete',
@@ -306,12 +312,12 @@ export function NewDeal() {
       await saveDealState(dealId, user.id, review);
       await saveStakeholders(dealId, user.id, review);
 
-      // A first call can already be an explicit close (logging a deal
-      // that was won or lost before the seller started using Kairo) --
-      // resolveDealStage promotes to Closed Won/Lost only when the AI's
-      // read is unambiguous, otherwise it's a no-op and the stage the
-      // user picked stands.
-      const resolvedStage = resolveDealStage(dealStage, review.deal.status);
+      // Stage is now fully automatic: resolveDealStage reads
+      // review.deal.suggested_deal_stage (what call-review concretely
+      // observed happened) and applies it if it advances the deal past
+      // INITIAL_DEAL_STAGE, or promotes straight to Closed Won/Lost on an
+      // unambiguous close -- even on a brand-new deal's very first call.
+      const resolvedStage = resolveDealStage(INITIAL_DEAL_STAGE, review);
 
       await supabase.from('deals').update({
         deal_stage: resolvedStage,
@@ -487,22 +493,6 @@ export function NewDeal() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-textSecondary mb-1.5">Deal Stage</label>
-              <div className="relative">
-                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
-                <select
-                  value={dealStage}
-                  onChange={e => setDealStage(e.target.value as DealStage)}
-                  className="input-field pl-10 appearance-none"
-                >
-                  {DEAL_STAGES.map(stage => (
-                    <option key={stage} value={stage}>{stage}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
               <label className="block text-xs font-medium text-textSecondary mb-1.5">
                 Deal Value <span className="text-textMuted">(optional)</span>
               </label>
@@ -608,7 +598,7 @@ export function NewDeal() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-textPrimary text-sm font-medium truncate">{dealName}</p>
-                <p className="text-textMuted text-xs">{companyName} · {dealStage}</p>
+                <p className="text-textMuted text-xs">{companyName}</p>
               </div>
             </div>
 

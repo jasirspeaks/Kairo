@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { supabase } from './supabase';
-import { DealReview, DealStatus, DealStage, DEAL_STATUS_COLORS } from '../types';
+import { DealReview, DealStatus, DealStage, DEAL_STAGES, DEAL_STATUS_COLORS } from '../types';
 
 interface SellerContext {
   what_you_sell?: string;
@@ -165,17 +165,57 @@ export function getRiskLevel(status: string): 'high' | 'medium' | 'low' | 'none'
   }
 }
 
-// A user picks a stage up through "Decision" (see DEAL_STAGES) -- Closed
-// Won and Closed Lost are never manually selected. Instead, every time a
-// call comes back, check the AI's deal.status: if it's unambiguously Won
-// or Lost, the deal_stage should reflect that regardless of which stage
-// the user had it parked in. Any other status leaves the user's chosen
-// stage untouched -- this only ever moves a deal forward into a closed
-// state, never back out of one or sideways between open stages.
-export function resolveDealStage(selectedStage: DealStage, dealStatus: string): DealStage {
-  if (dealStatus === 'Won') return 'Closed Won';
-  if (dealStatus === 'Lost') return 'Closed Lost';
-  return selectedStage;
+// Deal Stage is no longer user-selected anywhere in the app -- it's set
+// entirely from what call-review concretely observed happened in the deal's
+// calls (deal.suggested_deal_stage), via this function. Called after every
+// successful review, right alongside saveDealState/saveStakeholders.
+//
+// DUPLICATE LOGIC WARNING: mirrored server-side by
+// resolveDealStageServer() in supabase/functions/_shared/deal-writeback.ts,
+// used by the Fireflies webhook and mobile-recording-review paths (which
+// run in Deno and can't import this file). Keep the advance-only /
+// regression-override logic identical in both places -- see that file's
+// own comment for the reasoning this mirrors.
+//
+// Rules, in order:
+//   1. An explicit Won/Lost call always promotes to the matching Closed
+//      stage, regardless of anything else -- this was already true before
+//      stage inference existed and is unchanged.
+//   2. A rare, explicit stage_regression_override lets the AI move the
+//      deal backward from its current stage, when it found unambiguous
+//      evidence of a genuine requalification (see the prompt for the bar
+//      this has to clear). This is the ONLY path that can move a deal
+//      stage backward.
+//   3. Otherwise, the deal can only advance or hold: suggested_deal_stage
+//      is applied only if it sits at or after the deal's current stage in
+//      DEAL_STAGES order. A suggestion that's actually behind the current
+//      stage (model noise, a quieter call, stale context) is silently
+//      ignored rather than applied -- the current stage stands.
+//   4. If suggested_deal_stage is absent entirely (a review produced
+//      before this feature shipped, or normalization somehow omitted it),
+//      the current stage stands untouched -- this function never
+//      invents a stage from nothing.
+export function resolveDealStage(currentStage: DealStage, review: DealReview): DealStage {
+  if (review.deal.status === 'Won') return 'Closed Won';
+  if (review.deal.status === 'Lost') return 'Closed Lost';
+
+  const suggested = review.deal.suggested_deal_stage;
+  if (!suggested) return currentStage;
+
+  if (review.deal.stage_regression_override) {
+    return suggested;
+  }
+
+  const currentIndex = DEAL_STAGES.indexOf(currentStage as (typeof DEAL_STAGES)[number]);
+  const suggestedIndex = DEAL_STAGES.indexOf(suggested);
+
+  // If either stage isn't in the known forward-progression list (e.g.
+  // currentStage is already Closed Won/Lost -- shouldn't normally reach
+  // here since closed deals aren't re-reviewed, but stay safe), don't
+  // guess; leave the current stage as-is.
+  if (currentIndex === -1 || suggestedIndex === -1) return currentStage;
+
+  return suggestedIndex >= currentIndex ? suggested : currentStage;
 }
 
 // "Schedule Next Meeting" opens the user's actual Google Calendar, not an
