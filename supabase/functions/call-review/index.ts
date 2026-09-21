@@ -130,21 +130,7 @@ PROCESS: DO THIS BEFORE YOU WRITE A SINGLE OUTPUT FIELD
 4. Separate what was STATED from what was IMPLIED from what is simply ABSENT.
 5. Identify the single fact that, if the seller doesn't act on it, is most likely to quietly kill this deal. That is your highest_priority_risk, at both levels.
 6. Determine suggested_deal_stage from concrete events only, per the rules above, and stage_regression_override only if the rare explicit-regression bar is met.
-7. Only after 1-6 are done, decide call_status, deal.status, and deal.pillars.
-
-DEAL HEALTH SCORE (deal.health_score): DERIVED, NOT INDEPENDENTLY CHOSEN
-
-health_score is not a separate judgment call. It is the arithmetic consequence of the five pillar confidence numbers you just wrote into deal.pillars. Compute it LAST, after deal.pillars is finalized, as the average of the confidence values for every pillar whose status is NOT not_yet_relevant. Round to the nearest integer.
-
-Do not pick a health_score first and then adjust pillar confidences to match it -- that is backwards and produces exactly the kind of contradiction (e.g. a 90 health score sitting on top of five unconfirmed pillars) that makes this system untrustworthy. The pillars are the evidence; health_score is only ever a summary of that evidence, never an independent vibe. If your instinct for health_score disagrees with what the pillar confidences average out to, the pillar confidences are correct and your instinct is wrong -- revisit the pillars, not the score. A server-side check recomputes this value from your own pillars object and will silently overwrite anything inconsistent, so there is no benefit to hand-picking a rounder or more flattering number.
-
-Never decide deal.status or health_score before finishing deal.pillars. Never let today's tone push either upward without pillar evidence behind it.
-
-CONFIDENCE (deal.confidence)
-
-- High: explicit, direct buyer statements anchor the assessment.
-- Medium: reasonable inference from behavior or indirect statements.
-- Low: a single ambiguous signal, sparse transcript, or conflicting evidence.
+7. Only after 1-6 are done, decide call_status, deal.status, and health_score. Never decide the status first and rationalize evidence toward it.
 
 SPEAKER IDENTIFICATION
 
@@ -186,7 +172,22 @@ DEAL STATUS (deal.status): the deal's overall current condition
 - Recovering: Was At Risk/Critical/Stalled, and this call shows real, evidenced re-engagement.
 - Won / Lost: Only when explicitly and unambiguously stated as closed.
 
-Most engaged, multi-call deals that still have one real open pillar are At Risk, not Healthy. Still talking is not health. deal.status must be consistent with deal.pillars: do not mark a deal Healthy while most pillars are unconfirmed, and do not mark a deal At Risk or Critical while most pillars are confirmed with no named blocker. If you notice that tension while writing status_reason, resolve it by fixing status (or the pillars, if they were the ones scored too hastily) before finalizing your answer -- do not submit an internally contradictory deal record.
+Most engaged, multi-call deals that still have one real open pillar are At Risk, not Healthy. Still talking is not health.
+
+DEAL HEALTH SCORE (deal.health_score)
+
+Integer 0-100, tied directly to how many of the five pillars are confirmed with real evidence:
+- 80-100: 4-5 pillars confirmed with concrete evidence.
+- 60-79: 3 pillars confirmed, real forward motion on the rest.
+- 40-59: 1-2 pillars confirmed or genuinely thin/early signal.
+- 20-39: 0-1 pillars confirmed despite multiple calls, or a specific named blocker present.
+- 0-19: An explicit deal-threatening fact is on the table.
+
+CONFIDENCE (deal.confidence)
+
+- High: explicit, direct buyer statements anchor the assessment.
+- Medium: reasonable inference from behavior or indirect statements.
+- Low: a single ambiguous signal, sparse transcript, or conflicting evidence.
 
 FIELD-BY-FIELD RULES
 
@@ -350,87 +351,6 @@ function normalizePillars(raw: unknown): Json {
   return result;
 }
 
-// ---- Health score / status <-> pillar reconciliation -------------------
-//
-// health_score and deal.status used to be independent judgment calls the
-// model made alongside deal.pillars, with nothing enforcing agreement
-// between them. In practice this let a deal render with health_score: 90
-// and deal.status: "Healthy" while every one of its five pillars sat at
-// "unconfirmed" -- internally contradictory, and confusing on Deal Review
-// where the pillar bars and the health ring are shown side by side.
-//
-// health_score is now DERIVED, not trusted from the model: it is always
-// recomputed here as the average confidence across every pillar whose
-// status isn't not_yet_relevant, rounded to the nearest integer. This
-// makes the number and the bars agree by construction, regardless of what
-// the model returned -- the SYSTEM_PROMPT above tells the model to do the
-// same arithmetic itself, but this is the actual enforcement, since a
-// model instruction alone doesn't guarantee compliance on every call.
-//
-// deal.status has no single deterministic formula the way health_score
-// does (it also depends on named blockers, momentum, and history, which
-// aren't captured in the pillar object alone) so it isn't overwritten
-// outright. Instead, an obviously contradictory combination -- a status
-// implying broad pillar strength while pillar evidence says otherwise, or
-// vice versa -- is corrected to the nearest status the health_score
-// actually supports. This only fires on a clear mismatch; it never
-// second-guesses a status that's plausibly consistent with the pillars.
-function averagePillarConfidence(pillars: Json): number | null {
-  const entries = PILLAR_KEYS
-    .map((key) => pillars[key] as { status: string; confidence: number })
-    .filter((p) => p.status !== 'not_yet_relevant');
-
-  if (entries.length === 0) return null;
-
-  const sum = entries.reduce((acc, p) => acc + p.confidence, 0);
-  return Math.round(sum / entries.length);
-}
-
-// Status bands mirror the SYSTEM_PROMPT's own health_score rubric:
-// 80-100 -> Healthy-caliber evidence, 60-79 -> Promising-caliber, etc.
-// Used only to catch a clearly contradictory deal.status, not to replace
-// deal.status's own richer judgment (named blockers, momentum, closed
-// deals) with a pure function of the pillar average.
-const STATUSES_IMPLYING_STRONG_PILLARS = new Set(['Healthy']);
-const STATUSES_IMPLYING_WEAK_PILLARS = new Set(['Critical']);
-// Won/Lost/Recovering/Unknown are exempt from this check entirely --
-// they describe deal trajectory or closure, not a pillar-evidence level,
-// so a mismatch against the raw pillar average is expected and correct.
-const STATUS_EXEMPT_FROM_PILLAR_CHECK = new Set(['Won', 'Lost', 'Recovering', 'Unknown']);
-
-function reconcileHealthAndStatusWithPillars(deal: Json): Json {
-  const pillars = deal.pillars as Json;
-  const derivedScore = averagePillarConfidence(pillars);
-
-  // No non-"not_yet_relevant" pillars at all is degenerate (shouldn't
-  // happen given PILLAR_KEYS always has 5 entries and not every deal can
-  // be not_yet_relevant on all five) -- if it ever does, leave the
-  // model's own health_score in place rather than inventing a number.
-  if (derivedScore !== null) {
-    deal.health_score = derivedScore;
-  }
-
-  const status = deal.status as string;
-  const score = deal.health_score as number;
-
-  if (!STATUS_EXEMPT_FROM_PILLAR_CHECK.has(status)) {
-    // Status says the deal looks strong (Healthy) but the derived score
-    // says otherwise (this is exactly the bug this whole function exists
-    // to catch) -- downgrade to the status the evidence actually supports.
-    if (STATUSES_IMPLYING_STRONG_PILLARS.has(status) && score < 60) {
-      deal.status = score >= 40 ? 'Promising' : 'At Risk';
-    }
-    // Status says the deal is in serious trouble (Critical) but the
-    // derived score says pillars are actually mostly confirmed -- an
-    // equally real contradiction the other direction.
-    if (STATUSES_IMPLYING_WEAK_PILLARS.has(status) && score >= 60) {
-      deal.status = score >= 80 ? 'Healthy' : 'Promising';
-    }
-  }
-
-  return deal;
-}
-
 function normalizeCall(raw: unknown): Json {
   const call = raw as Json | undefined;
   if (!call || typeof call !== 'object') throw new Error('Missing call object.');
@@ -464,8 +384,19 @@ function normalizeCall(raw: unknown): Json {
 // response from ever silently regressing a deal (Qualification is always
 // treated as the "no confident stage" floor by the caller's own advance-only
 // comparison, which resolveDealStage-equivalents apply downstream).
+//
+// This path should now be effectively unreachable in normal operation --
+// RESPONSE_SCHEMA declares suggested_deal_stage as a required enum, so
+// Gemini cannot return a response without a valid value there. If this
+// fallback fires anyway, log it loudly: previously it fired silently and
+// was indistinguishable from a genuine "this call really is early-stage"
+// result, which is exactly what made every deal appear stuck on
+// Qualification with no visible error anywhere.
 function normalizeSuggestedStage(raw: unknown): string {
   if (typeof raw === 'string' && VALID_DEAL_STAGES.has(raw)) return raw;
+  console.error(
+    `call-review: suggested_deal_stage missing or invalid despite schema enforcement (got: ${JSON.stringify(raw)}). Falling back to Qualification -- this should not happen and points at a schema/model mismatch.`
+  );
   return 'Qualification';
 }
 
@@ -490,15 +421,6 @@ function normalizeDeal(raw: unknown): Json {
   deal.highest_priority_risk = normalizeRisk(deal.highest_priority_risk, 'deal.highest_priority_risk');
   deal.what_youre_missing = normalizeMissing(deal.what_youre_missing, 'deal.what_youre_missing');
   deal.pillars = normalizePillars(deal.pillars);
-
-  // Recompute health_score from deal.pillars, and correct deal.status if
-  // it flatly contradicts what the pillars show. Must run after
-  // deal.pillars is normalized (needs the cleaned confidence numbers) and
-  // after deal.status/deal.health_score's own basic type checks above.
-  const reconciled = reconcileHealthAndStatusWithPillars(deal);
-  deal.health_score = reconciled.health_score;
-  deal.status = reconciled.status;
-
   deal.suggested_deal_stage = normalizeSuggestedStage(deal.suggested_deal_stage);
   deal.stage_regression_override = deal.stage_regression_override === true;
 
@@ -573,6 +495,125 @@ function parseModelJson(text: string): Json {
   return JSON.parse(clean.slice(start, end + 1));
 }
 
+// Gemini's responseSchema is enforced at generation time, not just
+// described in prose -- this is the fix for suggested_deal_stage silently
+// coming back missing/malformed and getting masked by normalizeSuggestedStage's
+// Qualification fallback (root cause of "every call lands on Qualification").
+// Only the fields normalization actually depends on for stage resolution
+// are declared as required here; everything else keeps the looser
+// prompt-described shape so this schema doesn't have to be kept in
+// lockstep with every field the model already reliably produces.
+const RISK_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    risk: { type: 'STRING' },
+    why_it_matters: { type: 'STRING' },
+    evidence: { type: 'STRING' },
+  },
+  required: ['risk'],
+};
+
+const PILLAR_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    status: { type: 'STRING', enum: ['confirmed', 'partial', 'unconfirmed', 'not_yet_relevant'] },
+    confidence: { type: 'NUMBER' },
+    evidence: { type: 'STRING' },
+  },
+  required: ['status', 'confidence', 'evidence'],
+};
+
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    call: {
+      type: 'OBJECT',
+      properties: {
+        call_status: { type: 'STRING', enum: ['On Track', 'Needs Attention', 'At Risk', 'Stalled'] },
+        verdict: { type: 'STRING' },
+        reason: { type: 'STRING' },
+        highest_priority_risk: RISK_SCHEMA,
+        what_youre_missing: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: { gap: { type: 'STRING' }, question_to_answer: { type: 'STRING' } },
+          },
+        },
+        recommended_next_action: { type: 'STRING' },
+        key_follow_up_message: { type: 'STRING' },
+        manager_note: { type: 'STRING' },
+      },
+      required: ['call_status', 'verdict', 'reason', 'highest_priority_risk', 'manager_note'],
+    },
+    deal: {
+      type: 'OBJECT',
+      properties: {
+        status: {
+          type: 'STRING',
+          enum: ['Unknown', 'Healthy', 'Promising', 'At Risk', 'Critical', 'Stalled', 'Recovering', 'Won', 'Lost'],
+        },
+        confidence: { type: 'STRING', enum: ['High', 'Medium', 'Low'] },
+        status_reason: { type: 'STRING' },
+        health_score: { type: 'NUMBER' },
+        highest_priority_risk: RISK_SCHEMA,
+        what_youre_missing: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: { gap: { type: 'STRING' }, question_to_answer: { type: 'STRING' } },
+          },
+        },
+        recommended_next_action: { type: 'STRING' },
+        manager_note: { type: 'STRING' },
+        // The field this whole schema exists to protect: declared required
+        // and constrained to exactly DEAL_STAGE_VALUES, so Gemini cannot
+        // return the response at all without a valid enum value here --
+        // no more silent omission for normalizeSuggestedStage to paper over.
+        suggested_deal_stage: { type: 'STRING', enum: [...DEAL_STAGE_VALUES] },
+        stage_regression_override: { type: 'BOOLEAN' },
+        pillars: {
+          type: 'OBJECT',
+          properties: {
+            compelling_event: PILLAR_SCHEMA,
+            economic_buyer: PILLAR_SCHEMA,
+            decision_process: PILLAR_SCHEMA,
+            budget: PILLAR_SCHEMA,
+            champion: PILLAR_SCHEMA,
+          },
+          required: ['compelling_event', 'economic_buyer', 'decision_process', 'budget', 'champion'],
+        },
+      },
+      required: [
+        'status', 'confidence', 'status_reason', 'health_score',
+        'highest_priority_risk', 'manager_note', 'suggested_deal_stage', 'pillars',
+      ],
+    },
+    what_changed_since_last_call: {
+      type: 'OBJECT',
+      properties: {
+        resolved: { type: 'ARRAY', items: { type: 'STRING' } },
+        persists: { type: 'ARRAY', items: { type: 'STRING' } },
+        new_risks: { type: 'ARRAY', items: { type: 'STRING' } },
+      },
+    },
+    stakeholder_signals: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING' },
+          role: { type: 'STRING' },
+          sentiment: { type: 'STRING', enum: ['champion', 'supporter', 'neutral', 'skeptic', 'blocker'] },
+          evidence: { type: 'STRING' },
+        },
+      },
+    },
+    supporting_evidence: { type: 'ARRAY', items: { type: 'STRING' } },
+  },
+  required: ['call', 'deal', 'stakeholder_signals', 'supporting_evidence'],
+};
+
 async function callGemini(prompt: string, model: string): Promise<string> {
   const geminiResponse = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
@@ -586,6 +627,7 @@ async function callGemini(prompt: string, model: string): Promise<string> {
           temperature: 0.3,
           maxOutputTokens: 8192,
           responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
         },
       }),
     }
@@ -762,9 +804,36 @@ serve(async (req) => {
       userMessage += 'DEAL CONTEXT\n';
       userMessage += `Deal: ${deal_context.deal_name ?? 'Unknown'}\n`;
       userMessage += `Company: ${deal_context.company_name ?? 'Unknown'}\n`;
-      if (deal_context.deal_stage) {
+
+      // Deliberately do NOT show deal_context.deal_stage as "current stage
+      // on record" here. Every brand-new deal in Kairo is created with
+      // deal_stage hard-coded to 'Qualification' (see INITIAL_DEAL_STAGE
+      // in NewDeal.tsx/Inbox.tsx) -- that's a placeholder default the app
+      // sets before any call has happened, not a real assessment. Showing
+      // it to the model as "current stage on record" on every single first
+      // call gave the model a strong, constant anchor to echo back, and it
+      // reliably did: this was the actual cause of every deal landing on
+      // Qualification regardless of what the call contained, since the
+      // one-line "don't just repeat this" instruction wasn't enough to
+      // overcome a concrete value stated as fact right above it.
+      //
+      // On a first call there is no real prior stage to protect against
+      // regression anyway (see resolveDealStage/resolveDealStageServer,
+      // which only compare against a stage that came FROM a previous
+      // review's suggested_deal_stage or an unambiguous close -- an
+      // untouched default doesn't need protecting). So for the first call,
+      // give the model nothing to anchor on: it infers suggested_deal_stage
+      // purely from what this one call shows, with Qualification only as
+      // the honest floor when the call itself is too early to tell.
+      //
+      // From the second call onward, deal_stage IS a real, evidence-backed
+      // value (the output of a prior suggested_deal_stage), so it's shown,
+      // and the instruction is stated as a directive, not a parenthetical.
+      if (deal_context.deal_stage && deal_context.previous_review) {
         userMessage += `Current stage on record: ${deal_context.deal_stage}\n`;
-        userMessage += `(This is the stage Kairo currently has on file. Infer suggested_deal_stage from what has concretely happened -- do not just repeat this value out of default, but do not move backward from it either, except via stage_regression_override.)\n`;
+        userMessage += `This is the stage the deal's most recent review concretely established -- it is evidence-backed, not a default. Your job on THIS call is to determine whether anything in the transcript concretely moves the deal past this stage. Default to repeating "${deal_context.deal_stage}" ONLY if nothing in this call clears the bar for the next stage. Do not move backward from it unless stage_regression_override applies.\n`;
+      } else if (isFirstCall) {
+        userMessage += `This is a brand-new deal with no prior review. Ignore any placeholder stage the app may track internally -- it is not a real assessment. Infer suggested_deal_stage from this call's content alone: read what concretely happened (discovery questions, a demo actually given, pricing actually discussed, etc.) and pick the furthest stage the transcript actually supports. Do not default to Qualification out of caution -- only land there if the call genuinely shows nothing more than early qualification.\n`;
       }
 
       if (deal_context.deal_notes) {
