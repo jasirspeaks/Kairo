@@ -5,7 +5,7 @@ import {
   TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Deal, Conversation } from '../../types';
