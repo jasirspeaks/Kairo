@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { supabase } from './supabase';
-import { DealReview, DealStatus, DealStage, DEAL_STAGES, DEAL_STATUS_COLORS } from '../types';
+import { DealReview, DealStatus, CallStatus, DealStage, DEAL_STAGES, DEAL_STATUS_COLORS, CALL_STATUS_COLORS } from '../types';
 
 interface SellerContext {
   what_you_sell?: string;
@@ -127,10 +127,28 @@ export async function saveStakeholders(dealId: string, userId: string, review: D
   }
 }
 
-// Returns the exact Blueprint hex code for a Deal Status, for inline styles
+// Returns the exact hex code for a Call Status (On Track, Needs Attention, At Risk, Stalled).
+export function getCallStatusColor(status: string): string {
+  return CALL_STATUS_COLORS[status as CallStatus] || DEAL_STATUS_COLORS.Unknown;
+}
+
+// Returns an inline style object for a call status badge/pill.
+export function getCallStatusStyle(status: string): CSSProperties {
+  const color = getCallStatusColor(status);
+  return {
+    color,
+    backgroundColor: `${color}1A`, // ~10% opacity fill
+    borderColor: `${color}4D`,     // ~30% opacity border
+  };
+}
+
+// Returns the exact Blueprint hex code for a Deal Status (or Call Status), for inline styles
 // (badges, risk-dots, chart legends) where a Tailwind utility class can't
 // express the precise color.
 export function getStatusColor(status: string): string {
+  if (status in CALL_STATUS_COLORS) {
+    return CALL_STATUS_COLORS[status as CallStatus];
+  }
   return DEAL_STATUS_COLORS[status as DealStatus] || DEAL_STATUS_COLORS.Unknown;
 }
 

@@ -5,7 +5,7 @@ import {
   TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle, resolveDealStage } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getStatusStyle, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Deal, Conversation } from '../../types';
@@ -22,11 +22,12 @@ import { formatDate } from '../../lib/utils';
 // Call Status icons -- distinct from Deal Status, this describes only how
 // THIS call went, not the deal's overall condition.
 function getCallStatusIcon(status: string) {
+  const color = getCallStatusColor(status);
   switch (status) {
-    case 'On Track': return <CheckCircle className="w-4 h-4" style={{ color: '#3DD68C' }} />;
-    case 'Needs Attention': return <Clock className="w-4 h-4" style={{ color: '#F6B23E' }} />;
-    case 'At Risk': return <AlertTriangle className="w-4 h-4" style={{ color: '#FF667A' }} />;
-    case 'Stalled': return <TrendingDown className="w-4 h-4" style={{ color: '#C97A2B' }} />;
+    case 'On Track': return <CheckCircle className="w-4 h-4" style={{ color }} />;
+    case 'Needs Attention': return <Clock className="w-4 h-4" style={{ color }} />;
+    case 'At Risk': return <AlertTriangle className="w-4 h-4" style={{ color }} />;
+    case 'Stalled': return <TrendingDown className="w-4 h-4" style={{ color }} />;
     default: return <Activity className="w-4 h-4 text-textMuted" />;
   }
 }
@@ -246,7 +247,7 @@ export function Review() {
           </div>
           <span
             className="text-sm font-bold px-3 py-1.5 rounded-full border flex-shrink-0"
-            style={getStatusStyle(c.call_status)}
+            style={getCallStatusStyle(c.call_status)}
           >
             {c.call_status}
           </span>
@@ -256,7 +257,7 @@ export function Review() {
           <p className="text-textSecondary text-sm">{deal.company_name}</p>
           <span
             className="text-xs font-bold px-2.5 py-1 rounded-full border"
-            style={getStatusStyle(c.call_status)}
+            style={getCallStatusStyle(c.call_status)}
           >
             {c.call_status}
           </span>

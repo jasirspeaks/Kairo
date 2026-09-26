@@ -105,6 +105,13 @@ export interface HighestPriorityRisk {
 // Call Review's own verdict on this specific conversation.
 export type CallStatus = 'On Track' | 'Needs Attention' | 'At Risk' | 'Stalled';
 
+export const CALL_STATUS_COLORS: Record<CallStatus, string> = {
+  'On Track': '#3DD68C',
+  'Needs Attention': '#F6B23E',
+  'At Risk': '#FF667A',
+  Stalled: '#C97A2B',
+};
+
 export type StakeholderSentiment = 'champion' | 'supporter' | 'neutral' | 'skeptic' | 'blocker';
 
 export interface StakeholderSignal {
