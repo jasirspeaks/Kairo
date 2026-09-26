@@ -269,6 +269,8 @@ serve(async (req) => {
       .select('analysis_json')
       .eq('deal_id', deal.id)
       .neq('id', conversationId)
+      .eq('status', 'complete')
+      .not('analysis_json', 'is', null)
       .order('created_at', { ascending: true });
 
     const previousReview =
@@ -310,6 +312,7 @@ serve(async (req) => {
         transcript,
         analysis_json: review,
         status: 'complete',
+        deal_stage: deal.deal_stage ?? null,
       })
       .eq('id', conversationId);
 

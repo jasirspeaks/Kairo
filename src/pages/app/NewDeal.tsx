@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
@@ -34,6 +34,7 @@ const INITIAL_DEAL_STAGE = 'Qualification';
 
 export function NewDeal() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, profile } = useAuth();
   const { canWrite } = useSubscription(user?.id);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -48,6 +49,9 @@ export function NewDeal() {
   // Set once "Schedule First Meeting" successfully creates the deal, so the
   // transcript step (if the user backs out and picks Upload First Call
   // instead) reuses the same deal row rather than creating a second one.
+  // Also set when navigated here from DealReview's "Add a Call" empty-state
+  // (via route state.existingDealId) -- in that case the deal already exists
+  // and must never be deleted on unmount regardless of outcome.
   const [scheduledDealId, setScheduledDealId] = useState<string | null>(null);
   const [calendarConnected, setCalendarConnected] = useState<boolean | null>(null);
   const [showConnectPrompt, setShowConnectPrompt] = useState(false);
@@ -58,6 +62,30 @@ export function NewDeal() {
   const awaitingReturnIsMobile = useRef(false);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Tracks whether a call was successfully submitted so the unmount cleanup
+  // knows NOT to delete the deal. Starts false; set to true only in the
+  // success paths of handleSubmit and handleRecordingComplete.
+  const callSucceeded = useRef(false);
+
+  // True when the deal row was created by a pre-existing deal (navigated
+  // here from DealReview empty-state). We must NEVER delete it on unmount --
+  // it has other data (stakeholders, deal_state) that we didn't create.
+  const dealIsPreexisting = useRef(false);
+
+  // Bootstrap from route state when DealReview's "Add a Call" empty-state
+  // navigates here with an existing dealId. Jump straight to the transcript
+  // step so the user doesn't have to re-enter deal info or create a new row.
+  useEffect(() => {
+    const state = location.state as { existingDealId?: string } | null;
+    if (state?.existingDealId) {
+      setScheduledDealId(state.existingDealId);
+      dealIsPreexisting.current = true;
+      setStep('transcript');
+    }
+  // location.state is stable for the lifetime of this mount -- only run once.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -70,6 +98,22 @@ export function NewDeal() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, []);
+
+  // Orphan-deal cleanup: if we created a deal row but the user navigates
+  // away before a call was successfully submitted, delete the empty deal
+  // so it doesn't clutter the dashboard. Skip if the deal was pre-existing
+  // (navigated here from DealReview) -- we don't own that row.
+  useEffect(() => {
+    return () => {
+      if (scheduledDealId && !callSucceeded.current && !dealIsPreexisting.current) {
+        // Best-effort fire-and-forget -- no UI to report errors to at this point.
+        supabase.from('deals').delete().eq('id', scheduledDealId);
+      }
+    };
+  // scheduledDealId captured via closure; refs are always current.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduledDealId]);
+
 
   function clearPolling() {
     if (pollTimeoutRef.current) { clearTimeout(pollTimeoutRef.current); pollTimeoutRef.current = null; }
@@ -248,6 +292,7 @@ export function NewDeal() {
   }
 
   function handleRecordingComplete(result: { conversationId: string; dealId: string }) {
+    callSucceeded.current = true;
     navigate(`/app/deals/${result.dealId}/calls/${result.conversationId}`);
   }
 
@@ -325,6 +370,7 @@ export function NewDeal() {
         updated_at: new Date().toISOString(),
       }).eq('id', dealId);
 
+      callSucceeded.current = true;
       navigate(`/app/deals/${dealId}/calls/${conv.id}`);
 
     } catch (err: any) {

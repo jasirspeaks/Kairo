@@ -459,12 +459,14 @@ function normalizeExtraction(raw: Json, isFirstCall: boolean): Json {
   } else {
     const delta = raw.what_changed_since_last_call as Json | undefined;
     if (!delta || typeof delta !== 'object') {
-      throw new Error('Subsequent call must include what_changed_since_last_call.');
+      console.warn('call-review: subsequent call missing what_changed_since_last_call; defaulting to empty diff');
+      raw.what_changed_since_last_call = { resolved: [], persists: [], new_risks: [] };
+    } else {
+      for (const key of ['resolved', 'persists', 'new_risks'] as const) {
+        if (!Array.isArray(delta[key])) delta[key] = [];
+      }
+      raw.what_changed_since_last_call = delta;
     }
-    for (const key of ['resolved', 'persists', 'new_risks'] as const) {
-      if (!Array.isArray(delta[key])) delta[key] = [];
-    }
-    raw.what_changed_since_last_call = delta;
   }
 
   raw.call = call;

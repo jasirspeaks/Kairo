@@ -615,7 +615,7 @@ export function DealReview() {
           icon={<Phone className="w-6 h-6" />}
           title="No calls yet"
           description="Add a call transcript to this deal to see Kairo's review of where things stand."
-          action={<Button onClick={() => navigate('/app/new')}>Add a Call</Button>}
+          action={<Button onClick={() => navigate('/app/new', { state: { existingDealId: dealId } })}>Add a Call</Button>}
         />
       </div>
     );
