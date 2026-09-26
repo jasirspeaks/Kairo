@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { writeBackDealReview } from '../_shared/deal-writeback.ts';
+import { writeBackDealReview, resolveDealStageServer } from '../_shared/deal-writeback.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -306,13 +306,21 @@ serve(async (req) => {
 
     const review = reviewData.review;
 
+    // Resolve the post-call stage BEFORE updating the conversation row, so
+    // deal_stage on that row is the stage this call resulted in -- see the
+    // matching comment in fireflies-webhook/index.ts for why this ordering
+    // matters for Deal Activity / Risk Evolution on Deal Review.
+    const resolvedStage = deal.deal_stage
+      ? resolveDealStageServer(deal.deal_stage, review)
+      : (deal.deal_stage ?? null);
+
     const { error: updateError } = await supabase
       .from('conversations')
       .update({
         transcript,
         analysis_json: review,
         status: 'complete',
-        deal_stage: deal.deal_stage ?? null,
+        deal_stage: resolvedStage,
       })
       .eq('id', conversationId);
 

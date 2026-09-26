@@ -126,16 +126,27 @@ export function Review() {
         },
       });
 
-      // deal_stage on the new conversation row records the stage the deal
-      // was AT when this call happened, i.e. before this review's own
-      // stage resolution below -- consistent with how it always worked
-      // when a person picked the stage manually before submitting.
+      // Deal Stage is now fully automatic: resolveDealStage reads what
+      // call-review concretely observed happened (or infers an unambiguous
+      // Won/Lost close) and only ever advances the deal's stage, or holds
+      // it, from wherever it currently sits -- never moves it backward
+      // except on the model's own rare, explicit regression call. Resolved
+      // BEFORE the conversations insert below so deal_stage on that row
+      // reflects the stage this call resulted in, not the stage the deal
+      // was at before the call was reviewed. Previously this stamped
+      // deal.deal_stage (the pre-call value), which meant Deal Activity and
+      // Risk Evolution on Deal Review always showed the outgoing stage for
+      // every call -- most visibly wrong on the latest call, whose own
+      // Call Review page reads deals.deal_stage live and so showed the new
+      // stage while Deal Activity showed the old one for that same call.
+      const resolvedStage = resolveDealStage(deal.deal_stage, review);
+
       const { data: newConv, error: convError } = await supabase
         .from('conversations')
         .insert({
           user_id: user.id,
           deal_id: deal.id,
-          deal_stage: deal.deal_stage,
+          deal_stage: resolvedStage,
           input_type: 'transcript',
           transcript: text,
           status: 'complete',
@@ -152,13 +163,6 @@ export function Review() {
       // Write directly, no aggregation step.
       await saveDealState(deal.id, user.id, review);
       await saveStakeholders(deal.id, user.id, review);
-
-      // Deal Stage is now fully automatic: resolveDealStage reads what
-      // call-review concretely observed happened (or infers an unambiguous
-      // Won/Lost close) and only ever advances the deal's stage, or holds
-      // it, from wherever it currently sits -- never moves it backward
-      // except on the model's own rare, explicit regression call.
-      const resolvedStage = resolveDealStage(deal.deal_stage, review);
 
       await supabase.from('deals').update({
         deal_stage: resolvedStage,

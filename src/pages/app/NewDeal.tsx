@@ -83,8 +83,8 @@ export function NewDeal() {
       dealIsPreexisting.current = true;
       setStep('transcript');
     }
-  // location.state is stable for the lifetime of this mount -- only run once.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // location.state is stable for the lifetime of this mount -- only run once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -110,8 +110,8 @@ export function NewDeal() {
         supabase.from('deals').delete().eq('id', scheduledDealId);
       }
     };
-  // scheduledDealId captured via closure; refs are always current.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // scheduledDealId captured via closure; refs are always current.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scheduledDealId]);
 
 
@@ -335,12 +335,23 @@ export function NewDeal() {
         },
       });
 
+      // Stage is now fully automatic: resolveDealStage reads
+      // review.deal.suggested_deal_stage (what call-review concretely
+      // observed happened) and applies it if it advances the deal past
+      // INITIAL_DEAL_STAGE, or promotes straight to Closed Won/Lost on an
+      // unambiguous close -- even on a brand-new deal's very first call.
+      // Resolved BEFORE the conversations insert so deal_stage on that row
+      // is the stage this call resulted in, matching the live deals.deal_stage
+      // that Call Review reads -- see the matching comment in Review.tsx's
+      // handleAddCall for why this ordering matters for Deal Activity.
+      const resolvedStage = resolveDealStage(INITIAL_DEAL_STAGE, review);
+
       const { data: conv, error: convError } = await supabase
         .from('conversations')
         .insert({
           user_id: user.id,
           deal_id: dealId,
-          deal_stage: INITIAL_DEAL_STAGE,
+          deal_stage: resolvedStage,
           input_type: 'transcript',
           transcript: text,
           status: 'complete',
@@ -356,13 +367,6 @@ export function NewDeal() {
       // write it straight to deal_state, no aggregation step.
       await saveDealState(dealId, user.id, review);
       await saveStakeholders(dealId, user.id, review);
-
-      // Stage is now fully automatic: resolveDealStage reads
-      // review.deal.suggested_deal_stage (what call-review concretely
-      // observed happened) and applies it if it advances the deal past
-      // INITIAL_DEAL_STAGE, or promotes straight to Closed Won/Lost on an
-      // unambiguous close -- even on a brand-new deal's very first call.
-      const resolvedStage = resolveDealStage(INITIAL_DEAL_STAGE, review);
 
       await supabase.from('deals').update({
         deal_stage: resolvedStage,

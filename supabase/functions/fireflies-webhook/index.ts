@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { writeBackDealReview } from '../_shared/deal-writeback.ts';
+import { writeBackDealReview, resolveDealStageServer } from '../_shared/deal-writeback.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -266,6 +266,18 @@ serve(async (req) => {
           } else {
             const review = reviewData.review;
 
+            // Resolve the post-call stage BEFORE inserting the conversation
+            // row, so deal_stage on that row is the stage this call
+            // resulted in -- matching what Call Review shows (it reads
+            // deals.deal_stage live) instead of the stage the deal was at
+            // going into the call. Same fix as the client-side Add Call /
+            // New Deal paths; writeBackDealReview below re-resolves and
+            // writes this same value to deals.deal_stage, so this is not a
+            // duplicate decision, just computing it a bit earlier.
+            const resolvedStage = deal.deal_stage
+              ? resolveDealStageServer(deal.deal_stage, review)
+              : (deal.deal_stage ?? null);
+
             const { data: newConv, error: convError } = await supabase
               .from('conversations')
               .insert({
@@ -276,7 +288,7 @@ serve(async (req) => {
                 transcript: transcriptText,
                 status: 'complete',
                 analysis_json: review,
-                deal_stage: deal.deal_stage ?? null,
+                deal_stage: resolvedStage,
               })
               .select()
               .single();

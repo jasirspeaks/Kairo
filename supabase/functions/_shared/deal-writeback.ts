@@ -68,7 +68,7 @@ const DEAL_STAGE_ORDER = [
 //      DEAL_STAGE_ORDER; a suggestion behind the current stage is ignored.
 //   4. If suggested_deal_stage is missing (older review, pre-feature),
 //      the current stage stands untouched.
-function resolveDealStageServer(currentStage: string, review: Review): string {
+export function resolveDealStageServer(currentStage: string, review: Review): string {
   if (review.deal.status === 'Won') return 'Closed Won';
   if (review.deal.status === 'Lost') return 'Closed Lost';
 
@@ -87,7 +87,7 @@ function resolveDealStageServer(currentStage: string, review: Review): string {
   return suggestedIndex >= currentIndex ? suggested : currentStage;
 }
 
-type Review = {
+export type Review = {
   deal: {
     status: string;
     confidence: string;
