@@ -61,7 +61,7 @@ export function BottomNav() {
               <span className="relative flex items-center justify-center w-9 h-8">
                 <Icon className={cn('w-6 h-6', active ? 'text-primary' : 'text-textMuted')} />
                 {showBadge && (
-                  <span className="absolute -top-1 right-0 min-w-[18px] h-[18px] px-[4px] rounded-full bg-red-500 text-white text-[11px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
+                  <span className="absolute -top-1 right-0 min-w-[18px] h-[18px] px-[4px] rounded-full bg-primary text-white text-[11px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
                     {inboxCount > 9 ? '9+' : inboxCount}
                   </span>
                 )}

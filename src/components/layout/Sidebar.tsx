@@ -105,20 +105,25 @@ export function Sidebar() {
                 'w-full flex items-center rounded-lg text-sm font-medium transition-all duration-200 text-left',
                 collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5',
                 active
-                  ? 'text-white bg-primary shadow-purple-glow-sm'
-                  : 'text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh'
+                  ? 'text-primary'
+                  : 'text-textMuted hover:text-textPrimary hover:bg-surfaceHigh'
               )}
             >
               <span className="relative flex-shrink-0">
-                <Icon className={cn('w-4 h-4', active ? 'text-white' : '')} />
-                {showBadge && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[15px] h-[15px] px-[3px] rounded-full bg-red-500 text-white text-[9px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
+                <Icon className={cn('w-5 h-5', active ? 'text-primary' : 'text-textMuted')} />
+                {showBadge && collapsed && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-[3px] rounded-full bg-primary text-white text-[11px] font-semibold leading-none flex items-center justify-center border-2 border-surface">
                     {inboxCount > 9 ? '9+' : inboxCount}
                   </span>
                 )}
               </span>
               {!collapsed && (
                 <span className="flex-1">{label}</span>
+              )}
+              {showBadge && !collapsed && (
+                <span className="min-w-[18px] h-[18px] px-[3px] rounded-full bg-primary text-white text-[11px] font-semibold leading-none flex items-center justify-center">
+                  {inboxCount > 9 ? '9+' : inboxCount}
+                </span>
               )}
             </button>
           );
