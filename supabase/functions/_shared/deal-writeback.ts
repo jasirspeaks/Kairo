@@ -136,11 +136,15 @@ export async function writeBackDealReview(
   userId: string,
   review: Review
 ): Promise<void> {
-  const { data: existingState } = await supabase
+  const { data: existingState, error: existingStateError } = await supabase
     .from('deal_state')
     .select('id')
     .eq('deal_id', dealId)
     .maybeSingle();
+
+  if (existingStateError) {
+    throw new Error(`Failed to read deal_state: ${existingStateError.message}`);
+  }
 
   const stateRow = {
     deal_id: dealId,
@@ -160,19 +164,38 @@ export async function writeBackDealReview(
   };
 
   if (existingState) {
-    await supabase.from('deal_state').update(stateRow).eq('id', existingState.id);
+    const { error } = await supabase
+      .from('deal_state')
+      .update(stateRow)
+      .eq('id', existingState.id);
+
+    if (error) {
+      throw new Error(`Failed to update deal_state: ${error.message}`);
+    }
   } else {
-    await supabase.from('deal_state').insert(stateRow);
+    const { error } = await supabase
+      .from('deal_state')
+      .insert(stateRow);
+
+    if (error) {
+      throw new Error(`Failed to insert deal_state: ${error.message}`);
+    }
   }
 
   if (Array.isArray(review.stakeholder_signals) && review.stakeholder_signals.length > 0) {
     for (const s of review.stakeholder_signals) {
-      const { data: existingStakeholder } = await supabase
+      const { data: existingStakeholder, error: existingStakeholderError } = await supabase
         .from('stakeholders')
         .select('id')
         .eq('deal_id', dealId)
         .eq('name', s.name)
         .maybeSingle();
+
+      if (existingStakeholderError) {
+        throw new Error(
+          `Failed to read stakeholder "${s.name}": ${existingStakeholderError.message}`
+        );
+      }
 
       const stakeholderRow = {
         deal_id: dealId,
@@ -185,9 +208,26 @@ export async function writeBackDealReview(
       };
 
       if (existingStakeholder) {
-        await supabase.from('stakeholders').update(stakeholderRow).eq('id', existingStakeholder.id);
+        const { error } = await supabase
+          .from('stakeholders')
+          .update(stakeholderRow)
+          .eq('id', existingStakeholder.id);
+
+        if (error) {
+          throw new Error(
+            `Failed to update stakeholder "${s.name}": ${error.message}`
+          );
+        }
       } else {
-        await supabase.from('stakeholders').insert(stakeholderRow);
+        const { error } = await supabase
+          .from('stakeholders')
+          .insert(stakeholderRow);
+
+        if (error) {
+          throw new Error(
+            `Failed to insert stakeholder "${s.name}": ${error.message}`
+          );
+        }
       }
     }
   }
@@ -195,17 +235,21 @@ export async function writeBackDealReview(
   // Resolve deal_stage against the deal's current stage on record before
   // writing risk_level -- needs a fresh read since callers don't all pass
   // the deal row into this function.
-  const { data: dealRow } = await supabase
+  const { data: dealRow, error: dealReadError } = await supabase
     .from('deals')
     .select('deal_stage')
     .eq('id', dealId)
     .maybeSingle();
 
+  if (dealReadError) {
+    throw new Error(`Failed to read deal stage: ${dealReadError.message}`);
+  }
+
   const resolvedStage = dealRow?.deal_stage
     ? resolveDealStageServer(dealRow.deal_stage, review)
     : undefined;
 
-  await supabase
+  const { error: dealUpdateError } = await supabase
     .from('deals')
     .update({
       ...(resolvedStage ? { deal_stage: resolvedStage } : {}),
@@ -213,4 +257,8 @@ export async function writeBackDealReview(
       updated_at: new Date().toISOString(),
     })
     .eq('id', dealId);
+
+  if (dealUpdateError) {
+    throw new Error(`Failed to update deal writeback: ${dealUpdateError.message}`);
+  }
 }

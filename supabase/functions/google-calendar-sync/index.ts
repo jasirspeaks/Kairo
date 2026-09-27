@@ -120,35 +120,46 @@ serve(async (req) => {
     }
 
     const timeMin = new Date().toISOString();
-    const timeMax = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const timeMax = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     // showDeleted so cancelled events come back as status: 'cancelled' rather
     // than just silently disappearing from the feed -- that's how we detect
     // deletions/cancellations and reconcile them against what we've already stored.
-    const eventsRes = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
-      new URLSearchParams({
+    const events: any[] = [];
+    let nextPageToken: string | undefined;
+
+    do {
+      const params = new URLSearchParams({
         timeMin,
         timeMax,
         singleEvents: 'true',
         orderBy: 'startTime',
         maxResults: '250',
         showDeleted: 'true',
-      }),
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-
-    const eventsData = await eventsRes.json();
-
-    if (!eventsRes.ok) {
-      console.error('Google Calendar API error:', eventsData);
-      return new Response(JSON.stringify({ error: 'Failed to fetch calendar events' }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-    }
 
-    const events = eventsData.items ?? [];
+      if (nextPageToken) {
+        params.set('pageToken', nextPageToken);
+      }
+
+      const eventsRes = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      const eventsData = await eventsRes.json();
+
+      if (!eventsRes.ok) {
+        console.error('Google Calendar API error:', eventsData);
+        return new Response(JSON.stringify({ error: 'Failed to fetch calendar events' }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      events.push(...(eventsData.items ?? []));
+      nextPageToken = eventsData.nextPageToken;
+    } while (nextPageToken);
 
     // Existing rows for this user within the sync window, so we can tell
     // which stored meetings correspond to events that Google no longer

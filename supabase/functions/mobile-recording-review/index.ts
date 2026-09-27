@@ -31,6 +31,8 @@ function guessMimeType(path: string): string {
       return 'audio/aac';
     case 'mp3':
       return 'audio/mpeg';
+    case 'webm':
+      return 'audio/webm';
     default:
       return 'audio/mp4';
   }
