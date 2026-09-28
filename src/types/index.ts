@@ -5,7 +5,7 @@ export type InputType = 'audio' | 'transcript';
 // by the transcript-paste path, rather than reusing 'analyzing'/'error',
 // since the two paths' status writes come from different code and
 // shouldn't be silently conflated.
-export type ConversationStatus = 'pending' | 'analyzing' | 'processing' | 'complete' | 'error' | 'failed';
+export type ConversationStatus = 'pending' | 'analyzing' | 'processing' | 'retry_pending' | 'complete' | 'error' | 'failed';
 
 // Deal lifecycle bucket (separate from Deal Status). Controls whether a deal
 // shows up in the default "active" views vs. closed/archived.

@@ -63,10 +63,7 @@ export function Settings() {
   const [checkingCalendar, setCheckingCalendar] = useState(true);
   const [calendarBanner, setCalendarBanner] = useState<'connected' | 'error' | null>(null);
   const [disconnectingCalendar, setDisconnectingCalendar] = useState(false);
-
-  const calendarConnectUrl = user
-    ? `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-connect?user_id=${user.id}`
-    : '';
+  const [connectingCalendar, setConnectingCalendar] = useState(false);
 
   // --- Fireflies ---
   const [fireflies, setFireflies] = useState<FirefliesConnectionState | null>(null);
@@ -150,6 +147,45 @@ export function Settings() {
       .single();
     setCalendarConnected(!!data);
     setCheckingCalendar(false);
+  }
+
+  async function handleConnectCalendar() {
+    setConnectingCalendar(true);
+    setCalendarBanner(null);
+  
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+  
+      if (!session) {
+        setCalendarBanner('error');
+        return;
+      }
+  
+      const res = await fetch(
+        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-connect`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+  
+      const data = await res.json();
+  
+      if (!res.ok || !data.auth_url) {
+        setCalendarBanner('error');
+        return;
+      }
+  
+      window.location.assign(data.auth_url);
+    } catch {
+      setCalendarBanner('error');
+    } finally {
+      setConnectingCalendar(false);
+    }
   }
 
   async function handleDisconnectCalendar() {
@@ -454,12 +490,17 @@ export function Settings() {
                     </button>
                   </div>
                 ) : (
-                  <a href={calendarConnectUrl}>
-                    <Button type="button" variant="secondary" className="w-full sm:w-auto">
-                      <Calendar className="w-4 h-4" />
-                      Connect Google Calendar
-                    </Button>
-                  </a>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                    loading={connectingCalendar}
+                    disabled={connectingCalendar}
+                    onClick={handleConnectCalendar}
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Connect Google Calendar
+                  </Button>
                 )}
               </div>
 
