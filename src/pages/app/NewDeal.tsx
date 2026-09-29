@@ -53,6 +53,7 @@ export function NewDeal() {
   // (via route state.existingDealId) -- in that case the deal already exists
   // and must never be deleted on unmount regardless of outcome.
   const [scheduledDealId, setScheduledDealId] = useState<string | null>(null);
+  const scheduledDealIdRef = useRef<string | null>(null);
   const [calendarConnected, setCalendarConnected] = useState<boolean | null>(null);
   const [showConnectPrompt, setShowConnectPrompt] = useState(false);
   const [creatingDeal, setCreatingDeal] = useState(false);
@@ -80,6 +81,7 @@ export function NewDeal() {
     const state = location.state as { existingDealId?: string } | null;
     if (state?.existingDealId) {
       setScheduledDealId(state.existingDealId);
+      scheduledDealIdRef.current = state.existingDealId;
       dealIsPreexisting.current = true;
       setStep('transcript');
     }
@@ -105,14 +107,13 @@ export function NewDeal() {
   // (navigated here from DealReview) -- we don't own that row.
   useEffect(() => {
     return () => {
-      if (scheduledDealId && !callSucceeded.current && !dealIsPreexisting.current) {
+      const dealIdToDelete = scheduledDealIdRef.current;
+      if (dealIdToDelete && !callSucceeded.current && !dealIsPreexisting.current) {
         // Best-effort fire-and-forget -- no UI to report errors to at this point.
-        supabase.from('deals').delete().eq('id', scheduledDealId);
+        supabase.from('deals').delete().eq('id', dealIdToDelete);
       }
     };
-    // scheduledDealId captured via closure; refs are always current.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduledDealId]);
+  }, []);
 
 
   function clearPolling() {
@@ -178,8 +179,9 @@ export function NewDeal() {
       }
 
       await syncGoogleCalendar();
-      if (scheduledDealId) {
-        const found = await checkForAssignedMeeting(scheduledDealId);
+      const currentDealId = scheduledDealIdRef.current ?? scheduledDealId;
+      if (currentDealId) {
+        const found = await checkForAssignedMeeting(currentDealId);
         if (found) {
           clearPolling();
           setStep('scheduled');
@@ -238,13 +240,14 @@ export function NewDeal() {
     setError('');
     setCreatingDeal(true);
 
-    const dealId = scheduledDealId ?? await createDealRow();
+    const dealId = scheduledDealIdRef.current ?? scheduledDealId ?? await createDealRow();
 
     if (!dealId) {
       setCreatingDeal(false);
       return;
     }
     setScheduledDealId(dealId);
+    scheduledDealIdRef.current = dealId;
 
     // Best-effort -- if this write fails the user still reaches Google
     // Calendar, they'd just need to assign the meeting manually afterward.
@@ -285,9 +288,13 @@ export function NewDeal() {
   // reusing scheduledDealId if "Schedule First Meeting" already created
   // this deal earlier in the same visit, same pattern handleSubmit uses.
   async function handleCreateDealForRecording(): Promise<string | null> {
+    if (scheduledDealIdRef.current) return scheduledDealIdRef.current;
     if (scheduledDealId) return scheduledDealId;
     const dealId = await createDealRow();
-    if (dealId) setScheduledDealId(dealId);
+    if (dealId) {
+      setScheduledDealId(dealId);
+      scheduledDealIdRef.current = dealId;
+    }
     return dealId;
   }
 
@@ -310,7 +317,7 @@ export function NewDeal() {
     setAnalyzing(true);
     setError('');
 
-    let dealId: string | null = scheduledDealId;
+    let dealId: string | null = scheduledDealIdRef.current ?? scheduledDealId;
     let createdDealHere = false;
 
     try {
@@ -318,6 +325,8 @@ export function NewDeal() {
         dealId = await createDealRow();
         if (!dealId) throw new Error('Failed to create deal.');
         createdDealHere = true;
+        setScheduledDealId(dealId);
+        scheduledDealIdRef.current = dealId;
       }
 
       // First call for this deal: call-review still produces the full
@@ -365,7 +374,7 @@ export function NewDeal() {
       // Deal Review needs data starting at call 1, not just call 2+.
       // review.deal is already the complete current-state extraction --
       // write it straight to deal_state, no aggregation step.
-      await saveDealState(dealId, user.id, review);
+      await saveDealState(dealId, user.id, review, resolvedStage);
       await saveStakeholders(dealId, user.id, review);
 
       callSucceeded.current = true;

@@ -161,7 +161,7 @@ export function Review() {
       // review.deal is already the deal's complete current-state assessment
       // -- computed by call-review with the full prior history as context.
       // Write directly, no aggregation step.
-      await saveDealState(deal.id, user.id, review);
+      await saveDealState(deal.id, user.id, review, resolvedStage);
       await saveStakeholders(deal.id, user.id, review);
 
       setNewTranscript('');

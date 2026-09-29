@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarClock, Building2, ClipboardCheck, DollarSign, Check } from 'lucide-react';
+import { CalendarClock, Building2, ClipboardCheck, DollarSign, Check, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { syncGoogleCalendar } from '../../lib/kairo';
@@ -422,8 +422,9 @@ export function Inbox() {
               )}
 
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  <p className="text-red-600 text-xs">{error}</p>
+                <div className="flex items-center gap-2 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  <p className="text-red-400 text-xs">{error}</p>
                 </div>
               )}
 
