@@ -189,7 +189,7 @@ export function Sidebar() {
             >
               <button
                 onClick={signOut}
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-red-500 hover:bg-red-50 min-h-[44px]"
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 min-h-[44px] transition-colors"
               >
                 <LogOut className="w-4 h-4" /> Sign out
               </button>

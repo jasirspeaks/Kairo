@@ -53,6 +53,8 @@ export const DEAL_STAGES: DealStage[] = [
   'Decision',
 ];
 
+export const INITIAL_DEAL_STAGE: DealStage = 'Qualification';
+
 // Deal Status: Kairo's assessment of the deal's current condition.
 export type DealStatus =
   | 'Unknown'

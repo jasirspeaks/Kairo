@@ -5,20 +5,10 @@ import { submitRecording } from '../../lib/kairo';
 import { cn } from '../../lib/utils';
 import { LoadingState } from '../ui/LoadingState';
 
-interface PendingDealForm {
-  dealName: string;
-  companyName: string;
-  dealStage: string;
-  dealValue: string;
-}
-
 interface RecordCallScreenProps {
   // Existing-deal path (Call Review -> Record Now): dealId already known,
   // no deal gets created.
   dealId?: string;
-  // New-deal path (New Deal -> Record Now): no deal exists yet -- the
-  // deal is created from this form state before the conversation row.
-  pendingDealForm?: PendingDealForm;
   // Called once mobile-recording-review has finished successfully.
   onComplete: (result: { conversationId: string; dealId: string }) => void;
   onClose: () => void;
@@ -38,7 +28,7 @@ function formatElapsed(ms: number): string {
 
 type SubmitPhase = 'idle' | 'uploading' | 'transcribing' | 'error';
 
-export function RecordCallScreen({ dealId, pendingDealForm, onComplete, onClose, createDeal }: RecordCallScreenProps) {
+export function RecordCallScreen({ dealId, onComplete, onClose, createDeal }: RecordCallScreenProps) {
   const { status, elapsedMs, levels, start, pause, resume, stop, discard, errorMessage } = useAudioRecorder();
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>('idle');

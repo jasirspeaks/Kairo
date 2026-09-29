@@ -24,6 +24,24 @@ export function useSubscription(userId: string | undefined) {
     }
     setLoading(true);
     fetchSubscription(userId);
+
+    const handleFocus = () => {
+      fetchSubscription(userId);
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+
+    // Periodic check every 60s for long sessions so trial expiration or webhook updates are reflected
+    const interval = setInterval(() => {
+      fetchSubscription(userId);
+    }, 60_000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+      clearInterval(interval);
+    };
   }, [userId, fetchSubscription]);
 
   const canWrite = !!subscription && (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, Phone, Users, Clock, Target,
@@ -313,10 +313,8 @@ function EvolutionRow({ entry, defaultOpen }: { entry: EvolutionEntry; defaultOp
   );
 }
 
-function RiskEvolutionPanel({ calls }: { calls: Conversation[] }) {
-  const entries = buildEvolution(calls);
-
-  if (entries.length === 0) {
+function RiskEvolutionPanel({ evolution }: { evolution: EvolutionEntry[] }) {
+  if (evolution.length === 0) {
     return (
       <p className="text-textMuted text-xs py-2">
         Risk evolution appears once this deal has more than one call.
@@ -326,7 +324,7 @@ function RiskEvolutionPanel({ calls }: { calls: Conversation[] }) {
 
   return (
     <div className="space-y-2">
-      {entries.map((entry, i) => (
+      {evolution.map((entry, i) => (
         <EvolutionRow key={entry.call.id} entry={entry} defaultOpen={i === 0} />
       ))}
     </div>
@@ -437,15 +435,13 @@ function ActionPlanPanel({ dealState }: { dealState: DealState }) {
 }
 
 function DealReviewTabBar({
-  calls, stakeholders, activeTab, onTabChange,
+  evolutionCount, stakeholders, activeTab, onTabChange,
 }: {
-  calls: Conversation[];
+  evolutionCount: number;
   stakeholders: Stakeholder[];
   activeTab: DealReviewTab;
   onTabChange: (tab: DealReviewTab) => void;
 }) {
-  const evolutionCount = buildEvolution(calls).length;
-
   const TABS: { key: DealReviewTab; label: string; count: number }[] = [
     { key: 'action_plan', label: 'Action Plan', count: 0 },
     { key: 'evolution', label: 'Risk Evolution', count: evolutionCount },
@@ -474,17 +470,17 @@ function DealReviewTabBar({
 }
 
 function DealReviewTabPanel({
-  dealState, calls, stakeholders, activeTab,
+  dealState, evolution, stakeholders, activeTab,
 }: {
   dealState: DealState;
-  calls: Conversation[];
+  evolution: EvolutionEntry[];
   stakeholders: Stakeholder[];
   activeTab: DealReviewTab;
 }) {
   return (
     <div className="card p-4 md:p-5 w-full">
       {activeTab === 'action_plan' && <ActionPlanPanel dealState={dealState} />}
-      {activeTab === 'evolution' && <RiskEvolutionPanel calls={calls} />}
+      {activeTab === 'evolution' && <RiskEvolutionPanel evolution={evolution} />}
       {activeTab === 'stakeholders' && <StakeholdersPanel stakeholders={stakeholders} />}
     </div>
   );
@@ -561,6 +557,9 @@ export function DealReview() {
   const [loading, setLoading] = useState(true);
   const [reviewTab, setReviewTab] = useState<DealReviewTab>('action_plan');
 
+  const evolution = useMemo(() => buildEvolution(calls), [calls]);
+  const activity = useMemo(() => buildActivity(calls, stakeholders), [calls, stakeholders]);
+
   useEffect(() => {
     if (!dealId) return;
     fetchData();
@@ -623,7 +622,6 @@ export function DealReview() {
 
   const lastContact = calls[calls.length - 1]?.created_at;
   const healthColor = healthScoreColor(dealState.deal_health_score ?? 0);
-  const activity = buildActivity(calls, stakeholders);
 
   return (
     <div className="animate-fade-in w-full">
@@ -752,7 +750,7 @@ export function DealReview() {
       <div className="mb-4 md:mb-5 w-full">
         <div className="mb-3">
           <DealReviewTabBar
-            calls={calls}
+            evolutionCount={evolution.length}
             stakeholders={stakeholders}
             activeTab={reviewTab}
             onTabChange={setReviewTab}
@@ -760,7 +758,7 @@ export function DealReview() {
         </div>
         <DealReviewTabPanel
           dealState={dealState}
-          calls={calls}
+          evolution={evolution}
           stakeholders={stakeholders}
           activeTab={reviewTab}
         />

@@ -259,7 +259,7 @@ function normalizeError(err: unknown): string {
   return raw.slice(0, 2000);
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -659,6 +659,7 @@ serve(async (req) => {
           typeof current?.retry_attempts === 'number'
             ? current.retry_attempts
             : 0;
+        const nextAttempts = attempts + 1;
 
         const retryAfter = nextRetryAt(attempts);
 
@@ -667,6 +668,7 @@ serve(async (req) => {
             .from('conversations')
             .update({
               status: 'retry_pending',
+              retry_attempts: nextAttempts,
               retry_after: retryAfter,
               last_error: errorMessage,
               updated_at: new Date().toISOString(),
@@ -684,6 +686,7 @@ serve(async (req) => {
             .from('conversations')
             .update({
               status: 'failed',
+              retry_attempts: nextAttempts,
               retry_after: null,
               last_error: errorMessage,
               updated_at: new Date().toISOString(),

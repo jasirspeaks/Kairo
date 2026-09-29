@@ -10,6 +10,8 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { TopBar } from '../../components/layout/TopBar';
 import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { UpgradeModal } from '../../components/ui/UpgradeModal';
+import { INITIAL_DEAL_STAGE } from '../../types';
+import { cn } from '../../lib/utils';
 
 type Step = 'deal' | 'transcript' | 'record' | 'awaiting-meeting' | 'scheduled';
 
@@ -23,14 +25,6 @@ const DESKTOP_MEDIA_QUERY = '(min-width: 768px)';
 // handleScheduleFirstMeeting for why mobile doesn't use this at all.
 const AWAIT_MEETING_TIMEOUT_MS = 20_000;
 const AWAIT_MEETING_POLL_MS = 1500;
-
-// Every new deal starts here. There is no manual Deal Stage picker
-// anywhere in Kairo anymore -- deal_stage is set automatically once the
-// first call is reviewed, from what call-review concretely observed
-// happened (deal.suggested_deal_stage), via resolveDealStage. A brand-new
-// deal with no calls yet simply sits at the earliest stage until that
-// first review runs.
-const INITIAL_DEAL_STAGE = 'Qualification';
 
 export function NewDeal() {
   const navigate = useNavigate();
@@ -656,7 +650,18 @@ export function NewDeal() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-textSecondary mb-1.5">Transcript</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-textSecondary">Transcript</label>
+                {transcript.length > 0 && (
+                  <span className={cn(
+                    'text-xs',
+                    transcript.length > 50000 ? 'text-red-400 font-semibold' :
+                    transcript.length > 40000 ? 'text-amber-400 font-medium' : 'text-textMuted'
+                  )}>
+                    {transcript.length.toLocaleString()} / 50,000 chars
+                  </span>
+                )}
+              </div>
               <textarea
                 value={transcript}
                 onChange={e => setTranscript(e.target.value)}

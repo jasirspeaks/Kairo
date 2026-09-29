@@ -1,20 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { CalendarClock, Building2, ClipboardCheck, DollarSign, Check, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { syncGoogleCalendar } from '../../lib/kairo';
-import { Deal } from '../../types';
+import { Deal, INITIAL_DEAL_STAGE } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { cn } from '../../lib/utils';
-
-// Every new deal starts here -- see the matching constant in NewDeal.tsx.
-// Deal Stage has no manual picker anywhere in Kairo anymore; it's set
-// automatically once the first call is reviewed, from what call-review
-// concretely observed happened.
-const INITIAL_DEAL_STAGE = 'Qualification';
 
 interface ScheduledMeeting {
   id: string;
@@ -43,6 +37,8 @@ function formatMeetingTime(startTime: string | null): string {
 
 export function Inbox() {
   const { user } = useAuth();
+  const userRef = useRef(user);
+  userRef.current = user;
 
   const [meetings, setMeetings] = useState<ScheduledMeeting[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -72,12 +68,6 @@ export function Inbox() {
   // shows up immediately. Deliberately does NOT call syncGoogleCalendar()
   // here; this only reacts to rows already in the database, same scope as
   // the nav badge's subscription.
-  //
-  // The callback re-checks `user` itself (not just the outer effect guard)
-  // because a stray event can fire after `user` flips to null (sign-out,
-  // token-refresh hiccup) but before this effect's cleanup has unsubscribed
-  // the channel -- fetchData() dereferences user!.id, so without this guard
-  // that race throws and trips the ErrorBoundary.
   useEffect(() => {
     if (!user) return;
     const uid = user.id;
@@ -94,7 +84,11 @@ export function Inbox() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${uid}` },
-        () => { if (user) fetchData(); }
+        () => {
+          if (userRef.current?.id === uid) {
+            fetchData(uid);
+          }
+        }
       )
       .subscribe();
 
@@ -112,7 +106,7 @@ export function Inbox() {
   }
 
   async function syncCalendar() {
-    if (!user) return;
+    if (!userRef.current) return;
     setSyncing(true);
     // If the user hasn't connected a calendar, syncGoogleCalendar just
     // no-ops -- that's fine, we simply won't have upcoming meetings to show.
@@ -120,7 +114,9 @@ export function Inbox() {
     setSyncing(false);
   }
 
-  async function fetchData() {
+  async function fetchData(targetUserId?: string) {
+    const currentUserId = targetUserId || userRef.current?.id;
+    if (!currentUserId) return;
     // Both unassigned AND assigned meetings are shown here -- assigned ones
     // just render with a green "Assigned" button instead of a purple
     // "Assign" one. Cancelled meetings are excluded, and so are 'completed'
@@ -134,14 +130,14 @@ export function Inbox() {
       supabase
         .from('scheduled_meetings')
         .select('*')
-        .eq('user_id', user!.id)
+        .eq('user_id', currentUserId)
         .in('status', ['unassigned', 'assigned'])
         .is('cancelled_at', null)
         .order('start_time', { ascending: true }),
       supabase
         .from('deals')
         .select('*')
-        .eq('user_id', user!.id)
+        .eq('user_id', currentUserId)
         .eq('status', 'active')
         .order('updated_at', { ascending: false }),
     ]);
