@@ -163,7 +163,7 @@ export function getRiskLevel(status: string): 'high' | 'medium' | 'low' | 'none'
 //
 // DUPLICATE LOGIC WARNING: mirrored server-side by
 // resolveDealStageServer() in supabase/functions/_shared/deal-writeback.ts,
-// used by the Fireflies webhook and mobile-recording-review paths (which
+// used by the mobile-recording-review path (which
 // run in Deno and can't import this file). Keep the advance-only /
 // regression-override logic identical in both places -- see that file's
 // own comment for the reasoning this mirrors.

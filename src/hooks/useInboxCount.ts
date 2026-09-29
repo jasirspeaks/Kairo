@@ -10,7 +10,7 @@ import { supabase } from '../lib/supabase';
 // Kept in sync via a Realtime subscription on scheduled_meetings (filtered
 // to this user), rather than polling -- any INSERT/UPDATE/DELETE re-runs the
 // same count query. This makes the badge reflect whatever wrote to that
-// table (calendar sync, Fireflies webhook write-back, the Inbox page's own
+// table (calendar sync, recording review write-back, the Inbox page's own
 // assignment actions, etc.) immediately, from any tab. This does NOT
 // trigger a Google Calendar pull -- it only reacts to rows already in the
 // database.

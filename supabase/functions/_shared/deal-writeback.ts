@@ -1,4 +1,4 @@
-// Shared by fireflies-webhook and mobile-recording-review.
+// Used by mobile-recording-review.
 //
 // Deal review persistence is delegated to one Postgres RPC so deal_state,
 // stakeholders, deal stage, risk level, and lifecycle change in one transaction.

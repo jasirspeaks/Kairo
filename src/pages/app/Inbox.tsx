@@ -64,7 +64,7 @@ export function Inbox() {
   // Keeps the open Inbox page current without a manual reload: re-runs
   // fetchData() (not syncAndFetch()) whenever scheduled_meetings changes for
   // this user, so a write from any source -- this page's own assignment
-  // actions, calendar sync from another tab, Fireflies webhook write-back --
+  // actions, calendar sync from another tab, recording review write-back --
   // shows up immediately. Deliberately does NOT call syncGoogleCalendar()
   // here; this only reacts to rows already in the database, same scope as
   // the nav badge's subscription.
@@ -120,9 +120,8 @@ export function Inbox() {
     // Both unassigned AND assigned meetings are shown here -- assigned ones
     // just render with a green "Assigned" button instead of a purple
     // "Assign" one. Cancelled meetings are excluded, and so are 'completed'
-    // ones: fireflies-webhook flips an assigned meeting to 'completed' once
-    // the call actually happens and gets auto-reviewed onto its deal, at
-    // which point it belongs on that deal's own review/timeline, not here.
+    // ones: completed meetings that have already been reviewed belong on that
+    // deal's own review/timeline, not here.
     // Without this filter a completed meeting's status no longer matches
     // 'assigned', so it would render as a stale, clickable "Assign" card
     // instead of disappearing.
@@ -166,8 +165,7 @@ export function Inbox() {
   }
 
   // Assigning an upcoming meeting to a deal -- no transcript exists yet,
-  // no AI review runs. This just links the meeting to a deal so the
-  // Fireflies webhook can auto-match the transcript later, automatically.
+  // no AI review runs. This links the meeting to a deal.
   // No stage is set here for the existing-deal path -- the deal simply
   // keeps whatever stage it's already at until its next call is reviewed
   // and Kairo infers the stage from what actually happened.

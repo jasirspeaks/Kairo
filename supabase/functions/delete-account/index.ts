@@ -2,25 +2,18 @@
 // grant, wipes the user's folder in the `recordings` Storage bucket, then
 // deletes the auth.users row via the service role. Every user-owned table
 // (profiles, deals, conversations, deal_state, stakeholders,
-// fireflies_connections, calendar_connections, subscriptions,
-// pending_schedule_intents, pending_calls) has an ON DELETE CASCADE FK to
-// auth.users, so the single admin.deleteUser call below is what actually
-// removes all of it -- confirmed against the live schema via
-// pg_constraint.confdeltype before writing this (all 'c' except two
-// unrelated SET NULL columns on scheduled_meetings/pending_calls that just
-// null a pointer, not delete a row).
+// calendar_connections, subscriptions, pending_schedule_intents,
+// pending_calls) has an ON DELETE CASCADE FK to auth.users, so the single
+// admin.deleteUser call below is what actually removes all of it -- confirmed
+// against the live schema via pg_constraint.confdeltype before writing this
+// (all 'c' except two unrelated SET NULL columns on
+// scheduled_meetings/pending_calls that just null a pointer, not delete a row).
 //
 // Two things cascade does NOT reach, so this function handles them first:
 //   1. The recordings Storage bucket -- audio objects aren't DB rows.
 //   2. Google's own record of the OAuth grant -- deleting our
 //      calendar_connections row stops Kairo from using the token, but
 //      doesn't revoke it at Google's end. Best-effort revoke before delete.
-//
-// Fireflies is deliberately NOT touched here -- the user's Fireflies
-// account and whatever Fireflies itself retains is a separate relationship
-// the user has directly with that vendor; Kairo only stores an encrypted
-// API key and a webhook secret, which cascade removes along with the
-// fireflies_connections row.
 //
 // Auth pattern mirrors mobile-recording-review: verify the caller's own
 // JWT via supabase.auth.getUser(token) against a service-role client.
@@ -205,8 +198,8 @@ serve(async (req) => {
     // 3. Delete the auth.users row. This cascades through every
     //    user-owned table (verified ON DELETE CASCADE on all of them):
     //    profiles, deals, conversations, deal_state, stakeholders,
-    //    fireflies_connections, calendar_connections, subscriptions,
-    //    pending_schedule_intents, pending_calls.
+    //    calendar_connections, subscriptions, pending_schedule_intents,
+    //    pending_calls.
     const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
 
     if (deleteError) {

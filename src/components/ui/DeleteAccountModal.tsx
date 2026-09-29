@@ -110,11 +110,8 @@ export function DeleteAccountModal({ open, email, onClose }: DeleteAccountModalP
           <h2 id="delete-account-title" className="text-lg font-display font-bold text-textPrimary mb-1.5 text-center">
             Delete your account
           </h2>
-          <p className="text-textSecondary text-sm leading-relaxed mb-4 text-center">
-            This permanently deletes every deal, call, transcript, and stakeholder record in Kairo, and disconnects Calendar and Fireflies. This cannot be undone.
-          </p>
-          <p className="text-textMuted text-xs leading-relaxed mb-5 text-center">
-            Your Fireflies account and its recordings are managed separately and are not affected.
+          <p className="text-textSecondary text-sm leading-relaxed mb-5 text-center">
+            This permanently deletes every deal, call, transcript, and stakeholder record in Kairo, and disconnects Calendar. This cannot be undone.
           </p>
 
           <label className="block text-xs font-medium text-textSecondary mb-1.5">

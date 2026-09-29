@@ -1,17 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Copy,
-  Check,
-  Zap,
   Calendar,
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
   LogOut,
-  RefreshCw,
-  Eye,
-  EyeOff,
   Clock,
   CreditCard,
 } from 'lucide-react';
@@ -23,18 +17,6 @@ import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { DeleteAccountModal } from '../../components/ui/DeleteAccountModal';
 import { TopBar } from '../../components/layout/TopBar';
 import { formatDate } from '../../lib/utils';
-
-type FirefliesStatus = 'pending' | 'active' | 'invalid' | 'disconnected';
-
-interface FirefliesConnectionState {
-  connected: boolean;
-  status?: FirefliesStatus;
-  email?: string | null;
-  last_webhook_received_at?: string | null;
-  last_error?: string | null;
-  webhook_url?: string;
-  webhook_secret?: string;
-}
 
 async function readJsonResponse(res: Response): Promise<any> {
   try {
@@ -78,19 +60,6 @@ export function Settings() {
   const [disconnectingCalendar, setDisconnectingCalendar] = useState(false);
   const [connectingCalendar, setConnectingCalendar] = useState(false);
 
-  // Fireflies
-  const [fireflies, setFireflies] = useState<FirefliesConnectionState | null>(null);
-  const [checkingFireflies, setCheckingFireflies] = useState(true);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [connectingFireflies, setConnectingFireflies] = useState(false);
-  const [firefliesFormError, setFirefliesFormError] = useState<string | null>(null);
-  const [firefliesActionError, setFirefliesActionError] = useState<string | null>(null);
-  const [disconnectingFireflies, setDisconnectingFireflies] = useState(false);
-  const [revalidating, setRevalidating] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-  const [copiedSecret, setCopiedSecret] = useState(false);
-  const [secretRevealed, setSecretRevealed] = useState(false);
-
   // Account deletion
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
@@ -118,7 +87,6 @@ export function Settings() {
     if (!user) return;
 
     void checkCalendarConnection();
-    void checkFirefliesConnection();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -310,249 +278,6 @@ export function Settings() {
   }
 
   // ---------------------------------------------------------------------------
-  // Fireflies
-  // ---------------------------------------------------------------------------
-
-  const firefliesAuthHeader = useCallback(async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) return null;
-
-    return {
-      apikey: process.env.REACT_APP_SUPABASE_ANON_KEY!,
-      Authorization: `Bearer ${session.access_token}`,
-    };
-  }, []);
-
-  async function checkFirefliesConnection() {
-    setCheckingFireflies(true);
-
-    try {
-      const authHeader = await firefliesAuthHeader();
-
-      if (!authHeader) {
-        setFireflies(null);
-        return;
-      }
-
-      const res = await fetch(
-        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect?action=status`,
-        {
-          method: 'GET',
-          headers: authHeader,
-        }
-      );
-
-      const data = await readJsonResponse(res);
-
-      if (!res.ok) {
-        console.error(
-          'Settings: Fireflies status request failed:',
-          data.error || res.status
-        );
-        setFireflies(null);
-        setFirefliesActionError(
-          data.error || `Could not load Fireflies status (${res.status}).`
-        );
-        return;
-      }
-
-      setFireflies(data);
-    } catch (error) {
-      console.error('Settings: Fireflies status check failed:', error);
-      setFireflies(null);
-      setFirefliesActionError(
-        'Network error checking the Fireflies connection.'
-      );
-    } finally {
-      setCheckingFireflies(false);
-    }
-  }
-
-  async function handleConnectFireflies(e: React.FormEvent) {
-    e.preventDefault();
-
-    const apiKey = apiKeyInput.trim();
-
-    if (!apiKey) {
-      setFirefliesFormError('Paste your Fireflies API key first.');
-      return;
-    }
-
-    setConnectingFireflies(true);
-    setFirefliesFormError(null);
-    setFirefliesActionError(null);
-
-    try {
-      const authHeader = await firefliesAuthHeader();
-
-      if (!authHeader) {
-        setFirefliesFormError(
-          'Your session expired — refresh the page and try again.'
-        );
-        return;
-      }
-
-      const res = await fetch(
-        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...authHeader,
-          },
-          body: JSON.stringify({
-            api_key: apiKey,
-          }),
-        }
-      );
-
-      const data = await readJsonResponse(res);
-
-      if (!res.ok || data.error) {
-        setFirefliesFormError(
-          data.error ||
-            `Could not connect Fireflies (${res.status}).`
-        );
-        return;
-      }
-
-      setApiKeyInput('');
-      setSecretRevealed(true);
-      await checkFirefliesConnection();
-    } catch (error) {
-      console.error('Settings: Fireflies connect failed:', error);
-      setFirefliesFormError(
-        'Network error reaching Fireflies. Please try again.'
-      );
-    } finally {
-      setConnectingFireflies(false);
-    }
-  }
-
-  async function handleDisconnectFireflies() {
-    setDisconnectingFireflies(true);
-    setFirefliesActionError(null);
-    setFirefliesFormError(null);
-
-    try {
-      const authHeader = await firefliesAuthHeader();
-
-      if (!authHeader) {
-        setFirefliesActionError(
-          'Your session expired — refresh the page and try again.'
-        );
-        return;
-      }
-
-      const res = await fetch(
-        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect?action=disconnect`,
-        {
-          method: 'DELETE',
-          headers: authHeader,
-        }
-      );
-
-      const data = await readJsonResponse(res);
-
-      if (!res.ok || data.error) {
-        setFirefliesActionError(
-          data.error ||
-            `Fireflies could not be disconnected (${res.status}).`
-        );
-        return;
-      }
-
-      setApiKeyInput('');
-      setSecretRevealed(false);
-      setCopiedUrl(false);
-      setCopiedSecret(false);
-
-      // Re-read the server rather than trusting local React state.
-      await checkFirefliesConnection();
-    } catch (error) {
-      console.error('Settings: Fireflies disconnect failed:', error);
-      setFirefliesActionError(
-        'Network error disconnecting Fireflies. The connection was not assumed to be removed.'
-      );
-    } finally {
-      setDisconnectingFireflies(false);
-    }
-  }
-
-  async function handleRevalidateFireflies() {
-    setRevalidating(true);
-    setFirefliesActionError(null);
-
-    try {
-      const authHeader = await firefliesAuthHeader();
-
-      if (!authHeader) {
-        setFirefliesActionError(
-          'Your session expired — refresh the page and try again.'
-        );
-        return;
-      }
-
-      const res = await fetch(
-        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/fireflies-connect?action=revalidate`,
-        {
-          method: 'POST',
-          headers: authHeader,
-        }
-      );
-
-      const data = await readJsonResponse(res);
-
-      if (!res.ok || data.error || data.ok === false) {
-        setFirefliesActionError(
-          data.error ||
-            `Fireflies revalidation failed (${res.status}).`
-        );
-      }
-
-      await checkFirefliesConnection();
-    } catch (error) {
-      console.error('Settings: Fireflies revalidation failed:', error);
-      setFirefliesActionError(
-        'Network error rechecking Fireflies. Please try again.'
-      );
-    } finally {
-      setRevalidating(false);
-    }
-  }
-
-  async function copyWebhookUrl() {
-    if (!fireflies?.webhook_url) return;
-
-    try {
-      await navigator.clipboard.writeText(fireflies.webhook_url);
-      setCopiedUrl(true);
-      window.setTimeout(() => setCopiedUrl(false), 2000);
-    } catch {
-      setFirefliesActionError(
-        'Could not copy the webhook URL. Select and copy it manually.'
-      );
-    }
-  }
-
-  async function copyWebhookSecret() {
-    if (!fireflies?.webhook_secret) return;
-
-    try {
-      await navigator.clipboard.writeText(fireflies.webhook_secret);
-      setCopiedSecret(true);
-      window.setTimeout(() => setCopiedSecret(false), 2000);
-    } catch {
-      setFirefliesActionError(
-        'Could not copy the webhook secret. Select and copy it manually.'
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Profile save
   // ---------------------------------------------------------------------------
 
@@ -602,10 +327,6 @@ export function Settings() {
     setWhatYouSell(initialValues.whatYouSell);
     setWhoYouAre(initialValues.whoYouAre);
   }
-
-  const integrationsNeedsAttention =
-    fireflies?.status === 'invalid' ||
-    fireflies?.status === 'pending';
 
   return (
     <div className="animate-fade-in">
@@ -747,424 +468,59 @@ export function Settings() {
           </h2>
 
           <CollapsibleSection
-            title="Calendar & Fireflies"
-            defaultOpen={integrationsNeedsAttention}
-            accent={integrationsNeedsAttention ? 'amber' : 'default'}
+            title="Google Calendar"
+            defaultOpen={false}
+            accent="default"
           >
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start pt-4">
-              {/* Calendar */}
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Calendar className="w-4 h-4 text-primary" />
-                  <h3 className="text-sm font-semibold text-textPrimary">
-                    Calendar
-                  </h3>
-                </div>
+            <div className="pt-4 max-w-xl">
+              <div className="flex items-center gap-2 mb-1">
+                <Calendar className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-semibold text-textPrimary">
+                  Calendar
+                </h3>
+              </div>
 
-                <p className="text-textMuted text-xs mb-4">
-                  Connect your calendar so upcoming meetings show up in your
-                  Inbox — assign them to a deal before the call happens, and
-                  Kairo reviews the call automatically once it&apos;s done.
-                </p>
+              <p className="text-textMuted text-xs mb-4">
+                Connect your calendar so upcoming meetings show up in your
+                Inbox — assign them to a deal before the call happens, and
+                Kairo reviews the call automatically once it&apos;s done.
+              </p>
 
-                {checkingCalendar ? (
-                  <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
-                ) : calendarConnected ? (
-                  <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span className="text-emerald-400 text-xs font-medium">
-                        Google Calendar connected
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleDisconnectCalendar}
-                      disabled={disconnectingCalendar}
-                      className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50"
-                    >
-                      {disconnectingCalendar
-                        ? 'Disconnecting…'
-                        : 'Disconnect'}
-                    </button>
+              {checkingCalendar ? (
+                <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
+              ) : calendarConnected ? (
+                <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-400 text-xs font-medium">
+                      Google Calendar connected
+                    </span>
                   </div>
-                ) : (
-                  <Button
+
+                  <button
                     type="button"
-                    variant="secondary"
-                    className="w-full sm:w-auto"
-                    loading={connectingCalendar}
-                    disabled={connectingCalendar}
-                    onClick={handleConnectCalendar}
+                    onClick={handleDisconnectCalendar}
+                    disabled={disconnectingCalendar}
+                    className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50"
                   >
-                    <Calendar className="w-4 h-4" />
-                    Connect Google Calendar
-                  </Button>
-                )}
-              </div>
-
-              {/* Fireflies */}
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <Zap className="w-4 h-4 text-primary" />
-                  <h3 className="text-sm font-semibold text-textPrimary">
-                    Fireflies
-                  </h3>
+                    {disconnectingCalendar
+                      ? 'Disconnecting…'
+                      : 'Disconnect'}
+                  </button>
                 </div>
-
-                <p className="text-textMuted text-xs mb-4">
-                  Connect your Fireflies account so calls are transcribed and
-                  reviewed automatically once the meeting happens.
-                </p>
-
-                {checkingFireflies ? (
-                  <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
-                ) : fireflies?.connected ? (
-                  <div className="space-y-4">
-                    {/* Invalid connection */}
-                    {fireflies.status === 'invalid' ? (
-                      <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
-                        <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-
-                        <div className="flex-1 min-w-0">
-                          <p className="text-red-400 text-xs font-medium">
-                            Fireflies rejected the stored key
-                            {fireflies.email
-                              ? ` for ${fireflies.email}`
-                              : ''}
-                            .
-                          </p>
-
-                          {fireflies.last_error && (
-                            <p className="text-textMuted text-xs mt-0.5">
-                              {fireflies.last_error}
-                            </p>
-                          )}
-
-                          <p className="text-textMuted text-xs mt-1.5">
-                            Reconnect with a valid key, or disconnect this
-                            connection completely.
-                          </p>
-
-                          <div className="flex flex-wrap items-center gap-3 mt-3">
-                            <button
-                              type="button"
-                              onClick={handleDisconnectFireflies}
-                              disabled={disconnectingFireflies}
-                              className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50"
-                            >
-                              {disconnectingFireflies
-                                ? 'Disconnecting…'
-                                : 'Disconnect'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Normal connected state */
-                      <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-
-                          <span className="text-emerald-400 text-xs font-medium truncate">
-                            Connected
-                            {fireflies.email
-                              ? ` as ${fireflies.email}`
-                              : ''}
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleDisconnectFireflies}
-                          disabled={disconnectingFireflies}
-                          className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50 flex-shrink-0 ml-3"
-                        >
-                          {disconnectingFireflies
-                            ? 'Disconnecting…'
-                            : 'Disconnect'}
-                        </button>
-                      </div>
-                    )}
-
-                    {firefliesActionError && (
-                      <p className="text-red-400 text-xs flex items-start gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                        <span>{firefliesActionError}</span>
-                      </p>
-                    )}
-
-                    {fireflies.status !== 'invalid' && (
-                      <button
-                        type="button"
-                        onClick={handleRevalidateFireflies}
-                        disabled={revalidating}
-                        className="flex items-center gap-1.5 text-xs text-textMuted hover:text-textSecondary transition-colors disabled:opacity-50"
-                      >
-                        <RefreshCw
-                          className={`w-3 h-3 ${
-                            revalidating ? 'animate-spin' : ''
-                          }`}
-                        />
-
-                        {revalidating
-                          ? 'Checking…'
-                          : 'Recheck connection'}
-                      </button>
-                    )}
-
-                    {/* Reconnect invalid Fireflies key */}
-                    {fireflies.status === 'invalid' && (
-                      <form
-                        onSubmit={handleConnectFireflies}
-                        className="space-y-2"
-                      >
-                        <label className="block text-xs font-medium text-textSecondary">
-                          Fireflies API key
-                        </label>
-
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="password"
-                            value={apiKeyInput}
-                            onChange={(e) =>
-                              setApiKeyInput(e.target.value)
-                            }
-                            placeholder="Paste your Fireflies API key"
-                            className="input-field font-mono text-xs"
-                            autoComplete="off"
-                          />
-
-                          <Button
-                            type="submit"
-                            variant="secondary"
-                            loading={connectingFireflies}
-                            className="flex-shrink-0"
-                          >
-                            Reconnect
-                          </Button>
-                        </div>
-
-                        {firefliesFormError && (
-                          <p className="text-red-400 text-xs flex items-center gap-1.5">
-                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                            {firefliesFormError}
-                          </p>
-                        )}
-                      </form>
-                    )}
-
-                    {fireflies.status === 'pending' && (
-                      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3">
-                        <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-
-                        <p className="text-amber-400 text-xs">
-                          Waiting for the first call from Fireflies. Follow
-                          the setup steps below — this banner clears
-                          automatically once a webhook comes through.
-                        </p>
-                      </div>
-                    )}
-
-                    {fireflies.webhook_url && (
-                      <>
-                        <div>
-                          <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                            Webhook URL
-                          </label>
-
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={fireflies.webhook_url}
-                              readOnly
-                              className="input-field font-mono text-xs"
-                              onFocus={(e) => e.target.select()}
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() => void copyWebhookUrl()}
-                              className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
-                              aria-label="Copy webhook URL"
-                            >
-                              {copiedUrl ? (
-                                <Check className="w-4 h-4 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-4 h-4" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        {fireflies.webhook_secret && (
-                          <div>
-                            <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                              Webhook secret
-                            </label>
-
-                            <div className="flex items-center gap-2">
-                              <input
-                                type={secretRevealed ? 'text' : 'password'}
-                                value={fireflies.webhook_secret}
-                                readOnly
-                                className="input-field font-mono text-xs"
-                                onFocus={(e) => e.target.select()}
-                              />
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setSecretRevealed((revealed) => !revealed)
-                                }
-                                className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
-                                aria-label={
-                                  secretRevealed
-                                    ? 'Hide secret'
-                                    : 'Reveal secret'
-                                }
-                              >
-                                {secretRevealed ? (
-                                  <EyeOff className="w-4 h-4" />
-                                ) : (
-                                  <Eye className="w-4 h-4" />
-                                )}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => void copyWebhookSecret()}
-                                className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-border bg-surfaceHigh hover:border-accent/40 text-textSecondary"
-                                aria-label="Copy webhook secret"
-                              >
-                                {copiedSecret ? (
-                                  <Check className="w-4 h-4 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-4 h-4" />
-                                )}
-                              </button>
-                            </div>
-
-                            <p className="text-textMuted text-xs mt-1.5">
-                              This is shown only until your first call comes
-                              through — copy it now, you won&apos;t be able to
-                              view it again later.
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="bg-surfaceHigh border border-border rounded-lg p-4 space-y-2">
-                          <p className="text-textPrimary text-xs font-semibold">
-                            Setup steps
-                          </p>
-
-                          <ol className="text-textSecondary text-xs leading-relaxed list-decimal list-inside space-y-1">
-                            <li>
-                              Log into your Fireflies account and go to{' '}
-                              <span className="font-medium text-textPrimary">
-                                Settings → Developer Settings
-                              </span>
-                              .
-                            </li>
-
-                            <li>
-                              Find the{' '}
-                              <span className="font-medium text-textPrimary">
-                                Webhook
-                              </span>{' '}
-                              section and click Configure.
-                            </li>
-
-                            <li>
-                              Paste the{' '}
-                              <span className="font-medium text-textPrimary">
-                                Webhook URL
-                              </span>{' '}
-                              above into the URL field.
-                            </li>
-
-                            <li>
-                              Paste the{' '}
-                              <span className="font-medium text-textPrimary">
-                                Webhook secret
-                              </span>{' '}
-                              above into the secret key field. Do not click
-                              Fireflies&apos; generate button or use a
-                              different secret.
-                            </li>
-
-                            <li>
-                              Under events to send, select{' '}
-                              <span className="font-medium text-textPrimary">
-                                Transcription Completed
-                              </span>
-                              .
-                            </li>
-
-                            <li>
-                              Click Save. New calls will now be reviewed
-                              automatically once Fireflies finishes
-                              processing them.
-                            </li>
-                          </ol>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <form
-                    onSubmit={handleConnectFireflies}
-                    className="space-y-2"
-                  >
-                    <label className="block text-xs font-medium text-textSecondary">
-                      Fireflies API key
-                    </label>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="password"
-                        value={apiKeyInput}
-                        onChange={(e) => setApiKeyInput(e.target.value)}
-                        placeholder="Paste your Fireflies API key"
-                        className="input-field font-mono text-xs"
-                        autoComplete="off"
-                      />
-
-                      <Button
-                        type="submit"
-                        variant="secondary"
-                        loading={connectingFireflies}
-                        className="flex-shrink-0"
-                      >
-                        Connect
-                      </Button>
-                    </div>
-
-                    {firefliesFormError && (
-                      <p className="text-red-400 text-xs flex items-center gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                        {firefliesFormError}
-                      </p>
-                    )}
-
-                    {firefliesActionError && (
-                      <p className="text-red-400 text-xs flex items-start gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                        <span>{firefliesActionError}</span>
-                      </p>
-                    )}
-
-                    <p className="text-textMuted text-xs">
-                      Find your API key in Fireflies under{' '}
-                      <span className="font-medium text-textSecondary">
-                        Settings → Developer Settings
-                      </span>
-                      . Kairo verifies it before saving.
-                    </p>
-                  </form>
-                )}
-              </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full sm:w-auto"
+                  loading={connectingCalendar}
+                  disabled={connectingCalendar}
+                  onClick={handleConnectCalendar}
+                >
+                  <Calendar className="w-4 h-4" />
+                  Connect Google Calendar
+                </Button>
+              )}
             </div>
           </CollapsibleSection>
         </section>
