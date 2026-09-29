@@ -129,6 +129,7 @@ export function Settings() {
     if (calendarParam === 'connected') {
       setCalendarBanner('connected');
       setCalendarErrorMessage('');
+      void checkCalendarConnection();
 
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('calendar');

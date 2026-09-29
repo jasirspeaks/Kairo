@@ -170,22 +170,6 @@ async function validateFirefliesKey(
   }
 }
 
-function getUserClient(req: Request) {
-  const authorization =
-    req.headers.get('Authorization');
-
-  return createClient(
-    SUPABASE_URL!,
-    SUPABASE_ANON_KEY!,
-    {
-      global: {
-        headers: {
-          Authorization: authorization ?? '',
-        },
-      },
-    }
-  );
-}
 
 function json(
   body: unknown,
@@ -243,14 +227,18 @@ serve(async (req) => {
   }
 
   try {
-    const userClient = getUserClient(req);
+    const authHeader = req.headers.get('Authorization');
 
-    const {
-      data: { user },
-      error: authError,
-    } = await userClient.auth.getUser();
+    if (!authHeader) {
+      return json(
+        { error: 'Unauthorized' },
+        401
+      );
+    }
 
-    if (authError || !user) {
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+
+    if (!token) {
       return json(
         { error: 'Unauthorized' },
         401
@@ -261,6 +249,18 @@ serve(async (req) => {
       SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY
     );
+
+    const {
+      data: { user },
+      error: authError,
+    } = await admin.auth.getUser(token);
+
+    if (authError || !user) {
+      return json(
+        { error: 'Unauthorized' },
+        401
+      );
+    }
 
     const url = new URL(req.url);
 
