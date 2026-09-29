@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from '../../components/ui/Button';
@@ -367,12 +367,6 @@ export function NewDeal() {
       // write it straight to deal_state, no aggregation step.
       await saveDealState(dealId, user.id, review);
       await saveStakeholders(dealId, user.id, review);
-
-      await supabase.from('deals').update({
-        deal_stage: resolvedStage,
-        risk_level: getRiskLevel(review.deal.status),
-        updated_at: new Date().toISOString(),
-      }).eq('id', dealId);
 
       callSucceeded.current = true;
       navigate(`/app/deals/${dealId}/calls/${conv.id}`);

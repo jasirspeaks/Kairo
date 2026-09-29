@@ -5,7 +5,7 @@ import {
   TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, getRiskLevel, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
+import { reviewCall, saveDealState, saveStakeholders, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Deal, Conversation } from '../../types';
@@ -163,12 +163,6 @@ export function Review() {
       // Write directly, no aggregation step.
       await saveDealState(deal.id, user.id, review);
       await saveStakeholders(deal.id, user.id, review);
-
-      await supabase.from('deals').update({
-        deal_stage: resolvedStage,
-        risk_level: getRiskLevel(review.deal.status),
-        updated_at: new Date().toISOString(),
-      }).eq('id', deal.id);
 
       setNewTranscript('');
       setAddingCall(false);

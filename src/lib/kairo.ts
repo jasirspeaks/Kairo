@@ -31,6 +31,7 @@ export async function reviewCall(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'apikey': process.env.REACT_APP_SUPABASE_ANON_KEY!,
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
