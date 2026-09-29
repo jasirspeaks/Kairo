@@ -758,20 +758,38 @@ serve(async (req) => {
       userId = user.id;
     }
 
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count } = await supabase
-      .from('conversations')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', since);
+    const isInternalReview = token === SUPABASE_SERVICE_ROLE_KEY;
 
-    if ((count || 0) >= 20) {
-      return new Response(JSON.stringify({
-        error: 'Rate limit reached. You can run up to 20 reviews per 24 hours.',
-      }), {
-        status: 429,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!isInternalReview) {
+      const { data: quotaResult, error: quotaError } = await supabase.rpc(
+        'consume_review_quota',
+        {
+          p_user_id: userId,
+          p_max_reviews: 20,
+        }
+      );
+
+      if (quotaError) {
+        throw new Error(`Review quota check failed: ${quotaError.message}`);
+      }
+
+      if (quotaResult === 'not_allowed') {
+        return new Response(JSON.stringify({
+          error: 'Your trial or subscription does not currently allow new reviews.',
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (quotaResult === 'quota_exceeded') {
+        return new Response(JSON.stringify({
+          error: 'Rate limit reached. You can run up to 20 reviews per 24 hours.',
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if (!transcript || typeof transcript !== 'string') {

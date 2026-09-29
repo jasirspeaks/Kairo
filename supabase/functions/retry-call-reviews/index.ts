@@ -162,6 +162,7 @@ serve(async (req) => {
             body: JSON.stringify({
               conversation_id: job.id,
               user_id: job.user_id,
+              retry_attempt: true,
             }),
           }
         );

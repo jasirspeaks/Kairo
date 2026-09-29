@@ -50,81 +50,53 @@ export async function reviewCall(
   return data.review as DealReview;
 }
 
-// Writes the deal-level half of an extraction into deal_state. review.deal
-// already IS the deal's current state -- computed by call-review with the
-// full prior history as context. No aggregation function, no second AI
-// call. Call this right after every successful reviewCall().
-//
-// DUPLICATE LOGIC WARNING: this is a client-side re-implementation of the
-// same write-back that supabase/functions/_shared/deal-writeback.ts does
-// for the Fireflies-webhook and mobile-recording-review paths. They cannot
-// share code (this runs in the browser bundle; that runs in Deno), but the
-// `stateRow` shape here MUST be kept field-for-field identical to that
-// file's `stateRow`. A field added to one and not the other silently
-// breaks Deal Review for whichever entry point (New Deal upload / Review's
-// "Add Call" / Fireflies / mobile) uses the file that didn't get the
-// update -- this is exactly how `pillars` went missing here previously.
-// If you add a field to either file, add it to both in the same change.
-export async function saveDealState(dealId: string, userId: string, review: DealReview): Promise<void> {
-  const { data: existing } = await supabase
-    .from('deal_state')
-    .select('id')
-    .eq('deal_id', dealId)
-    .maybeSingle();
+export async function saveDealState(
+  dealId: string,
+  userId: string,
+  review: DealReview,
+  resolvedStage?: DealStage
+): Promise<void> {
+  let stage = resolvedStage;
 
-  const stateRow = {
-    deal_id: dealId,
-    user_id: userId,
-    current_status: review.deal.status,
-    confidence: review.deal.confidence,
-    deal_health_score: review.deal.health_score,
-    highest_priority_risk: review.deal.highest_priority_risk.risk,
-    highest_priority_risk_full: review.deal.highest_priority_risk,
-    what_youre_missing: review.deal.what_youre_missing,
-    key_follow_up_message: review.deal.recommended_next_action,
-    manager_note: review.deal.manager_note,
-    supporting_evidence: review.supporting_evidence ?? [],
-    last_review_summary: review.deal.status_reason,
-    pillars: review.deal.pillars ?? null,
-    updated_at: new Date().toISOString(),
-  };
+  if (!stage) {
+    const { data: deal, error: dealError } = await supabase
+      .from('deals')
+      .select('deal_stage')
+      .eq('id', dealId)
+      .eq('user_id', userId)
+      .maybeSingle();
 
-  if (existing) {
-    await supabase.from('deal_state').update(stateRow).eq('id', existing.id);
-  } else {
-    await supabase.from('deal_state').insert(stateRow);
+    if (dealError) {
+      throw new Error(`Failed to read deal stage: ${dealError.message}`);
+    }
+    if (!deal) {
+      throw new Error('Deal not found.');
+    }
+
+    stage = resolveDealStage(deal.deal_stage, review);
+  }
+
+  const { error } = await supabase.rpc('persist_deal_review', {
+    p_deal_id: dealId,
+    p_user_id: userId,
+    p_review: review,
+    p_resolved_stage: stage,
+  });
+
+  if (error) {
+    throw new Error(`Failed to persist deal review: ${error.message}`);
   }
 }
 
-// Upserts stakeholders surfaced by a call, matched by (deal_id, name) so a
-// returning stakeholder updates their sentiment/role instead of duplicating.
-export async function saveStakeholders(dealId: string, userId: string, review: DealReview): Promise<void> {
-  if (!Array.isArray(review.stakeholder_signals) || review.stakeholder_signals.length === 0) return;
-
-  for (const s of review.stakeholder_signals) {
-    const { data: existing } = await supabase
-      .from('stakeholders')
-      .select('id')
-      .eq('deal_id', dealId)
-      .eq('name', s.name)
-      .maybeSingle();
-
-    const row = {
-      deal_id: dealId,
-      user_id: userId,
-      name: s.name,
-      role: s.role,
-      sentiment: s.sentiment,
-      notes: s.evidence || null,
-      updated_at: new Date().toISOString(),
-    };
-
-    if (existing) {
-      await supabase.from('stakeholders').update(row).eq('id', existing.id);
-    } else {
-      await supabase.from('stakeholders').insert(row);
-    }
-  }
+// Kept as a compatibility shim for existing call sites. Stakeholders are now
+// persisted by persist_deal_review() in the same database transaction as
+// deal_state/deals, so this must not issue a second independent write.
+export async function saveStakeholders(
+  _dealId: string,
+  _userId: string,
+  _review: DealReview
+): Promise<void> {
+  return;
 }
 
 // Returns the exact hex code for a Call Status (On Track, Needs Attention, At Risk, Stalled).

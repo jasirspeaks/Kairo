@@ -189,15 +189,44 @@ export function Settings() {
   }
 
   async function handleDisconnectCalendar() {
-    if (!user) return;
     setDisconnectingCalendar(true);
-    await supabase
-      .from('calendar_connections')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('provider', 'google');
-    setCalendarConnected(false);
-    setDisconnectingCalendar(false);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        setCalendarBanner('error');
+        return;
+      }
+
+      const res = await fetch(
+        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-connect`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      if (!res.ok) {
+        setCalendarBanner('error');
+        return;
+      }
+
+      const data = await res.json();
+      setCalendarConnected(false);
+
+      if (data.google_revoked === false) {
+        setCalendarBanner('error');
+      }
+    } catch {
+      setCalendarBanner('error');
+    } finally {
+      setDisconnectingCalendar(false);
+    }
   }
 
   // --- Fireflies handlers ---
