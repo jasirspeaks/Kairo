@@ -221,6 +221,7 @@ export function Settings() {
         {
           method: 'GET',
           headers: {
+            apikey: process.env.REACT_APP_SUPABASE_ANON_KEY!,
             Authorization: `Bearer ${session.access_token}`,
           },
         }
@@ -272,6 +273,7 @@ export function Settings() {
         {
           method: 'DELETE',
           headers: {
+            apikey: process.env.REACT_APP_SUPABASE_ANON_KEY!,
             Authorization: `Bearer ${session.access_token}`,
           },
         }
@@ -319,6 +321,7 @@ export function Settings() {
     if (!session) return null;
 
     return {
+      apikey: process.env.REACT_APP_SUPABASE_ANON_KEY!,
       Authorization: `Bearer ${session.access_token}`,
     };
   }, []);

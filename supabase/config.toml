@@ -21,3 +21,15 @@ verify_jwt = false
 
 [functions.audio-retention-job]
 verify_jwt = false
+
+[functions.google-calendar-connect]
+verify_jwt = false
+
+[functions.fireflies-connect]
+verify_jwt = false
+
+[functions.google-calendar-sync]
+verify_jwt = false
+
+[functions.delete-account]
+verify_jwt = false
