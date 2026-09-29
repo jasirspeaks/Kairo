@@ -1,0 +1,5 @@
+*.toml text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.sql text eol=lf
