@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, ArrowRight, Calendar, CalendarX, AlertTriangle, Clock, TrendingUp, Wallet, ShieldAlert } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle, syncGoogleCalendar } from '../../lib/kairo';
+import { getDashboardDeals } from '@kairo/api';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, DealState, DealStatus, ScheduledMeeting } from '../../types';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -211,37 +212,7 @@ export function Dashboard() {
   }, [user]);
 
   async function fetchData() {
-    const { data: dealsData } = await supabase
-      .from('deals')
-      .select('*')
-      .eq('user_id', user!.id)
-      .eq('status', 'active')
-      .order('updated_at', { ascending: false });
-
-    const dealsWithState: DealWithState[] = dealsData
-      ? await Promise.all(
-          dealsData.map(async (deal) => {
-            const { data: state } = await supabase
-              .from('deal_state')
-              .select('*')
-              .eq('deal_id', deal.id)
-              .maybeSingle();
-            return { ...deal, deal_state: state };
-          })
-        )
-      : [];
-
-    // Active Deals on the Dashboard means: lifecycle status active, not
-    // closed Won/Lost, and at least one call has actually been reviewed --
-    // deal_state only exists once a review has run, so its presence is the
-    // "has been reviewed" signal. A brand-new deal with only an upcoming,
-    // unreviewed meeting doesn't count as active yet.
-    const reviewedActiveDeals = dealsWithState.filter(d =>
-      d.deal_state !== null &&
-      d.deal_state.current_status !== 'Won' &&
-      d.deal_state.current_status !== 'Lost'
-    );
-
+    const reviewedActiveDeals = await getDashboardDeals(user!.id);
     setDeals(reviewedActiveDeals);
 
     const { data: meetingsData } = await supabase

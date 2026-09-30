@@ -7,7 +7,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
-      '@kairo/core': path.resolve(import.meta.dirname, '../../packages/core/src'),
+      "@kairo/core": path.resolve(import.meta.dirname, '../../packages/core/src'),
+      '@kairo/api': path.resolve(import.meta.dirname, '../../packages/api/src'),
     },
   },
   envPrefix: ['VITE_', 'REACT_APP_'],

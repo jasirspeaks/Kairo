@@ -16,7 +16,9 @@
     "isolatedModules": true,
     "paths": {
       "@kairo/core": ["./packages/core/src/index.ts"],
-      "@kairo/core/*": ["./packages/core/src/*"]
+      "@kairo/core/*": ["./packages/core/src/*"],
+      "@kairo/api": ["./packages/api/src/index.ts"],
+      "@kairo/api/*": ["./packages/api/src/*"]
     }
   },
   "exclude": ["node_modules"]

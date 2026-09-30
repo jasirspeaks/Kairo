@@ -10,7 +10,9 @@
     "paths": {
       "@/*": ["./src/*"],
       "@kairo/core": ["../../packages/core/src/index.ts"],
-      "@kairo/core/*": ["../../packages/core/src/*"]
+      "@kairo/core/*": ["../../packages/core/src/*"],
+      "@kairo/api": ["../../packages/api/src/index.ts"],
+      "@kairo/api/*": ["../../packages/api/src/*"]
     }
   },
   "include": ["src", "vite.config.ts"],

@@ -1,0 +1,29 @@
+{
+  "name": "@kairo/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client/index.ts",
+    "./services": "./src/services/index.ts",
+    "./hooks": "./src/hooks/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kairo/core": "*",
+    "@supabase/supabase-js": "^2.106.2"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0 || ^18.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.15",
+    "react": "^19.2.6",
+    "typescript": "^5.9.3"
+  }
+}
