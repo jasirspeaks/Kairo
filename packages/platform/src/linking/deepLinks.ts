@@ -48,6 +48,26 @@ export function getCalendarRedirectUrl(platform: PlatformType = 'web', origin?: 
 }
 
 /**
+ * Returns the appropriate Password Reset callback redirect URL based on client platform.
+ */
+export function getResetPasswordRedirectUrl(platform: PlatformType = 'web', origin?: string): string {
+  switch (platform) {
+    case 'ios':
+    case 'android':
+      return `${DEFAULT_DEEP_LINK_SCHEME}://auth/reset-password`;
+    case 'desktop':
+      return typeof window !== 'undefined' && window.location.origin.includes('localhost')
+        ? 'http://localhost:1420/auth/reset-password'
+        : 'tauri://localhost/auth/reset-password';
+    case 'web':
+    default:
+      if (origin) return `${origin}/auth/reset-password`;
+      if (typeof window !== 'undefined') return `${window.location.origin}/auth/reset-password`;
+      return 'http://localhost:3000/auth/reset-password';
+  }
+}
+
+/**
  * Parses query and hash fragment parameters from incoming deep link URLs.
  */
 export function parseDeepLinkUrl(urlString: string): Record<string, string> {

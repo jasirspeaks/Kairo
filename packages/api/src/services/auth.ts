@@ -63,8 +63,10 @@ export async function resetPasswordForEmail(
   redirectTo?: string,
   client: KairoClient = getKairoClient()
 ): Promise<{ error: Error | null }> {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const targetRedirect = redirectTo || `${origin}/auth/reset-password`;
   const { error } = await client.auth.resetPasswordForEmail(email, {
-    redirectTo: redirectTo || `${window.location.origin}/auth/reset-password`,
+    redirectTo: targetRedirect,
   });
   return { error };
 }
