@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #0D0715;
+  color: #F7F2FC;
+  font-family: 'Geist', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0D0715;
+}
+::-webkit-scrollbar-thumb {
+  background: #302044;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #7042C5;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary hover:bg-primaryHover text-white font-medium px-5 py-2.5 rounded-lg transition-all duration-150 ease-spring hover:shadow-purple-glow active:scale-[0.97] text-sm;
+  }
+  .btn-secondary {
+    @apply bg-surface border border-border hover:border-accent text-textSecondary hover:text-textPrimary font-medium px-5 py-2.5 rounded-lg transition-all duration-150 ease-spring active:scale-[0.97] text-sm;
+  }
+  .card {
+    @apply bg-surface border border-border rounded-xl shadow-card;
+  }
+  .card-hover {
+    @apply card hover:border-accent/40 hover:shadow-card-hover transition-all duration-200 ease-spring cursor-pointer active:scale-[0.99];
+  }
+  .input-field {
+    @apply bg-surfaceHigh border border-border rounded-lg px-4 py-3 text-textPrimary placeholder-textMuted focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20 transition-all duration-150 w-full text-sm;
+  }
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-textSecondary hover:text-textPrimary hover:bg-surfaceHigh transition-all duration-150 cursor-pointer;
+  }
+  .sidebar-item-active {
+    @apply sidebar-item text-primary bg-primary/10 border border-primary/20;
+  }
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-widest text-textMuted;
+  }
+  .score-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+  .skeleton {
+    @apply bg-surfaceHigh border border-border rounded-xl relative overflow-hidden;
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: -50%;
+    background: linear-gradient(
+      135deg,
+      transparent 42%,
+      #7042C514 48%,
+      #7042C52E 50%,
+      #7042C514 52%,
+      transparent 58%
+    );
+    @apply animate-shimmer;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
