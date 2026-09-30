@@ -1,19 +1,35 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { useAuth, getDashboardDeals, syncGoogleCalendar, DealWithState } from '@kairo/api';
-import { getStatusStyle, getRiskLevel } from '@kairo/core';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import { useAuth, getDashboardDeals, type DealWithState } from '@kairo/api';
+import { formatDealValue, getHealthScoreColor } from '@kairo/core';
 
-export function DashboardScreen({ onRecordPress }: { onRecordPress?: () => void }) {
+interface DashboardScreenProps {
+  onRecordPress?: () => void;
+  onDealPress?: (dealId: string) => void;
+}
+
+export function DashboardScreen({ onRecordPress, onDealPress }: DashboardScreenProps) {
   const { user, profile } = useAuth();
   const [deals, setDeals] = useState<DealWithState[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
-    syncGoogleCalendar().then(fetchData);
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    fetchData();
   }, [user]);
 
   async function fetchData() {
+    setLoading(true);
     try {
       const activeDeals = await getDashboardDeals(user!.id);
       setDeals(activeDeals);
@@ -23,6 +39,9 @@ export function DashboardScreen({ onRecordPress }: { onRecordPress?: () => void 
       setLoading(false);
     }
   }
+
+  const totalValue = deals.reduce((acc, d) => acc + (d.deal_value || 0), 0);
+  const highRiskCount = deals.filter((d) => d.risk_level === 'high').length;
 
   if (loading) {
     return (
@@ -34,12 +53,28 @@ export function DashboardScreen({ onRecordPress }: { onRecordPress?: () => void 
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* User greeting */}
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Deal Intelligence</Text>
+        <Text style={styles.title}>Kairo Intelligence</Text>
         <Text style={styles.subtitle}>
-          {profile?.name ? `Welcome back, ${profile.name}` : 'Active Pipeline'}
+          {profile?.name ? `Welcome back, ${profile.name}` : 'Active Opportunities'}
         </Text>
+      </View>
+
+      {/* Metrics Row */}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricCard}>
+          <Text style={styles.metricLabel}>PIPELINE</Text>
+          <Text style={styles.metricValue}>{formatDealValue(totalValue)}</Text>
+        </View>
+        <View style={styles.metricCard}>
+          <Text style={styles.metricLabel}>ACTIVE</Text>
+          <Text style={styles.metricValue}>{deals.length}</Text>
+        </View>
+        <View style={styles.metricCard}>
+          <Text style={styles.metricLabel}>HIGH RISK</Text>
+          <Text style={[styles.metricValue, { color: '#FF667A' }]}>{highRiskCount}</Text>
+        </View>
       </View>
 
       {/* Quick Record CTA */}
@@ -49,27 +84,46 @@ export function DashboardScreen({ onRecordPress }: { onRecordPress?: () => void 
 
       {/* Active Deals List */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>DEALS REQUIRING ATTENTION ({deals.length})</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ACTIVE PIPELINE ({deals.length})</Text>
+        </View>
+
         {deals.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>No active deals requiring attention.</Text>
+            <Text style={styles.emptyText}>No active deals in qualification cycle.</Text>
           </View>
         ) : (
           deals.map((deal) => {
-            const risk = getRiskLevel(deal.deal_state?.current_status || 'Unknown');
+            const score = deal.deal_state?.deal_health_score ?? 50;
+            const healthColor = getHealthScoreColor(score);
+
             return (
-              <View key={deal.id} style={styles.dealCard}>
-                <View style={[styles.riskIndicator, risk === 'high' ? styles.riskHigh : styles.riskMedium]} />
+              <TouchableOpacity
+                key={deal.id}
+                style={styles.dealCard}
+                onPress={() => onDealPress?.(deal.id)}
+              >
+                <View style={[styles.scoreBadge, { borderColor: healthColor }]}>
+                  <Text style={[styles.scoreText, { color: healthColor }]}>{score}</Text>
+                </View>
+
                 <View style={styles.dealInfo}>
-                  <Text style={styles.dealName}>{deal.deal_name}</Text>
-                  <Text style={styles.companyName}>{deal.company_name}</Text>
+                  <View style={styles.dealTopRow}>
+                    <Text style={styles.companyName}>{deal.company_name}</Text>
+                    <Text style={styles.dealValue}>{formatDealValue(deal.deal_value)}</Text>
+                  </View>
+
+                  <Text style={styles.dealMeta}>
+                    {deal.deal_name} • {deal.deal_stage}
+                  </Text>
+
                   {deal.deal_state?.highest_priority_risk && (
                     <Text style={styles.riskText} numberOfLines={2}>
-                      {deal.deal_state.highest_priority_risk}
+                      Risk: {deal.deal_state.highest_priority_risk}
                     </Text>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -85,7 +139,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
   center: {
     flex: 1,
@@ -94,83 +148,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    marginBottom: 20,
-    marginTop: 10,
+    marginBottom: 16,
+    marginTop: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
     color: '#F7F2FC',
   },
   subtitle: {
-    fontSize: 14,
-    color: '#B4A7C2',
+    fontSize: 13,
+    color: '#796B8A',
+    marginTop: 2,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  metricCard: {
+    flex: 1,
+    backgroundColor: '#160D21',
+    borderWidth: 1,
+    borderColor: '#302044',
+    borderRadius: 12,
+    padding: 12,
+  },
+  metricLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#796B8A',
+    letterSpacing: 0.5,
+  },
+  metricValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#F7F2FC',
     marginTop: 4,
   },
   recordButton: {
     backgroundColor: '#7042C5',
-    paddingVertical: 14,
     borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   recordButtonText: {
     color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600',
-    fontSize: 16,
   },
   section: {
-    marginBottom: 20,
+    marginTop: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 11,
     fontWeight: '700',
     color: '#796B8A',
     letterSpacing: 1,
-    marginBottom: 12,
-  },
-  dealCard: {
-    backgroundColor: '#160D21',
-    borderColor: '#302044',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    flexDirection: 'row',
-  },
-  riskIndicator: {
-    width: 4,
-    borderRadius: 2,
-    marginRight: 12,
-  },
-  riskHigh: {
-    backgroundColor: '#FF667A',
-  },
-  riskMedium: {
-    backgroundColor: '#F6B23E',
-  },
-  dealInfo: {
-    flex: 1,
-  },
-  dealName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#F7F2FC',
-  },
-  companyName: {
-    fontSize: 12,
-    color: '#B4A7C2',
-    marginTop: 2,
-  },
-  riskText: {
-    fontSize: 12,
-    color: '#FF667A',
-    marginTop: 6,
   },
   emptyCard: {
     backgroundColor: '#160D21',
     borderRadius: 12,
-    padding: 20,
+    padding: 24,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#302044',
@@ -178,5 +224,58 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#796B8A',
     fontSize: 13,
+  },
+  dealCard: {
+    backgroundColor: '#160D21',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#302044',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  scoreBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    backgroundColor: '#201330',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreText: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  dealInfo: {
+    flex: 1,
+  },
+  dealTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  companyName: {
+    color: '#F7F2FC',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dealValue: {
+    color: '#F7F2FC',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  dealMeta: {
+    color: '#796B8A',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  riskText: {
+    color: '#FF667A',
+    fontSize: 11,
+    marginTop: 4,
   },
 });
