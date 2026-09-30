@@ -1,0 +1,28 @@
+{
+  "name": "@kairo/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kairo/api": "*",
+    "@kairo/core": "*",
+    "@kairo/platform": "*",
+    "@supabase/supabase-js": "^2.106.2",
+    "clsx": "^2.1.1",
+    "react": "^19.2.6",
+    "react-native": "^0.78.0",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.15",
+    "@types/react-native": "^0.72.8",
+    "typescript": "^5.9.3"
+  }
+}
