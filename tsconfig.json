@@ -1,11 +1,16 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/api" },
-    { "path": "./packages/platform" },
-    { "path": "./apps/web" },
-    { "path": "./apps/desktop" },
-    { "path": "./apps/mobile" }
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "apps/**/*",
+    "packages/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/node_modules",
+    "dist",
+    "**/dist",
+    "build",
+    "**/build",
+    "supabase"
   ]
 }
