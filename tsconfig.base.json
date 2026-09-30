@@ -13,7 +13,11 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "paths": {
+      "@kairo/core": ["./packages/core/src/index.ts"],
+      "@kairo/core/*": ["./packages/core/src/*"]
+    }
   },
   "exclude": ["node_modules"]
 }

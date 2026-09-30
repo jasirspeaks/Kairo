@@ -7,9 +7,12 @@
 /coverage
 
 # production
-/build
-/dist
-.turbo
+build/
+dist/
+**/build/
+**/dist/
+.turbo/
+**/.turbo/
 
 # misc
 .DS_Store
