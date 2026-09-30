@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false
+  },
+  "include": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/api" },
+    { "path": "./packages/platform" },
+    { "path": "./apps/web" },
+    { "path": "./apps/desktop" },
+    { "path": "./apps/mobile" }
+  ]
+}
