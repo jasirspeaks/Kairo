@@ -1,0 +1,240 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { RecorderStatus, UseAudioRecorderResult } from '../types';
+
+const LEVEL_BAR_COUNT = 32;
+const LEVEL_SAMPLE_MS = 80;
+
+const MIME_CANDIDATES = [
+  'audio/mp4',
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/aac',
+];
+
+function pickSupportedMimeType(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null;
+  for (const candidate of MIME_CANDIDATES) {
+    if (MediaRecorder.isTypeSupported(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function useAudioRecorder(): UseAudioRecorderResult {
+  const [status, setStatus] = useState<RecorderStatus>('idle');
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [levels, setLevels] = useState<number[]>(() => new Array(LEVEL_BAR_COUNT).fill(0));
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const mimeTypeRef = useRef<string>('audio/mp4');
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const levelIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartedAtRef = useRef<number>(0);
+  const pausedAccumulatedMsRef = useRef<number>(0);
+  const pausedAtRef = useRef<number | null>(null);
+
+  const clearTimers = useCallback(() => {
+    if (levelIntervalRef.current) {
+      clearInterval(levelIntervalRef.current);
+      levelIntervalRef.current = null;
+    }
+    if (elapsedIntervalRef.current) {
+      clearInterval(elapsedIntervalRef.current);
+      elapsedIntervalRef.current = null;
+    }
+  }, []);
+
+  const teardownStream = useCallback(() => {
+    clearTimers();
+    analyserRef.current = null;
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    recorderRef.current = null;
+  }, [clearTimers]);
+
+  useEffect(() => () => teardownStream(), [teardownStream]);
+
+  const start = useCallback(async () => {
+    setErrorMessage(null);
+    setStatus('requesting');
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      setStatus('denied');
+      setErrorMessage(
+        err instanceof DOMException && err.name === 'NotAllowedError'
+          ? 'Microphone access was denied. Allow microphone access in your browser settings to record a call.'
+          : 'Could not access the microphone. Check your device settings and try again.'
+      );
+      return;
+    }
+
+    const mimeType = pickSupportedMimeType();
+    if (!mimeType) {
+      stream.getTracks().forEach((t) => t.stop());
+      setStatus('error');
+      setErrorMessage(
+        "This device/browser doesn't support in-browser recording. Try uploading a recording instead."
+      );
+      return;
+    }
+
+    streamRef.current = stream;
+    mimeTypeRef.current = mimeType;
+    chunksRef.current = [];
+
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+    recorder.onerror = () => {
+      setStatus('error');
+      setErrorMessage('Recording stopped unexpectedly. Please try again.');
+      teardownStream();
+    };
+    recorderRef.current = recorder;
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const audioCtx = new AudioCtx();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      audioCtxRef.current = audioCtx;
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      levelIntervalRef.current = setInterval(() => {
+        analyser.getByteTimeDomainData(dataArray);
+        let sumSquares = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const centered = (dataArray[i] - 128) / 128;
+          sumSquares += centered * centered;
+        }
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+        const normalized = Math.min(1, rms * 4);
+        setLevels((prev) => [...prev.slice(1), normalized]);
+      }, LEVEL_SAMPLE_MS);
+    } catch {
+      // Waveform is cosmetic -- recording proceeds without it.
+    }
+
+    recordingStartedAtRef.current = Date.now();
+    pausedAccumulatedMsRef.current = 0;
+    pausedAtRef.current = null;
+    setElapsedMs(0);
+
+    elapsedIntervalRef.current = setInterval(() => {
+      setElapsedMs(
+        Date.now() - recordingStartedAtRef.current - pausedAccumulatedMsRef.current
+      );
+    }, 250);
+
+    recorder.start(1000);
+    setStatus('recording');
+  }, [teardownStream]);
+
+  const pause = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== 'recording') return;
+    recorder.pause();
+    pausedAtRef.current = Date.now();
+    if (levelIntervalRef.current) {
+      clearInterval(levelIntervalRef.current);
+      levelIntervalRef.current = null;
+    }
+    setStatus('paused');
+  }, []);
+
+  const resume = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== 'paused') return;
+    if (pausedAtRef.current) {
+      pausedAccumulatedMsRef.current += Date.now() - pausedAtRef.current;
+      pausedAtRef.current = null;
+    }
+    recorder.resume();
+
+    const analyser = analyserRef.current;
+    if (analyser && !levelIntervalRef.current) {
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      levelIntervalRef.current = setInterval(() => {
+        analyser.getByteTimeDomainData(dataArray);
+        let sumSquares = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const centered = (dataArray[i] - 128) / 128;
+          sumSquares += centered * centered;
+        }
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+        const normalized = Math.min(1, rms * 4);
+        setLevels((prev) => [...prev.slice(1), normalized]);
+      }, LEVEL_SAMPLE_MS);
+    }
+
+    setStatus('recording');
+  }, []);
+
+  const stop = useCallback((): Promise<{ blob: Blob; mimeType: string } | null> => {
+    return new Promise((resolve) => {
+      const recorder = recorderRef.current;
+      if (!recorder || recorder.state === 'inactive') {
+        resolve(null);
+        return;
+      }
+
+      recorder.onstop = () => {
+        const mimeType = mimeTypeRef.current;
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        teardownStream();
+        setStatus('stopped');
+        resolve(blob.size > 0 ? { blob, mimeType } : null);
+      };
+
+      recorder.stop();
+    });
+  }, [teardownStream]);
+
+  const discard = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.onstop = null;
+      try {
+        recorder.stop();
+      } catch {
+        /* already inactive */
+      }
+    }
+    teardownStream();
+    chunksRef.current = [];
+    setElapsedMs(0);
+    setLevels(new Array(LEVEL_BAR_COUNT).fill(0));
+    setStatus('idle');
+  }, [teardownStream]);
+
+  return {
+    status,
+    elapsedMs,
+    levels,
+    errorMessage,
+    start,
+    pause,
+    resume,
+    stop,
+    discard,
+  };
+}

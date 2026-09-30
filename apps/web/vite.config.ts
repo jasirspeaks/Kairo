@@ -9,6 +9,7 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
       "@kairo/core": path.resolve(import.meta.dirname, '../../packages/core/src'),
       '@kairo/api': path.resolve(import.meta.dirname, '../../packages/api/src'),
+      '@kairo/platform': path.resolve(import.meta.dirname, '../../packages/platform/src'),
     },
   },
   envPrefix: ['VITE_', 'REACT_APP_'],

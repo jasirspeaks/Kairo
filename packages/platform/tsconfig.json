@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@kairo/platform": ["./src/index.ts"],
+      "@kairo/platform/*": ["./src/*"],
+      "@kairo/core": ["../../packages/core/src/index.ts"],
+      "@kairo/core/*": ["../../packages/core/src/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

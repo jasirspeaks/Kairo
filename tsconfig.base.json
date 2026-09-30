@@ -18,7 +18,9 @@
       "@kairo/core": ["./packages/core/src/index.ts"],
       "@kairo/core/*": ["./packages/core/src/*"],
       "@kairo/api": ["./packages/api/src/index.ts"],
-      "@kairo/api/*": ["./packages/api/src/*"]
+      "@kairo/api/*": ["./packages/api/src/*"],
+      "@kairo/platform": ["./packages/platform/src/index.ts"],
+      "@kairo/platform/*": ["./packages/platform/src/*"]
     }
   },
   "exclude": ["node_modules"]
