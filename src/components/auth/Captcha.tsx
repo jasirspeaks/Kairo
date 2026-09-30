@@ -32,7 +32,9 @@ declare global {
   }
 }
 
-const SITE_KEY = process.env.REACT_APP_TURNSTILE_SITE_KEY;
+const SITE_KEY =
+  (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_TURNSTILE_SITE_KEY || import.meta.env?.REACT_APP_TURNSTILE_SITE_KEY)) ||
+  (typeof process !== 'undefined' && process.env?.REACT_APP_TURNSTILE_SITE_KEY);
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
 
 interface CaptchaProps {

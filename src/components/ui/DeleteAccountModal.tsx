@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../../lib/supabase';
 import { Button } from './Button';
 
 interface DeleteAccountModalProps {
@@ -54,11 +54,11 @@ export function DeleteAccountModal({ open, email, onClose }: DeleteAccountModalP
         return;
       }
 
-      const res = await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/delete-account`, {
+      const res = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': process.env.REACT_APP_SUPABASE_ANON_KEY!,
+          'apikey': supabaseAnonKey,
           Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ confirm_email: email }),

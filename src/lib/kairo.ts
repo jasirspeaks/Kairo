@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { supabase } from './supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase';
 import { DealReview, DealStatus, CallStatus, DealStage, DEAL_STAGES, DEAL_STATUS_COLORS, CALL_STATUS_COLORS } from '../types';
 
 interface SellerContext {
@@ -26,12 +26,12 @@ export async function reviewCall(
   }
 
   const response = await fetch(
-    `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/call-review`,
+    `${supabaseUrl}/functions/v1/call-review`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': process.env.REACT_APP_SUPABASE_ANON_KEY!,
+        'apikey': supabaseAnonKey,
         'Authorization': `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
@@ -236,11 +236,11 @@ export async function syncGoogleCalendar(): Promise<void> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-sync`, {
+    await fetch(`${supabaseUrl}/functions/v1/google-calendar-sync`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': process.env.REACT_APP_SUPABASE_ANON_KEY!,
+        'apikey': supabaseAnonKey,
         'Authorization': `Bearer ${session.access_token}`,
       },
     });
@@ -330,7 +330,7 @@ export async function submitRecording(
   }
 
   const response = await fetch(
-    `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/mobile-recording-review`,
+    `${supabaseUrl}/functions/v1/mobile-recording-review`,
     {
       method: 'POST',
       headers: {

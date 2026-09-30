@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../../lib/supabase';
 import { Button } from '../../components/ui/Button';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { DeleteAccountModal } from '../../components/ui/DeleteAccountModal';
@@ -185,11 +185,11 @@ export function Settings() {
       }
 
       const res = await fetch(
-        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-connect`,
+        `${supabaseUrl}/functions/v1/google-calendar-connect`,
         {
           method: 'GET',
           headers: {
-            apikey: process.env.REACT_APP_SUPABASE_ANON_KEY!,
+            apikey: supabaseAnonKey,
             Authorization: `Bearer ${session.access_token}`,
           },
         }
@@ -237,11 +237,11 @@ export function Settings() {
       }
 
       const res = await fetch(
-        `${process.env.REACT_APP_SUPABASE_URL}/functions/v1/google-calendar-connect`,
+        `${supabaseUrl}/functions/v1/google-calendar-connect`,
         {
           method: 'DELETE',
           headers: {
-            apikey: process.env.REACT_APP_SUPABASE_ANON_KEY!,
+            apikey: supabaseAnonKey,
             Authorization: `Bearer ${session.access_token}`,
           },
         }
