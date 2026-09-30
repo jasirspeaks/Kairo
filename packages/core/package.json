@@ -12,6 +12,7 @@
     "./auth": "./src/auth/index.ts"
   },
   "scripts": {
+    "test": "vitest run",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
