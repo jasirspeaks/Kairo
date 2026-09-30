@@ -7,7 +7,23 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
-import { Deal, DealState, Conversation, Stakeholder, DealPillars, PillarState } from '../../types';
+import {
+  Deal,
+  DealState,
+  Conversation,
+  Stakeholder,
+  DealPillars,
+  PillarState,
+  SENTIMENT_LABEL,
+  SENTIMENT_COLOR,
+  PILLAR_LABELS,
+  PILLAR_ORDER,
+  getPillarBarColor as pillarBarColor,
+  getHealthScoreColor as healthScoreColor,
+  formatDealValue as formatValue,
+  buildActivityTimeline as buildActivity,
+  type ActivityItem,
+} from '../../types';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
@@ -16,80 +32,6 @@ import { formatDate, cn } from '../../lib/utils';
 // Deal Review is a pure read. deal_state is always current because
 // call-review already computed it that way on the most recent call --
 // there is no refresh action anywhere in this page or the product.
-
-const SENTIMENT_LABEL: Record<string, string> = {
-  champion: 'Champion',
-  supporter: 'Supporter',
-  neutral: 'Neutral',
-  skeptic: 'Skeptic',
-  blocker: 'Blocker',
-};
-
-const SENTIMENT_COLOR: Record<string, string> = {
-  champion: '#3DD68C',
-  supporter: '#4F8CFF',
-  neutral: '#8B93A7',
-  skeptic: '#F6B23E',
-  blocker: '#FF667A',
-};
-
-function formatValue(value: number | null): string {
-  if (value === null || value === undefined) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function healthScoreColor(score: number): string {
-  if (score >= 70) return '#3DD68C';
-  if (score >= 40) return '#F6B23E';
-  return '#FF667A';
-}
-
-// Deal Activity is a chronological read of what's already been captured
-// about this deal -- every call reviewed, plus every stakeholder Kairo has
-// identified -- not a separate log a user maintains by hand. No new table,
-// no write path: it's a merge-and-sort view over `calls` and `stakeholders`.
-type ActivityItem =
-  | { kind: 'call'; id: string; at: string; call: Conversation }
-  | { kind: 'stakeholder'; id: string; at: string; stakeholder: Stakeholder };
-
-function buildActivity(calls: Conversation[], stakeholders: Stakeholder[]): ActivityItem[] {
-  const items: ActivityItem[] = [
-    ...calls.map((call): ActivityItem => ({ kind: 'call', id: call.id, at: call.created_at, call })),
-    ...stakeholders.map((s): ActivityItem => ({ kind: 'stakeholder', id: s.id, at: s.created_at, stakeholder: s })),
-  ];
-  return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-}
-
-// --- What We Know So Far: five-pillar qualification strip -------------
-// One full-width bar per pillar. Bar length and color are driven by the
-// continuous 0-100 confidence score, not the status label -- status
-// still exists in the data for the Dashboard's cross-deal aggregate, but
-// this strip deliberately shows no status word, just the bar and a
-// chevron, so the read is purely visual. not_yet_relevant pillars get a
-// flat hatched bar instead of a point on the red-to-green scale, since
-// "too early to know" isn't a point of weakness.
-
-const PILLAR_LABELS: Record<keyof DealPillars, string> = {
-  compelling_event: 'Compelling Event',
-  economic_buyer: 'Economic Buyer',
-  decision_process: 'Decision Process',
-  budget: 'Budget',
-  champion: 'Champion',
-};
-
-const PILLAR_ORDER: (keyof DealPillars)[] = [
-  'compelling_event', 'economic_buyer', 'decision_process', 'budget', 'champion',
-];
-
-function pillarBarColor(confidence: number): string {
-  if (confidence >= 67) return '#3DD68C';
-  if (confidence >= 34) return '#F6B23E';
-  return '#FF667A';
-}
 
 function PillarBar({ label, pillar }: { label: string; pillar: PillarState }) {
   const [open, setOpen] = useState(false);
