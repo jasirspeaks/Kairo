@@ -1005,6 +1005,41 @@ serve(async (req) => {
       userId = user.id;
     }
 
+    // Authorize deal ownership if deal_id is provided
+    if (deal_context?.deal_id) {
+      const { data: dealRow, error: dealAuthErr } = await supabase
+        .from('deals')
+        .select('id, user_id')
+        .eq('id', deal_context.deal_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (dealAuthErr || !dealRow) {
+        return new Response(JSON.stringify({ error: 'Deal not found or unauthorized' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // Authorize conversation ownership if conversation_id is provided
+    const requestedConvId = body.conversation_id || deal_context?.conversation_id;
+    if (requestedConvId) {
+      const { data: convRow, error: convAuthErr } = await supabase
+        .from('conversations')
+        .select('id, user_id')
+        .eq('id', requestedConvId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (convAuthErr || !convRow) {
+        return new Response(JSON.stringify({ error: 'Conversation not found or unauthorized' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     const isInternalReview = token === SUPABASE_SERVICE_ROLE_KEY;
     let quotaConsumed = false;
 

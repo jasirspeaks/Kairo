@@ -88,6 +88,7 @@ export interface HighestPriorityRisk {
   risk: string;
   why_it_matters: string;
   evidence: string;
+  category?: string;
 }
 
 export type CallStatus = 'On Track' | 'Needs Attention' | 'At Risk' | 'Stalled';
@@ -133,16 +134,34 @@ export interface DealLevelReview {
   stage_regression_override?: boolean;
 }
 
+export type GroundingType = 'explicit_statement' | 'behavioral_inference' | 'structural_absence';
+
+export type PillarKey = 'compelling_event' | 'economic_buyer' | 'decision_process' | 'budget' | 'champion';
+
+export interface GroundedEvidenceItem {
+  quote: string;
+  speaker?: string | null;
+  pillar_key?: PillarKey | null;
+  grounding_type: GroundingType;
+  confidence: number; // 0-100
+}
+
+export interface RiskDeltaItem {
+  risk: string;
+  category?: string;
+  why_it_matters?: string;
+}
+
 export interface DealReview {
   call: CallLevelReview;
   deal: DealLevelReview;
   what_changed_since_last_call?: {
-    resolved: string[];
-    persists: string[];
-    new_risks: string[];
+    resolved: (string | RiskDeltaItem)[];
+    persists: (string | RiskDeltaItem)[];
+    new_risks: (string | RiskDeltaItem)[];
   };
   stakeholder_signals: StakeholderSignal[];
-  supporting_evidence: string[];
+  supporting_evidence: GroundedEvidenceItem[];
 }
 
 export type PillarStatus = 'confirmed' | 'partial' | 'unconfirmed' | 'not_yet_relevant';
@@ -173,7 +192,7 @@ export interface DealState {
   what_youre_missing: MissingInfo[] | null;
   key_follow_up_message: string | null;
   manager_note: string | null;
-  supporting_evidence: string[] | null;
+  supporting_evidence: GroundedEvidenceItem[] | null;
   last_review_summary: string | null;
   pillars: DealPillars | null;
   updated_at: string;
@@ -297,10 +316,6 @@ export interface MeetingWithDeal extends Meeting {
   company_name?: string;
   deal?: Deal | null;
 }
-
-export type GroundingType = 'explicit_statement' | 'behavioral_inference' | 'structural_absence';
-
-export type PillarKey = 'compelling_event' | 'economic_buyer' | 'decision_process' | 'budget' | 'champion';
 
 export interface DealEvidence {
   id: string;

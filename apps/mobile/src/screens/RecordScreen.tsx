@@ -6,7 +6,10 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { useAuth, getDeals, submitRecording } from '@kairo/api';
 import { Deal } from '@kairo/core';
 
@@ -20,6 +23,8 @@ export function RecordScreen() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const recordingRef = useRef<Audio.Recording | null>(null);
+
   useEffect(() => {
     if (!user) return;
     getDeals(user.id).then((data) => {
@@ -29,6 +34,16 @@ export function RecordScreen() {
       }
     });
   }, [user]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingRef.current) {
+        recordingRef.current.stopAndUnloadAsync().catch(() => {});
+        recordingRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let interval: any = null;
@@ -44,34 +59,107 @@ export function RecordScreen() {
     };
   }, [isRecording]);
 
-  const toggleRecording = async () => {
-    if (isRecording) {
-      setIsRecording(false);
-      if (!selectedDealId) {
-        setErrorMessage('Please select a target deal before submitting audio.');
+  const startActualRecording = async () => {
+    try {
+      setErrorMessage(null);
+      setStatusMessage(null);
+
+      // 1. Request microphone permissions explicitly
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        setErrorMessage('Microphone access is required to record conversations. Please enable permissions in device settings.');
         return;
       }
 
-      setIsSubmitting(true);
-      setStatusMessage('Uploading and running 5-pillar deal extraction...');
-      setErrorMessage(null);
+      // 2. Configure audio mode for high-fidelity recording
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
 
-      try {
-        // Construct standard audio recording payload
-        const audioBlob = new Blob([new Uint8Array([0, 0, 0, 0])], { type: 'audio/m4a' });
-        await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
-        setStatusMessage('Audio recorded & 5-pillar deal intelligence generated successfully!');
-      } catch (err: any) {
-        setErrorMessage(err?.message || 'Failed to submit mobile recording for intelligence review.');
-        setStatusMessage(null);
-      } finally {
-        setIsSubmitting(false);
-      }
-    } else {
+      // 3. Instantiate and prepare real audio recording
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+
+      recordingRef.current = recording;
       setDuration(0);
-      setStatusMessage(null);
-      setErrorMessage(null);
       setIsRecording(true);
+      setStatusMessage('Recording active... capturing live microphone audio.');
+    } catch (err: any) {
+      console.error('[MobileRecorder] Failed to start recording:', err);
+      setErrorMessage(err?.message || 'Failed to initialize microphone recording.');
+      setIsRecording(false);
+    }
+  };
+
+  const stopAndSubmitRecording = async () => {
+    const recording = recordingRef.current;
+    if (!recording) {
+      setIsRecording(false);
+      return;
+    }
+
+    if (!selectedDealId) {
+      setErrorMessage('Please select an associated deal before submitting.');
+      return;
+    }
+
+    setIsRecording(false);
+    setIsSubmitting(true);
+    setStatusMessage('Finalizing audio capture...');
+    setErrorMessage(null);
+
+    try {
+      // 1. Stop and unload hardware recording
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      recordingRef.current = null;
+
+      if (!uri) {
+        throw new Error('Recording ended without producing a valid audio file URI.');
+      }
+
+      // 2. Validate file existence and non-zero size
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (!fileInfo.exists) {
+        throw new Error('Recorded audio file could not be found on device storage.');
+      }
+
+      if ('size' in fileInfo && fileInfo.size === 0) {
+        throw new Error('Recorded audio file is empty (0 bytes). Please check microphone input.');
+      }
+
+      // 3. Fetch real audio blob from local filesystem URI
+      const response = await fetch(uri);
+      const audioBlob = await response.blob();
+
+      if (!audioBlob || audioBlob.size === 0) {
+        throw new Error('Audio payload contains 0 bytes. Recording discarded.');
+      }
+
+      setStatusMessage(`Uploading real recording (${(audioBlob.size / 1024).toFixed(1)} KB) and generating 5-pillar deal intelligence...`);
+
+      // 4. Submit genuine audio payload through pipeline
+      await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
+      setStatusMessage('Audio recorded & 5-pillar deal intelligence generated successfully!');
+    } catch (err: any) {
+      console.error('[MobileRecorder] Submission failed:', err);
+      setErrorMessage(err?.message || 'Failed to process mobile audio recording.');
+      setStatusMessage(null);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      await stopAndSubmitRecording();
+    } else {
+      await startActualRecording();
     }
   };
 
@@ -86,7 +174,7 @@ export function RecordScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Record Conversation</Text>
-        <Text style={styles.subtitle}>Mobile capture for instant AI deal insights</Text>
+        <Text style={styles.subtitle}>Real mobile microphone capture for instant deal intelligence</Text>
       </View>
 
       {/* Target Deal Selector */}
@@ -118,24 +206,32 @@ export function RecordScreen() {
       {/* Recorder Center */}
       <View style={styles.recordCenter}>
         <TouchableOpacity
+          disabled={isSubmitting}
           style={[
             styles.recordCircle,
             isRecording && styles.recordCircleActive,
+            isSubmitting && styles.recordCircleDisabled,
           ]}
           onPress={toggleRecording}
         >
-          <View
-            style={[
-              styles.innerCircle,
-              isRecording && styles.innerCircleActive,
-            ]}
-          />
+          {isSubmitting ? (
+            <ActivityIndicator size="large" color="#FFFFFF" />
+          ) : (
+            <View
+              style={[
+                styles.innerCircle,
+                isRecording && styles.innerCircleActive,
+              ]}
+            />
+          )}
         </TouchableOpacity>
 
         <Text style={styles.timerText}>{formatSeconds(duration)}</Text>
         <Text style={styles.hintText}>
-          {isRecording
-            ? 'Recording audio... Tap red square to stop'
+          {isSubmitting
+            ? 'Processing and transcribing audio...'
+            : isRecording
+            ? 'Recording audio... Tap red square to stop & analyze'
             : 'Tap microphone button to start recording'}
         </Text>
       </View>
@@ -249,6 +345,9 @@ const styles = StyleSheet.create({
   recordCircleActive: {
     borderColor: '#FF667A',
     backgroundColor: '#30131E',
+  },
+  recordCircleDisabled: {
+    opacity: 0.7,
   },
   innerCircle: {
     width: 40,

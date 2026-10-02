@@ -16,6 +16,9 @@
     "@kairo/platform": "*",
     "@supabase/supabase-js": "^2.106.2",
     "clsx": "^2.1.1",
+    "expo": "~52.0.0",
+    "expo-av": "~15.0.2",
+    "expo-file-system": "~18.0.7",
     "react": "^19.2.6",
     "react-native": "^0.78.0",
     "tailwind-merge": "^3.6.0"

@@ -1,7 +1,35 @@
-import { NativeCaptureState, NativeCaptureResult } from '../types';
+import { NativeCaptureState, NativeCaptureResult, NativeCaptureCapabilities } from '../types';
 
 export function isTauriEnvironment(): boolean {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+}
+
+export async function getNativeCaptureCapabilities(): Promise<NativeCaptureCapabilities> {
+  if (isTauriEnvironment()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<NativeCaptureCapabilities>('get_capture_capabilities');
+    } catch (e: any) {
+      console.error('[DesktopBridge] Failed to get capture capabilities:', e);
+      return {
+        microphone_supported: false,
+        system_audio_supported: false,
+        available_devices: [],
+        default_device_name: null,
+        target_sample_rate: 16000,
+        target_channels: 1,
+      };
+    }
+  }
+
+  return {
+    microphone_supported: typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia,
+    system_audio_supported: typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia,
+    available_devices: [],
+    default_device_name: 'Browser WebRTC Audio',
+    target_sample_rate: 16000,
+    target_channels: 1,
+  };
 }
 
 export async function startNativeMeetingCapture(

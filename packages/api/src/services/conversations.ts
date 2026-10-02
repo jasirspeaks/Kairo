@@ -118,6 +118,10 @@ export async function submitRecording(
   meetingId?: string | null,
   client: KairoClient = getKairoClient()
 ): Promise<SubmitRecordingResult> {
+  if (!blob || blob.size === 0) {
+    throw new Error('Cannot submit empty audio recording. The recording must contain captured audio data.');
+  }
+
   const { data: { session } } = await client.auth.getSession();
   if (!session) {
     throw new Error('You must be signed in to submit a recording.');

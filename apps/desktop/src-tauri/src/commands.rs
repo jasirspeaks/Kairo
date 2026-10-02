@@ -1,5 +1,12 @@
 use tauri::State;
-use crate::capture::{CaptureEngine, CaptureStateResponse, CaptureResultResponse};
+use crate::capture::{CaptureEngine, CaptureStateResponse, CaptureResultResponse, CaptureCapabilitiesResponse};
+
+#[tauri::command]
+pub fn get_capture_capabilities(
+    engine: State<'_, CaptureEngine>,
+) -> Result<CaptureCapabilitiesResponse, String> {
+    Ok(engine.get_capabilities())
+}
 
 #[tauri::command]
 pub fn start_meeting_capture(

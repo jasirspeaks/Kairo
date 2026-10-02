@@ -113,8 +113,9 @@ export function evaluateJudgment(
     evidenceGrounded = false;
   } else {
     for (const ev of review.supporting_evidence) {
-      if (ev.trim().length < 10) {
-        failures.push(`Evidence snippet too short or generic: "${ev}"`);
+      const quote = typeof ev === 'string' ? ev : (ev && typeof ev === 'object' && 'quote' in ev ? (ev as any).quote : '');
+      if (!quote || quote.trim().length < 10) {
+        failures.push(`Evidence snippet too short or generic: "${quote}"`);
         evidenceGrounded = false;
       }
     }

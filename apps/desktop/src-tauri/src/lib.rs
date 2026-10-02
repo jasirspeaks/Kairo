@@ -3,6 +3,7 @@ pub mod commands;
 
 use capture::CaptureEngine;
 use commands::{
+    get_capture_capabilities,
     start_meeting_capture,
     pause_meeting_capture,
     resume_meeting_capture,
@@ -20,6 +21,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(capture_engine)
         .invoke_handler(tauri::generate_handler![
+            get_capture_capabilities,
             start_meeting_capture,
             pause_meeting_capture,
             resume_meeting_capture,

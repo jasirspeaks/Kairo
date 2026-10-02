@@ -51,7 +51,15 @@ describe('AI Evaluation - Multi-Call State Evolution', () => {
         evidence: 'Loves the product.',
       },
     ],
-    supporting_evidence: ['Dave loves the product.'],
+    supporting_evidence: [
+      {
+        quote: 'Dave loves the product.',
+        speaker: 'Dave',
+        pillar_key: 'champion',
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+    ],
   };
 
   const call2Review: DealReview = {
@@ -107,7 +115,13 @@ describe('AI Evaluation - Multi-Call State Evolution', () => {
       },
     ],
     supporting_evidence: [
-      'Rachel: "Budget is approved from our Q4 tooling budget."',
+      {
+        quote: 'Rachel: "Budget is approved from our Q4 tooling budget."',
+        speaker: 'Rachel',
+        pillar_key: 'budget',
+        grounding_type: 'explicit_statement',
+        confidence: 95,
+      },
     ],
   };
 

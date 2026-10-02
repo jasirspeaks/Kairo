@@ -42,7 +42,25 @@ export function runBenchmarkSuite(
   let totalStakeholderChecks = 0;
 
   for (const scenario of scenarios) {
-    const review = scenarioReviews.get(scenario.id) || scenario.mockReview;
+    const review = scenarioReviews.get(scenario.id);
+    if (!review) {
+      results.push({
+        scenarioId: scenario.id,
+        passed: false,
+        score: 0,
+        failures: [`No AI review provided for scenario '${scenario.id}'. Model execution missing.`],
+        metrics: {
+          healthScoreValid: false,
+          statusClassificationValid: false,
+          pillarsValid: false,
+          stakeholdersValid: false,
+          riskAccuracyValid: false,
+          evidenceGrounded: false,
+        },
+      });
+      continue;
+    }
+
     const evalResult = evaluateJudgment(review, scenario);
     results.push(evalResult);
 

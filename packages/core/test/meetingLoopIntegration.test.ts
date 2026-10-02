@@ -189,7 +189,13 @@ describe('Phase 7: End-to-End Automated Product Loop Acceptance', () => {
       },
     ],
     supporting_evidence: [
-      'We need to complete migration before Q4 datacenter lease expires.',
+      {
+        quote: 'We need to complete migration before Q4 datacenter lease expires.',
+        speaker: 'Bob Smith',
+        pillar_key: 'compelling_event',
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   };
 

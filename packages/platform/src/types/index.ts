@@ -45,6 +45,15 @@ export interface NativeCaptureState {
   error_message: string | null;
 }
 
+export interface NativeCaptureCapabilities {
+  microphone_supported: boolean;
+  system_audio_supported: boolean;
+  available_devices: string[];
+  default_device_name?: string | null;
+  target_sample_rate: number;
+  target_channels: number;
+}
+
 export interface NativeCaptureResult {
   meeting_id: string;
   deal_id: string | null;

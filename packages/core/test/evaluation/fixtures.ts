@@ -134,8 +134,16 @@ Sarah: Sounds great, talk soon!
       },
     ],
     supporting_evidence: [
-      "Sarah: 'We absolutely loved it!'",
-      "AE: 'I'll send over an annual agreement for $60k.'",
+      {
+        quote: "Sarah: 'We absolutely loved it!'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+      {
+        quote: "AE: 'I'll send over an annual agreement for $60k.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -252,8 +260,16 @@ Marcus: Perfect, send the invite.
       },
     ],
     supporting_evidence: [
-      "Marcus: 'If we don't have this deployed by Dec 1st, we fail our vendor audit which puts $2M in customer renewals at risk.'",
-      "Marcus: 'I already got CFO sign-off from Elena last Friday for $120k out of our Q4 security modernization budget.'",
+      {
+        quote: "Marcus: 'If we don't have this deployed by Dec 1st, we fail our vendor audit which puts $2M in customer renewals at risk.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+      {
+        quote: "Marcus: 'I already got CFO sign-off from Elena last Friday for $120k out of our Q4 security modernization budget.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -369,8 +385,16 @@ Jordan: No, he refuses to meet with vendors until we prove internal build is imp
       },
     ],
     supporting_evidence: [
-      "Jordan: 'CIO Patrick is pushing heavily for us to build this in-house with our existing Kubernetes cluster.'",
-      "Jordan: 'He refuses to meet with vendors until we prove internal build is impossible.'",
+      {
+        quote: "Jordan: 'CIO Patrick is pushing heavily for us to build this in-house with our existing Kubernetes cluster.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+      {
+        quote: "Jordan: 'He refuses to meet with vendors until we prove internal build is impossible.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -470,8 +494,16 @@ Alex: Not without CEO approval, and she froze all unbudgeted software purchases 
       },
     ],
     supporting_evidence: [
-      "Alex: 'My department has zero discretionary software budget left for this year.'",
-      "Alex: 'CEO froze all unbudgeted software purchases over $10k until Q2 next year.'",
+      {
+        quote: "Alex: 'My department has zero discretionary software budget left for this year.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+      {
+        quote: "Alex: 'CEO froze all unbudgeted software purchases over $10k until Q2 next year.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -570,8 +602,16 @@ Taylor: No, compliance requires every cloud vendor to complete the full question
       },
     ],
     supporting_evidence: [
-      "Taylor: 'their review queue is currently backed up 90 days.'",
-      "Taylor: 'compliance requires every cloud vendor to complete the full questionnaire before legal will even open the contract.'",
+      {
+        quote: "Taylor: 'their review queue is currently backed up 90 days.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+      {
+        quote: "Taylor: 'compliance requires every cloud vendor to complete the full questionnaire before legal will even open the contract.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -677,8 +717,16 @@ Rachel: No, she has completely different architectural priorities and asked us t
       },
     ],
     supporting_evidence: [
-      "Rachel: 'David left the company on Friday.'",
-      "Rachel: 'she has completely different architectural priorities and asked us to pause all pending vendor proposals until we redo discovery'",
+      {
+        quote: "Rachel: 'David left the company on Friday.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+      {
+        quote: "Rachel: 'she has completely different architectural priorities and asked us to pause all pending vendor proposals until we redo discovery'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -779,7 +827,11 @@ Tom: Perfect, thanks.
       },
     ],
     supporting_evidence: [
-      "Tom: 'Why don't you send the PDF over and we'll circle back sometime after the holidays or next month when things quiet down?'",
+      {
+        quote: "Tom: 'Why don't you send the PDF over and we'll circle back sometime after the holidays or next month when things quiet down?'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -880,8 +932,16 @@ Lisa: That sounds super sleek. But changing how 40 reps log their numbers is a h
       },
     ],
     supporting_evidence: [
-      "Lisa: 'Unless our board mandates a change, our spreadsheets work well enough for now.'",
-      "Lisa: 'changing how 40 reps log their numbers is a huge headache.'",
+      {
+        quote: "Lisa: 'Unless our board mandates a change, our spreadsheets work well enough for now.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
+      {
+        quote: "Lisa: 'changing how 40 reps log their numbers is a huge headache.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -981,7 +1041,11 @@ Kevin: Maybe, but if their solution is already included in our existing enterpri
       },
     ],
     supporting_evidence: [
-      "Kevin: 'CompetitorX is already bundled in our enterprise Microsoft agreement for 40% less cost, and their VP called our CIO yesterday.'",
+      {
+        quote: "Kevin: 'CompetitorX is already bundled in our enterprise Microsoft agreement for 40% less cost, and their VP called our CIO yesterday.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
@@ -1089,7 +1153,11 @@ AE: Got it, let's just wait then.
       },
     ],
     supporting_evidence: [
-      "Dan: 'as I mentioned on our last two calls, I can't approve anything over $10k. You still need to present this to our CFO Patricia, but she is out on leave until next month.'",
+      {
+        quote: "Dan: 'as I mentioned on our last two calls, I can't approve anything over $10k. You still need to present this to our CFO Patricia, but she is out on leave until next month.'",
+        grounding_type: 'explicit_statement',
+        confidence: 90,
+      },
     ],
   },
 };
