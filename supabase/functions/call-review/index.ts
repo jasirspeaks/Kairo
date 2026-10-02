@@ -662,18 +662,35 @@ async function callGemini(prompt: string, model: string): Promise<string> {
   throw new Error(message);
 }
 
-async function callGeminiWithFallback(prompt: string): Promise<{ parsed: Json; modelUsed: string }> {
+const PROMPT_VERSION = 'v2.1.0';
+const SYSTEM_PROMPT_HASH = 'kairo-sys-2.1.0';
+
+async function callGeminiWithFallback(prompt: string): Promise<{
+  parsed: Json;
+  modelUsed: string;
+  modelsAttempted: string[];
+  fallbackOccurred: boolean;
+  rawText: string;
+}> {
   let lastError: Error | null = null;
+  const modelsAttempted: string[] = [];
 
   for (let modelIndex = 0; modelIndex < MODEL_CHAIN.length; modelIndex++) {
     const model = MODEL_CHAIN[modelIndex];
+    modelsAttempted.push(model);
     const perModelAttempts = 2;
 
     for (let attempt = 1; attempt <= perModelAttempts; attempt++) {
       try {
         const text = await callGemini(prompt, model);
         const parsed = parseModelJson(text);
-        return { parsed, modelUsed: model };
+        return {
+          parsed,
+          modelUsed: model,
+          modelsAttempted,
+          fallbackOccurred: modelIndex > 0,
+          rawText: text,
+        };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         const isRateLimit = lastError.message === 'RATE_LIMITED';
@@ -897,11 +914,47 @@ serve(async (req) => {
       userMessage += '\n';
     }
 
+    const startTime = Date.now();
+    let inferenceModelUsed = 'unknown';
+    let inferenceAttempts: string[] = [];
+    let inferenceLogged = false;
+
     userMessage += `TRANSCRIPT\n${transcript}`;
 
-    const { parsed, modelUsed } = await callGeminiWithFallback(userMessage);
+    const { parsed, modelUsed, modelsAttempted, fallbackOccurred, rawText } =
+      await callGeminiWithFallback(userMessage);
+    inferenceModelUsed = modelUsed;
+    inferenceAttempts = modelsAttempted;
     console.log(`call-review: served by ${modelUsed}`);
     const extraction = normalizeExtraction(parsed, isFirstCall);
+
+    const latencyMs = Date.now() - startTime;
+
+    try {
+      await supabase.rpc('log_ai_inference', {
+        p_user_id: userId,
+        p_deal_id: deal_context?.deal_id || null,
+        p_conversation_id: body.conversation_id || null,
+        p_model_id: modelUsed,
+        p_fallback_occurred: fallbackOccurred,
+        p_models_attempted: modelsAttempted,
+        p_prompt_version: PROMPT_VERSION,
+        p_system_prompt_hash: SYSTEM_PROMPT_HASH,
+        p_input_context_snapshot: {
+          deal_name: deal_context?.deal_name,
+          company_name: deal_context?.company_name,
+          deal_stage: deal_context?.deal_stage,
+          is_first_call: isFirstCall,
+        },
+        p_raw_output_text: rawText,
+        p_parsed_output: extraction,
+        p_latency_ms: latencyMs,
+        p_status: fallbackOccurred ? 'fallback' : 'success',
+      });
+      inferenceLogged = true;
+    } catch (logErr) {
+      console.warn('call-review: failed to record ai_inference audit log:', logErr);
+    }
 
     return new Response(JSON.stringify({ review: extraction }), {
       status: 200,
