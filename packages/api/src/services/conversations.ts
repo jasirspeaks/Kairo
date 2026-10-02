@@ -149,6 +149,8 @@ export async function submitRecording(
     .eq('id', newConv.id);
 
   if (updateError) {
+    await client.storage.from('recordings').remove([storagePath]);
+    await client.from('conversations').delete().eq('id', newConv.id);
     throw new Error('Failed to save the recording. Please try again.');
   }
 

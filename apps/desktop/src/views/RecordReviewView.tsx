@@ -5,9 +5,10 @@ import {
   Sparkles,
   AlertCircle,
   CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { useAudioRecorder } from '@kairo/platform';
-import { useAuth, getDeals } from '@kairo/api';
+import { useAuth, getDeals, submitRecording } from '@kairo/api';
 import { Deal } from '@kairo/core';
 
 export function RecordReviewView() {
@@ -15,8 +16,11 @@ export function RecordReviewView() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [selectedDealId, setSelectedDealId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioMimeType, setAudioMimeType] = useState<string>('audio/webm');
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
     status,
@@ -42,6 +46,7 @@ export function RecordReviewView() {
 
   const handleStart = async () => {
     setStatusMessage(null);
+    setSuccessMessage(null);
     setAudioBlob(null);
     setAudioUrl(null);
     await start();
@@ -51,7 +56,34 @@ export function RecordReviewView() {
     const result = await stop();
     if (result?.blob) {
       setAudioBlob(result.blob);
+      setAudioMimeType(result.mimeType || 'audio/webm');
       setAudioUrl(URL.createObjectURL(result.blob));
+    }
+  };
+
+  const handleProcess = async () => {
+    if (!selectedDealId) {
+      setStatusMessage('Please select a deal before submitting.');
+      return;
+    }
+    if (!audioBlob) {
+      setStatusMessage('No recording available to process.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatusMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      await submitRecording(selectedDealId, audioBlob, audioMimeType);
+      setSuccessMessage('Call intelligence processed and deal updated successfully.');
+      setAudioBlob(null);
+      setAudioUrl(null);
+    } catch (err: any) {
+      setStatusMessage(err?.message || 'Failed to process recording.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -75,6 +107,13 @@ export function RecordReviewView() {
           Capture conversation audio with native desktop microphone processing and AI intelligence extraction
         </p>
       </div>
+
+      {successMessage && (
+        <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span>{successMessage}</span>
+        </div>
+      )}
 
       {(errorMessage || statusMessage) && (
         <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-center gap-2">
@@ -176,11 +215,21 @@ export function RecordReviewView() {
             </div>
             <audio src={audioUrl} controls className="w-full max-w-md h-10" />
             <button
-              onClick={() => setStatusMessage('Ready for edge transcription & AI deal qualification!')}
-              className="btn-primary text-xs py-2 px-5 flex items-center gap-2 mt-2"
+              onClick={handleProcess}
+              disabled={isSubmitting}
+              className="btn-primary text-xs py-2 px-5 flex items-center gap-2 mt-2 disabled:opacity-50"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Process Call Intelligence</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Processing & Extracting Intelligence...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Process Call Intelligence</span>
+                </>
+              )}
             </button>
           </div>
         )}
