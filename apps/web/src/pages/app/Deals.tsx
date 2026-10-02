@@ -104,14 +104,11 @@ export function Deals() {
       if (stageFilter !== 'all' && d.deal_stage !== stageFilter) return false;
 
       if (statusFilter === 'active') {
-        // "Active" means: lifecycle status is active, it isn't closed
-        // won/lost, and it has at least one completed call review --
-        // deals with only an unreviewed/upcoming meeting don't count yet.
+        // "Active" means: lifecycle status is active and it isn't closed Won/Lost.
         if (d.status !== 'active') return false;
         if (d.current_status === 'Won' || d.current_status === 'Lost') return false;
-        if (!d.has_reviewed_call) return false;
       } else if (statusFilter !== 'all') {
-        if (d.current_status !== statusFilter) return false;
+        if ((d.current_status || 'Unknown') !== statusFilter) return false;
       }
 
       const window = timelineMs[timelineFilter];

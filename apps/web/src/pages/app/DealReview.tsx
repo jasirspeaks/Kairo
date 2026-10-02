@@ -546,24 +546,26 @@ export function DealReview() {
     />
   );
 
-  if (!dealState || calls.length === 0) {
-    return (
-      <div className="animate-fade-in max-w-2xl">
-        <div className="-mx-4 md:hidden">
-          <TopBar title={deal.deal_name} onBack={() => navigate('/app/deals')} />
-        </div>
-        <EmptyState
-          icon={<Phone className="w-6 h-6" />}
-          title="No calls yet"
-          description="Add a call transcript to this deal to see Kairo's review of where things stand."
-          action={<Button onClick={() => navigate('/app/new', { state: { existingDealId: dealId } })}>Add a Call</Button>}
-        />
-      </div>
-    );
-  }
+  const effectiveDealState: DealState = dealState || {
+    id: `placeholder-${deal.id}`,
+    deal_id: deal.id,
+    user_id: deal.user_id,
+    current_status: 'Unknown',
+    confidence: 'Low',
+    deal_health_score: 0,
+    highest_priority_risk: null,
+    highest_priority_risk_full: null,
+    what_youre_missing: null,
+    key_follow_up_message: null,
+    manager_note: 'Awaiting first call evidence for deal qualification and risk analysis.',
+    supporting_evidence: null,
+    last_review_summary: null,
+    pillars: null,
+    updated_at: deal.updated_at,
+  };
 
   const lastContact = calls[calls.length - 1]?.created_at;
-  const healthColor = healthScoreColor(dealState.deal_health_score ?? 0);
+  const healthColor = healthScoreColor(effectiveDealState.deal_health_score ?? 0);
 
   return (
     <div className="animate-fade-in w-full">
@@ -585,9 +587,9 @@ export function DealReview() {
           </div>
           <span
             className="text-sm font-bold px-3 py-1.5 rounded-full border flex-shrink-0"
-            style={getStatusStyle(dealState.current_status || 'Unknown')}
+            style={getStatusStyle(effectiveDealState.current_status || 'Unknown')}
           >
-            {dealState.current_status || 'Unknown'}
+            {effectiveDealState.current_status || 'Unknown'}
           </span>
         </div>
 
@@ -595,9 +597,9 @@ export function DealReview() {
           <p className="text-textSecondary text-sm">{deal.company_name}</p>
           <span
             className="text-xs font-bold px-2.5 py-1 rounded-full border"
-            style={getStatusStyle(dealState.current_status || 'Unknown')}
+            style={getStatusStyle(effectiveDealState.current_status || 'Unknown')}
           >
-            {dealState.current_status || 'Unknown'}
+            {effectiveDealState.current_status || 'Unknown'}
           </span>
         </div>
       </div>
@@ -616,11 +618,11 @@ export function DealReview() {
                   cx="32" cy="32" r="28" fill="none" strokeWidth="6" strokeLinecap="round"
                   stroke={healthColor}
                   strokeDasharray={`${2 * Math.PI * 28}`}
-                  strokeDashoffset={`${2 * Math.PI * 28 * (1 - (dealState.deal_health_score ?? 0) / 100)}`}
+                  strokeDashoffset={`${2 * Math.PI * 28 * (1 - (effectiveDealState.deal_health_score ?? 0) / 100)}`}
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm font-bold text-textPrimary">{dealState.deal_health_score ?? '—'}</span>
+                <span className="text-sm font-bold text-textPrimary">{effectiveDealState.deal_health_score ?? '—'}</span>
               </div>
             </div>
             <div className="hidden sm:block">
@@ -654,24 +656,48 @@ export function DealReview() {
         </div>
       </div>
 
+      {/* ---- Awaiting Evidence banner when no calls have been reviewed yet ---- */}
+      {calls.length === 0 && (
+        <div className="rounded-xl border border-primary/25 bg-primary/[0.06] p-4 md:p-6 mb-4 md:mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0 text-primary mt-0.5">
+              <Phone className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-textPrimary mb-0.5">Awaiting Call Evidence</h2>
+              <p className="text-xs text-textSecondary leading-relaxed">
+                Add or record a call transcript to start tracking qualification pillars and deal risks.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => navigate('/app/new', { state: { existingDealId: dealId } })}
+            size="sm"
+            className="flex-shrink-0"
+          >
+            Add Call Transcript
+          </Button>
+        </div>
+      )}
+
       {/* ---- Highest Priority Risk: the hero card. This is the one
           question the product exists to answer, so it's the only card
           with a filled (not just outlined) accent treatment, sits first,
           and is never toggled away. Everything else is secondary to it. */}
-      {dealState.highest_priority_risk_full?.risk && (
+      {effectiveDealState.highest_priority_risk_full?.risk && (
         <div className="rounded-xl border border-red-400/25 bg-red-400/[0.06] p-4 md:p-6 mb-4 md:mb-5">
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="w-4 h-4 text-red-400" />
             <h2 className="text-xs font-semibold uppercase tracking-widest text-red-400">Highest Priority Risk</h2>
           </div>
           <p className="text-textPrimary text-base font-semibold mb-3 leading-snug">
-            {dealState.highest_priority_risk_full.risk}
+            {effectiveDealState.highest_priority_risk_full.risk}
           </p>
-          {dealState.highest_priority_risk_full.why_it_matters && (
+          {effectiveDealState.highest_priority_risk_full.why_it_matters && (
             <div className="bg-bg/40 border border-red-400/15 rounded-lg p-3">
               <p className="text-xs text-textMuted font-medium mb-1">Why it matters</p>
               <p className="text-textSecondary text-xs leading-relaxed">
-                {dealState.highest_priority_risk_full.why_it_matters}
+                {effectiveDealState.highest_priority_risk_full.why_it_matters}
               </p>
             </div>
           )}
@@ -682,7 +708,7 @@ export function DealReview() {
           Sits between the hero risk card and the tab group -- ambient
           state like the health score, not a drill-down, so it's never
           hidden behind a tab. */}
-      <PillarStrip pillars={dealState.pillars} />
+      <PillarStrip pillars={effectiveDealState.pillars} />
 
       {/* ---- Tab group: Action Plan (default), Risk Evolution,
           Stakeholders. Pill buttons sit outside and above the content
@@ -699,7 +725,7 @@ export function DealReview() {
           />
         </div>
         <DealReviewTabPanel
-          dealState={dealState}
+          dealState={effectiveDealState}
           evolution={evolution}
           stakeholders={stakeholders}
           activeTab={reviewTab}

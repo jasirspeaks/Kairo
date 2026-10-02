@@ -27,6 +27,7 @@ function RiskDot({ riskLevel }: { riskLevel: string }) {
 }
 
 function DealRow({ deal, onClick }: { deal: DealWithState; onClick: () => void }) {
+  const currentStatus = deal.deal_state?.current_status || 'Unknown';
   return (
     <button
       onClick={onClick}
@@ -41,14 +42,12 @@ function DealRow({ deal, onClick }: { deal: DealWithState; onClick: () => void }
           <p className="text-textMuted text-xs mt-0.5">{deal.company_name}</p>
         )}
       </div>
-      {deal.deal_state?.current_status && (
-        <span
-          className="text-xs font-semibold px-2 py-0.5 rounded-full border self-center flex-shrink-0"
-          style={getStatusStyle(deal.deal_state.current_status)}
-        >
-          {deal.deal_state.current_status}
-        </span>
-      )}
+      <span
+        className="text-xs font-semibold px-2 py-0.5 rounded-full border self-center flex-shrink-0"
+        style={getStatusStyle(currentStatus)}
+      >
+        {currentStatus}
+      </span>
       <ArrowRight className="w-4 h-4 text-textMuted group-hover:text-accent transition-colors flex-shrink-0 self-center" />
     </button>
   );
@@ -249,14 +248,13 @@ export function Dashboard() {
   const pipelineValue = deals.reduce((sum, d) => sum + (d.deal_value || 0), 0);
   const pipelineAtRisk = atRisk.reduce((sum, d) => sum + (d.deal_value || 0), 0);
 
-  // Deals Requiring Attention: strict priority order by current status,
-  // most critical first. Only these six statuses qualify -- Unknown,
-  // Won, and Lost deals never appear in this list regardless of anything
-  // else about them.
-  const ATTENTION_ORDER: DealStatus[] = ['Critical', 'At Risk', 'Stalled', 'Recovering', 'Promising', 'Healthy'];
+  // Deals Requiring Attention: strict priority order by risk/gap status,
+  // most critical first. Only genuinely at-risk, stalled, or unreviewed/unknown deals
+  // qualify -- Promising and Healthy deals are intentionally excluded.
+  const ATTENTION_ORDER: DealStatus[] = ['Critical', 'At Risk', 'Stalled', 'Unknown'];
 
   const priorityRanked = ATTENTION_ORDER.flatMap(status =>
-    deals.filter(d => d.deal_state?.current_status === status)
+    deals.filter(d => (d.deal_state?.current_status || 'Unknown') === status)
   ).slice(0, 10);
 
   return (

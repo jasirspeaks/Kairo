@@ -94,13 +94,12 @@ export async function getDashboardDeals(
     deal_state: stateMap.get(deal.id) || null,
   }));
 
-  // Return only active deals that have at least one completed review
-  // and are not closed Won/Lost.
+  // Return all active deals that are not closed Won/Lost.
+  // Deals awaiting first review (deal_state === null) are preserved as active/Unknown.
   return dealsWithState.filter(
     (d) =>
-      d.deal_state !== null &&
-      d.deal_state.current_status !== 'Won' &&
-      d.deal_state.current_status !== 'Lost'
+      !d.deal_state ||
+      (d.deal_state.current_status !== 'Won' && d.deal_state.current_status !== 'Lost')
   );
 }
 
