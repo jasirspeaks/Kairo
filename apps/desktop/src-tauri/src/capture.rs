@@ -22,6 +22,14 @@ pub enum NativeCaptureStatus {
     Discarded,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureSource {
+    Microphone,
+    SystemAudio,
+    Combined,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaptureCapabilitiesResponse {
     pub microphone_supported: bool,
@@ -40,6 +48,7 @@ pub struct CaptureStateResponse {
     pub elapsed_seconds: u64,
     pub file_path: Option<String>,
     pub error_message: Option<String>,
+    pub capture_source: Option<CaptureSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,12 +60,14 @@ pub struct CaptureResultResponse {
     pub sample_rate: u32,
     pub channels: u16,
     pub file_size_bytes: u64,
+    pub capture_source: Option<CaptureSource>,
 }
 
 pub struct ActiveSession {
     pub meeting_id: String,
     pub deal_id: Option<String>,
     pub file_path: PathBuf,
+    pub capture_source: CaptureSource,
     pub start_time: Instant,
     pub paused_duration_secs: u64,
     pub is_paused: Arc<AtomicBool>,
@@ -458,10 +469,17 @@ impl CaptureEngine {
             }
         });
 
+        let capture_source = if sys_stream_opt.is_some() {
+            CaptureSource::Combined
+        } else {
+            CaptureSource::Microphone
+        };
+
         let session = ActiveSession {
             meeting_id: meeting_id.clone(),
             deal_id: deal_id.clone(),
             file_path: file_path.clone(),
+            capture_source,
             start_time: Instant::now(),
             paused_duration_secs: 0,
             is_paused,
@@ -487,6 +505,7 @@ impl CaptureEngine {
             elapsed_seconds: 0,
             file_path: Some(file_path.to_string_lossy().to_string()),
             error_message: None,
+            capture_source: Some(capture_source),
         })
     }
 
@@ -569,6 +588,7 @@ impl CaptureEngine {
             sample_rate: TARGET_SAMPLE_RATE,
             channels: TARGET_CHANNELS,
             file_size_bytes: file_size,
+            capture_source: Some(session.capture_source),
         })
     }
 
@@ -612,6 +632,7 @@ impl CaptureEngine {
                 elapsed_seconds: elapsed,
                 file_path: Some(session.file_path.to_string_lossy().to_string()),
                 error_message: None,
+                capture_source: Some(session.capture_source),
             }
         } else {
             CaptureStateResponse {
@@ -621,6 +642,7 @@ impl CaptureEngine {
                 elapsed_seconds: 0,
                 file_path: None,
                 error_message: self.last_error.lock().clone(),
+                capture_source: None,
             }
         }
     }

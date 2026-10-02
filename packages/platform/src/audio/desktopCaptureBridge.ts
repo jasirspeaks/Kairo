@@ -24,9 +24,9 @@ export async function getNativeCaptureCapabilities(): Promise<NativeCaptureCapab
 
   return {
     microphone_supported: typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia,
-    system_audio_supported: typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia,
+    system_audio_supported: false,
     available_devices: [],
-    default_device_name: 'Browser WebRTC Audio',
+    default_device_name: null,
     target_sample_rate: 16000,
     target_channels: 1,
   };
@@ -36,64 +36,50 @@ export async function startNativeMeetingCapture(
   meetingId: string,
   dealId?: string | null
 ): Promise<NativeCaptureState> {
-  if (isTauriEnvironment()) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      return await invoke<NativeCaptureState>('start_meeting_capture', {
-        meetingId,
-        dealId: dealId || null,
-      });
-    } catch (e: any) {
-      console.error('[DesktopBridge] Failed to invoke start_meeting_capture:', e);
-      throw new Error(e?.message || 'Failed to start desktop audio capture');
-    }
+  if (!isTauriEnvironment()) {
+    throw new Error('Native desktop audio capture is only supported in the Kairo desktop application.');
   }
 
-  // Web fallback simulation
-  return {
-    status: 'recording',
-    meeting_id: meetingId,
-    deal_id: dealId || null,
-    elapsed_seconds: 0,
-    file_path: null,
-    error_message: null,
-  };
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<NativeCaptureState>('start_meeting_capture', {
+      meetingId,
+      dealId: dealId || null,
+    });
+  } catch (e: any) {
+    console.error('[DesktopBridge] Failed to invoke start_meeting_capture:', e);
+    throw new Error(e?.message || 'Failed to start desktop audio capture');
+  }
 }
 
 export async function pauseNativeMeetingCapture(): Promise<void> {
-  if (isTauriEnvironment()) {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('pause_meeting_capture');
+  if (!isTauriEnvironment()) {
+    throw new Error('Native desktop audio capture is only supported in the Kairo desktop application.');
   }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('pause_meeting_capture');
 }
 
 export async function resumeNativeMeetingCapture(): Promise<void> {
-  if (isTauriEnvironment()) {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('resume_meeting_capture');
+  if (!isTauriEnvironment()) {
+    throw new Error('Native desktop audio capture is only supported in the Kairo desktop application.');
   }
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('resume_meeting_capture');
 }
 
 export async function stopNativeMeetingCapture(): Promise<NativeCaptureResult> {
-  if (isTauriEnvironment()) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      return await invoke<NativeCaptureResult>('stop_meeting_capture');
-    } catch (e: any) {
-      console.error('[DesktopBridge] Failed to invoke stop_meeting_capture:', e);
-      throw new Error(e?.message || 'Failed to stop desktop audio capture');
-    }
+  if (!isTauriEnvironment()) {
+    throw new Error('Native desktop audio capture is only supported in the Kairo desktop application.');
   }
 
-  return {
-    meeting_id: '',
-    deal_id: null,
-    file_path: '',
-    duration_seconds: 0,
-    sample_rate: 16000,
-    channels: 1,
-    file_size_bytes: 0,
-  };
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke<NativeCaptureResult>('stop_meeting_capture');
+  } catch (e: any) {
+    console.error('[DesktopBridge] Failed to invoke stop_meeting_capture:', e);
+    throw new Error(e?.message || 'Failed to stop desktop audio capture');
+  }
 }
 
 export async function discardNativeMeetingCapture(): Promise<void> {

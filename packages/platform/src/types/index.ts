@@ -28,6 +28,8 @@ export interface UseAudioRecorderResult {
   discard: () => void;
 }
 
+export type CaptureSource = 'microphone' | 'system_audio' | 'combined';
+
 export type NativeCaptureStatus =
   | 'idle'
   | 'recording'
@@ -43,6 +45,7 @@ export interface NativeCaptureState {
   elapsed_seconds: number;
   file_path: string | null;
   error_message: string | null;
+  capture_source?: CaptureSource | null;
 }
 
 export interface NativeCaptureCapabilities {
@@ -62,6 +65,7 @@ export interface NativeCaptureResult {
   sample_rate: number;
   channels: number;
   file_size_bytes: number;
+  capture_source?: CaptureSource | null;
 }
 
 export interface UseMeetingCaptureResult {

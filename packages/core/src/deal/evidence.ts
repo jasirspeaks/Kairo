@@ -50,6 +50,10 @@ export function normalizeEvidenceItem(raw: unknown): GroundedEvidenceItem | null
       typeof obj.confidence === 'number' && !Number.isNaN(obj.confidence)
         ? Math.max(0, Math.min(100, Math.round(obj.confidence)))
         : 80;
+    const ai_inference_id =
+      typeof obj.ai_inference_id === 'string' && obj.ai_inference_id.trim()
+        ? obj.ai_inference_id.trim()
+        : null;
 
     return {
       quote,
@@ -57,6 +61,7 @@ export function normalizeEvidenceItem(raw: unknown): GroundedEvidenceItem | null
       pillar_key,
       grounding_type,
       confidence,
+      ai_inference_id,
     };
   }
 

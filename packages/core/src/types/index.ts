@@ -144,6 +144,7 @@ export interface GroundedEvidenceItem {
   pillar_key?: PillarKey | null;
   grounding_type: GroundingType;
   confidence: number; // 0-100
+  ai_inference_id?: string | null;
 }
 
 export interface RiskDeltaItem {
