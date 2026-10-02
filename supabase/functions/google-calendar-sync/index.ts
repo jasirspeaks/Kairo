@@ -309,9 +309,9 @@ serve(async (req) => {
     const {
       data: existingRows,
     } = await supabase
-      .from('scheduled_meetings')
+      .from('meetings')
       .select(
-        'id, calendar_event_id, status'
+        'id, calendar_event_id, status, deal_id, source'
       )
       .eq('user_id', user.id)
       .gte(
@@ -328,6 +328,16 @@ serve(async (req) => {
         (existingRows ?? []).map(
           (r: any) => [
             r.calendar_event_id,
+            r,
+          ]
+        )
+      );
+
+    const existingById =
+      new Map(
+        (existingRows ?? []).map(
+          (r: any) => [
+            r.id,
             r,
           ]
         )
@@ -370,14 +380,18 @@ serve(async (req) => {
     for (const event of events) {
       if (!event.id) continue;
 
+      const kairoMeetingId =
+        event.extendedProperties?.private?.kairo_meeting_id;
+      const kairoDealId =
+        event.extendedProperties?.private?.kairo_deal_id;
+
       const isCancelled =
         event.status ===
         'cancelled';
 
       const existing =
-        existingByEventId.get(
-          event.id
-        );
+        (kairoMeetingId ? existingById.get(kairoMeetingId) : undefined) ??
+        existingByEventId.get(event.id);
 
       if (isCancelled) {
         if (!existing) {
@@ -392,7 +406,7 @@ serve(async (req) => {
             error: delError,
           } = await supabase
             .from(
-              'scheduled_meetings'
+              'meetings'
             )
             .delete()
             .eq(
@@ -408,7 +422,7 @@ serve(async (req) => {
             data: row,
           } = await supabase
             .from(
-              'scheduled_meetings'
+              'meetings'
             )
             .select(
               'cancelled_at'
@@ -425,7 +439,7 @@ serve(async (req) => {
                 updateError,
             } = await supabase
               .from(
-                'scheduled_meetings'
+                'meetings'
               )
               .update({
                 cancelled_at:
@@ -468,7 +482,7 @@ serve(async (req) => {
             error: delError,
           } = await supabase
             .from(
-              'scheduled_meetings'
+              'meetings'
             )
             .delete()
             .eq(
@@ -492,6 +506,28 @@ serve(async (req) => {
         event.end?.dateTime ??
         event.end?.date ??
         null;
+
+      // Deterministic Kairo-managed meeting path
+      if (kairoMeetingId && existing) {
+        const { error: updateError } = await supabase
+          .from('meetings')
+          .update({
+            calendar_event_id: event.id,
+            title: event.summary ?? existing.title ?? 'Untitled meeting',
+            start_time: startTime,
+            end_time: endTime,
+            attendees: event.attendees ?? null,
+            meeting_link: meetingLink,
+            cancelled_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+
+        if (!updateError) {
+          synced++;
+        }
+        continue;
+      }
 
       const isBrandNew =
         !existing;
@@ -519,13 +555,21 @@ serve(async (req) => {
             null,
           meeting_link:
             meetingLink,
+          source:
+            kairoMeetingId ? 'kairo_native' : 'google_calendar',
           cancelled_at:
             null,
           updated_at:
             new Date().toISOString(),
         };
 
-      if (claimsIntent) {
+      if (kairoMeetingId) {
+        upsertPayload.id = kairoMeetingId;
+        upsertPayload.status = 'scheduled';
+        if (kairoDealId) {
+          upsertPayload.deal_id = kairoDealId;
+        }
+      } else if (claimsIntent) {
         upsertPayload.status =
           'assigned';
 
@@ -537,7 +581,7 @@ serve(async (req) => {
         error: upsertError,
       } = await supabase
         .from(
-          'scheduled_meetings'
+          'meetings'
         )
         .upsert(
           upsertPayload,
@@ -549,7 +593,7 @@ serve(async (req) => {
 
       if (upsertError) {
         console.error(
-          'scheduled_meetings upsert error:',
+          'meetings upsert error:',
           upsertError.message
         );
 

@@ -1,7 +1,24 @@
 import { ScheduledMeeting } from '@kairo/core';
 import { getClientConfig, getKairoClient, KairoClient } from '../client';
+import { MeetingWithDeal } from './meetings';
 
 export const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/r';
+
+export interface CalendarStatus {
+  connected: boolean;
+  hasWriteAccess: boolean;
+  needsReconnect: boolean;
+}
+
+export interface ScheduleMeetingInput {
+  deal_id: string;
+  title?: string;
+  start_time: string; // ISO 8601
+  end_time?: string;   // ISO 8601
+  attendees?: string[] | Array<{ email: string; name?: string }>;
+  description?: string;
+  create_meet?: boolean;
+}
 
 export async function checkCalendarConnected(
   _userId?: string,
@@ -10,6 +27,33 @@ export async function checkCalendarConnected(
   const { data, error } = await client.rpc('get_calendar_connection_status');
   if (error || !data) return false;
   return Array.isArray(data) ? data.length > 0 : !!data;
+}
+
+export async function getCalendarConnectionStatus(
+  userId: string,
+  client: KairoClient = getKairoClient()
+): Promise<CalendarStatus> {
+  const { data, error } = await client
+    .from('calendar_connections')
+    .select('scope, needs_reconnect, token_expires_at')
+    .eq('user_id', userId)
+    .eq('provider', 'google')
+    .maybeSingle();
+
+  if (error || !data) {
+    return { connected: false, hasWriteAccess: false, needsReconnect: false };
+  }
+
+  const scope = data.scope || '';
+  const hasWriteAccess =
+    scope.includes('calendar.events') ||
+    (scope.includes('https://www.googleapis.com/auth/calendar') && !scope.includes('calendar.readonly'));
+
+  return {
+    connected: true,
+    hasWriteAccess,
+    needsReconnect: data.needs_reconnect === true || !hasWriteAccess,
+  };
 }
 
 export async function syncGoogleCalendar(
@@ -32,12 +76,44 @@ export async function syncGoogleCalendar(
   }
 }
 
+export async function scheduleMeetingViaGoogle(
+  input: ScheduleMeetingInput,
+  client: KairoClient = getKairoClient()
+): Promise<MeetingWithDeal> {
+  const { data: { session } } = await client.auth.getSession();
+  if (!session) {
+    throw new Error('You must be signed in to schedule a meeting.');
+  }
+
+  const { supabaseUrl, supabaseAnonKey } = getClientConfig();
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/schedule-meeting`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    const err: any = new Error(result.message || result.error || 'Failed to schedule meeting.');
+    err.code = result.error;
+    throw err;
+  }
+
+  return result.meeting as MeetingWithDeal;
+}
+
 export async function getScheduledMeetings(
   userId: string,
   client: KairoClient = getKairoClient()
 ): Promise<(ScheduledMeeting & { deal_name?: string })[]> {
   const { data, error } = await client
-    .from('scheduled_meetings')
+    .from('meetings')
     .select('*, deals(deal_name)')
     .eq('user_id', userId)
     .eq('status', 'unassigned')

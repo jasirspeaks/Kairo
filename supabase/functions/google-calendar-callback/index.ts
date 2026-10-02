@@ -338,6 +338,10 @@ serve(async (req) => {
             expiresAt,
           scope:
             tokenData.scope,
+          needs_reconnect:
+            false,
+          calendar_id:
+            'primary',
           updated_at:
             new Date().toISOString(),
         },

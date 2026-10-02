@@ -6,6 +6,13 @@ export interface MeetingWithDeal extends Meeting {
   company_name?: string;
 }
 
+export {
+  scheduleMeetingViaGoogle,
+  getCalendarConnectionStatus,
+  type ScheduleMeetingInput,
+  type CalendarStatus,
+} from './calendar';
+
 export interface GetMeetingsOptions {
   dealId?: string;
   status?: MeetingStatus | MeetingStatus[];
