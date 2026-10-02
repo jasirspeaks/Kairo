@@ -44,3 +44,8 @@ pub fn get_capture_status(
 ) -> Result<CaptureStateResponse, String> {
     Ok(engine.get_status())
 }
+
+#[tauri::command]
+pub fn read_capture_bytes(file_path: String) -> Result<Vec<u8>, String> {
+    std::fs::read(&file_path).map_err(|e| format!("Failed to read capture bytes: {}", e))
+}

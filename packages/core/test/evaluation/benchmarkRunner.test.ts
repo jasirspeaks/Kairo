@@ -16,8 +16,8 @@ describe('AI Evaluation Benchmark Suite & Regression Gate', () => {
       minOverallScore: 90,
     });
 
-    expect(report.totalScenarios).toBe(6);
-    expect(report.passedScenarios).toBe(6);
+    expect(report.totalScenarios).toBe(ALL_BENCHMARK_SCENARIOS.length);
+    expect(report.passedScenarios).toBe(ALL_BENCHMARK_SCENARIOS.length);
     expect(report.failedScenarios).toBe(0);
     expect(report.overallScore).toBe(100);
     expect(report.metrics.falsePositiveRate).toBe(0);

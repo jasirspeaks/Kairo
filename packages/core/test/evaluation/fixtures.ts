@@ -683,6 +683,417 @@ Rachel: No, she has completely different architectural priorities and asked us t
   },
 };
 
+/**
+ * Scenario 7: The "Fake Next Step" Stalling Trap
+ * Rep leaves call thinking deal is moving forward because buyer said "we'll circle back next month",
+ * but there is no calendar invite, no clear owner, no mutual evaluation milestone, and no compelling event.
+ */
+export const SCENARIO_FAKE_NEXT_STEP: EvaluationBenchmarkScenario = {
+  id: 'scenario-fake-next-step',
+  name: 'Vague "Circle Back" Stalling Trap without Calendar Milestone',
+  description: 'AE marks deal progressing despite vague buyer commitment and missing decision milestone.',
+  transcript: `
+AE: Thanks for reviewing the demo, Tom. How does next Tuesday look to review the formal pricing proposal?
+Tom: Hey, Tuesday is slammed for us. Why don't you send the PDF over and we'll circle back sometime after the holidays or next month when things quiet down?
+AE: Sounds good! I'll email the PDF and follow up in January.
+Tom: Perfect, thanks.
+  `,
+  expectedJudgment: {
+    maxHealthScore: 50,
+    allowedStatuses: ['Stalled', 'At Risk', 'Unknown'],
+    disallowedStatuses: ['Healthy', 'Promising', 'Won'],
+    requiredPillarStatuses: {
+      compelling_event: 'unconfirmed',
+      decision_process: 'unconfirmed',
+    },
+    requiredMissingGaps: ['next step', 'decision timeline', 'compelling event'],
+    riskKeywords: ['stall', 'circle back', 'calendar', 'milestone', 'urgency', 'commitment'],
+  },
+  mockReview: {
+    call: {
+      call_status: 'Stalled',
+      verdict: 'Buyer brushed off meeting request with vague "circle back after the holidays" stall.',
+      reason: 'No scheduled next meeting, no mutual action plan, and no compelling reason to re-engage in January.',
+      highest_priority_risk: {
+        risk: 'Unanchored Next Step and Deal Momentum Loss',
+        why_it_matters: 'Deals left with vague follow-up timelines have an 80%+ drop-off rate.',
+        evidence: "Tom: 'Why don't you send the PDF over and we'll circle back sometime after the holidays or next month'",
+      },
+      what_youre_missing: [
+        {
+          gap: 'Firm Decision Milestone',
+          question_to_answer: 'What specific business event or deadline will trigger Tom’s team to evaluate the PDF?',
+        },
+      ],
+      recommended_next_action: 'Lock in a specific 15-minute calendar review before sending the PDF proposal.',
+      key_follow_up_message: 'Tom, happy to send the PDF, but before I do, can we hold 15 mins on Jan 8th so we can walk through questions together?',
+      manager_note: 'Do not accept vague follow-ups. Rep let the buyer off the phone without a calendar commitment.',
+    },
+    deal: {
+      status: 'Stalled',
+      confidence: 'High',
+      status_reason: 'No active next milestone; deal momentum stalled at proposal stage.',
+      health_score: 38,
+      highest_priority_risk: {
+        risk: 'Vague follow-up timeline and lack of buyer urgency',
+        why_it_matters: 'Deal will go dark without scheduled calendar milestone.',
+        evidence: 'Buyer requested PDF with vague promise to circle back next month.',
+      },
+      what_youre_missing: [],
+      recommended_next_action: 'Secure a firm calendar meeting before releasing detailed pricing.',
+      manager_note: 'At risk of going dark.',
+      pillars: {
+        compelling_event: {
+          status: 'unconfirmed',
+          confidence: 15,
+          evidence: 'No event or deadline forcing an evaluation before January.',
+        },
+        economic_buyer: {
+          status: 'unconfirmed',
+          confidence: 25,
+          evidence: 'Tom authority unverified.',
+        },
+        decision_process: {
+          status: 'unconfirmed',
+          confidence: 10,
+          evidence: 'No evaluation criteria or process agreed upon.',
+        },
+        budget: {
+          status: 'unconfirmed',
+          confidence: 20,
+          evidence: 'Pricing PDF not yet reviewed or accepted.',
+        },
+        champion: {
+          status: 'unconfirmed',
+          confidence: 30,
+          evidence: 'Tom demonstrated low urgency and deferred meeting.',
+        },
+      },
+    },
+    stakeholder_signals: [
+      {
+        name: 'Tom',
+        role: 'Evaluation Lead',
+        sentiment: 'neutral',
+        evidence: 'Deferred scheduling and requested offline PDF.',
+      },
+    ],
+    supporting_evidence: [
+      "Tom: 'Why don't you send the PDF over and we'll circle back sometime after the holidays or next month when things quiet down?'",
+    ],
+  },
+};
+
+/**
+ * Scenario 8: Unresolved Status Quo / Inertia Trap
+ * Buyer loves the concept but acknowledges their homegrown spreadsheet system is "working fine for now".
+ * AE fails to uncover cost of inaction, leading to a closed-lost to status quo.
+ */
+export const SCENARIO_UNRESOLVED_STATUS_QUO: EvaluationBenchmarkScenario = {
+  id: 'scenario-unresolved-status-quo',
+  name: 'Strong Concept Interest but entrenched Status Quo Inertia',
+  description: 'Buyer appreciates the tool but admits internal spreadsheets work fine and change is painful.',
+  transcript: `
+AE: How are you managing pipeline forecasts currently, Lisa?
+Lisa: Honestly, we just have a master Google Sheet. It’s clunky and manual, but everyone knows how to use it and it gets the job done for our weekly executive meeting.
+AE: Our platform automates all of that in real time!
+Lisa: That sounds super sleek. But changing how 40 reps log their numbers is a huge headache. Unless our board mandates a change, our spreadsheets work well enough for now.
+  `,
+  expectedJudgment: {
+    maxHealthScore: 48,
+    allowedStatuses: ['At Risk', 'Stalled', 'Critical'],
+    disallowedStatuses: ['Healthy', 'Promising', 'Won'],
+    requiredPillarStatuses: {
+      compelling_event: 'unconfirmed',
+      champion: 'unconfirmed',
+    },
+    requiredMissingGaps: ['cost of inaction', 'compelling event', 'urgency'],
+    riskKeywords: ['status quo', 'inertia', 'spreadsheets', 'headache', 'change', 'board'],
+  },
+  mockReview: {
+    call: {
+      call_status: 'At Risk',
+      verdict: 'High status quo inertia: customer spreadsheet is deemed "good enough" with no pain of inaction.',
+      reason: 'Lisa stated 40 reps changing processes is too painful unless board mandates it.',
+      highest_priority_risk: {
+        risk: 'Loss to Status Quo Inertia',
+        why_it_matters: 'Without quantified cost of inaction, customer will stay on free spreadsheets.',
+        evidence: "Lisa: 'Unless our board mandates a change, our spreadsheets work well enough for now.'",
+      },
+      what_youre_missing: [
+        {
+          gap: 'Quantified Cost of Inaction',
+          question_to_answer: 'What revenue or forecasting error does the current spreadsheet cause the executive team?',
+        },
+      ],
+      recommended_next_action: 'Focus discovery on the revenue cost of pipeline blindness in their current spreadsheet.',
+      key_follow_up_message: 'Lisa, what is the cost to the business when a forecast in the spreadsheet turns out to be 20% off at quarter-end?',
+      manager_note: 'Deal will die to "no decision" unless cost of inaction is quantified.',
+    },
+    deal: {
+      status: 'At Risk',
+      confidence: 'High',
+      status_reason: 'Entrenched status quo; customer perceives migration pain higher than current spreadsheet pain.',
+      health_score: 35,
+      highest_priority_risk: {
+        risk: 'No compelling event to displace internal Google Sheet',
+        why_it_matters: 'Perceived change management cost outweighs perceived product value.',
+        evidence: 'Lisa noted 40-rep rollout is a huge headache and spreadsheet works well enough.',
+      },
+      what_youre_missing: [],
+      recommended_next_action: 'Reframe conversation around board-level forecasting risk and missed revenue.',
+      manager_note: 'Severe status quo risk.',
+      pillars: {
+        compelling_event: {
+          status: 'unconfirmed',
+          confidence: 10,
+          evidence: 'Customer explicitly stated spreadsheet is good enough for now.',
+        },
+        economic_buyer: {
+          status: 'unconfirmed',
+          confidence: 20,
+          evidence: 'Board or CRO authority required to mandate change.',
+        },
+        decision_process: {
+          status: 'unconfirmed',
+          confidence: 15,
+          evidence: 'No active project or mandate.',
+        },
+        budget: {
+          status: 'unconfirmed',
+          confidence: 15,
+          evidence: 'No budget allocated for spreadsheet replacement.',
+        },
+        champion: {
+          status: 'unconfirmed',
+          confidence: 25,
+          evidence: 'Lisa unwilling to champion internal change management.',
+        },
+      },
+    },
+    stakeholder_signals: [
+      {
+        name: 'Lisa',
+        role: 'Operations Lead',
+        sentiment: 'skeptic',
+        evidence: 'Expressed concern over 40-rep rollout headache and defended spreadsheet.',
+      },
+    ],
+    supporting_evidence: [
+      "Lisa: 'Unless our board mandates a change, our spreadsheets work well enough for now.'",
+      "Lisa: 'changing how 40 reps log their numbers is a huge headache.'",
+    ],
+  },
+};
+
+/**
+ * Scenario 9: Unaddressed Competitor Bake-Off
+ * Customer is running an active proof-of-concept with direct incumbent competitor, but rep fails to differentiate.
+ */
+export const SCENARIO_COMPETITOR_AMBIGUITY: EvaluationBenchmarkScenario = {
+  id: 'scenario-competitor-ambiguity',
+  name: 'Hidden Competitor Threat and Undifferentiated Feature Comparison',
+  description: 'Buyer is conducting a bake-off with Competitor X who is offering 40% discount and bundling.',
+  transcript: `
+AE: How is our interface feeling compared to what you tested earlier?
+Kevin: Your UI is cleaner, but CompetitorX is already bundled in our enterprise Microsoft agreement for 40% less cost, and their VP called our CIO yesterday.
+AE: Well, our AI algorithms are much newer!
+Kevin: Maybe, but if their solution is already included in our existing enterprise tier, it's hard to justify standalone spend without distinct ROI.
+  `,
+  expectedJudgment: {
+    maxHealthScore: 50,
+    allowedStatuses: ['At Risk', 'Critical', 'Stalled'],
+    disallowedStatuses: ['Healthy', 'Promising', 'Won'],
+    requiredPillarStatuses: {
+      budget: 'unconfirmed',
+      decision_process: 'partial',
+    },
+    requiredMissingGaps: ['competitive differentiation', 'economic justification'],
+    riskKeywords: ['competitor', 'CompetitorX', 'bundled', 'discount', 'CIO', 'justification'],
+  },
+  mockReview: {
+    call: {
+      call_status: 'At Risk',
+      verdict: 'Severe competitive disadvantage: CompetitorX is bundled at 40% discount and engaged at CIO level.',
+      reason: 'AE failed to articulate distinct ROI against existing bundled competitor solution.',
+      highest_priority_risk: {
+        risk: 'Loss to Bundled Incumbent Competitor',
+        why_it_matters: 'CompetitorX is already in enterprise agreement and engaged with buyer CIO.',
+        evidence: "Kevin: 'CompetitorX is already bundled in our enterprise Microsoft agreement for 40% less cost, and their VP called our CIO yesterday.'",
+      },
+      what_youre_missing: [
+        {
+          gap: 'Differentiated Business Impact vs CompetitorX',
+          question_to_answer: 'What measurable business outcome does Kairo deliver that CompetitorX cannot provide?',
+        },
+      ],
+      recommended_next_action: 'Arm Kevin with a specific capability matrix and ROI business case for the CIO.',
+      key_follow_up_message: 'Kevin, let’s build a 1-page business case showing why our deal intelligence prevents $500k in slipped deals that CompetitorX ignores.',
+      manager_note: 'Competitive threat at executive level. Needs immediate differentiation or deal is lost.',
+    },
+    deal: {
+      status: 'At Risk',
+      confidence: 'High',
+      status_reason: 'Incumbent competitor offering discounted bundle with executive sponsorship.',
+      health_score: 41,
+      highest_priority_risk: {
+        risk: 'Incumbent vendor bundling and executive alignment',
+        why_it_matters: 'Competitor engaged with CIO with lower price point.',
+        evidence: 'Kevin stated CompetitorX is bundled in enterprise agreement.',
+      },
+      what_youre_missing: [],
+      recommended_next_action: 'Elevate value proposition to CIO level with focus on deal intelligence ROI.',
+      manager_note: 'Competitive defense required.',
+      pillars: {
+        compelling_event: {
+          status: 'partial',
+          confidence: 50,
+          evidence: 'Active evaluation underway but competitor favored on price.',
+        },
+        economic_buyer: {
+          status: 'unconfirmed',
+          confidence: 20,
+          evidence: 'CIO is the economic buyer and is talking directly to competitor VP.',
+        },
+        decision_process: {
+          status: 'partial',
+          confidence: 60,
+          evidence: 'Active comparison between Kairo and bundled incumbent.',
+        },
+        budget: {
+          status: 'unconfirmed',
+          confidence: 30,
+          evidence: 'Unwilling to spend additional budget if competitor is bundled.',
+        },
+        champion: {
+          status: 'partial',
+          confidence: 45,
+          evidence: 'Kevin likes UI but cannot defend purchase alone.',
+        },
+      },
+    },
+    stakeholder_signals: [
+      {
+        name: 'Kevin',
+        role: 'Evaluation Lead',
+        sentiment: 'neutral',
+        evidence: 'Noted UI advantage but highlighted competitor bundling and pricing.',
+      },
+    ],
+    supporting_evidence: [
+      "Kevin: 'CompetitorX is already bundled in our enterprise Microsoft agreement for 40% less cost, and their VP called our CIO yesterday.'",
+    ],
+  },
+};
+
+/**
+ * Scenario 10: Multi-Call Longitudinal EB Unresolved Risk
+ * Call 3 in a longitudinal deal: Rep was alerted on Call 1 and Call 2 that Economic Buyer was missing.
+ * On Call 3, rep still has not engaged EB. Risk MUST escalate to Critical with consecutive_unresolved_calls = 3.
+ */
+export const SCENARIO_LONGITUDINAL_EB_RISK: EvaluationBenchmarkScenario = {
+  id: 'scenario-longitudinal-eb-risk',
+  name: '3-Call Longitudinal Unresolved Economic Buyer Escalation',
+  description: 'Deal has progressed across 3 conversations without contacting economic buyer, triggering critical escalation.',
+  transcript: `
+AE: Great to sync again, Dan. We are on week 4 of our trial now.
+Dan: Yes, the engineers are continuing to test.
+AE: Are we ready to send contracts for next week's kickoff?
+Dan: Well as I mentioned on our last two calls, I can't approve anything over $10k. You still need to present this to our CFO Patricia, but she is out on leave until next month.
+AE: Got it, let's just wait then.
+  `,
+  expectedJudgment: {
+    maxHealthScore: 35,
+    allowedStatuses: ['Critical', 'At Risk', 'Stalled'],
+    disallowedStatuses: ['Healthy', 'Promising', 'Won'],
+    requiredPillarStatuses: {
+      economic_buyer: 'unconfirmed',
+      decision_process: 'unconfirmed',
+    },
+    requiredMissingGaps: ['economic buyer', 'CFO Patricia', 'approval authority'],
+    riskKeywords: ['Patricia', 'CFO', 'approval', 'consecutive', 'unresolved', 'leave'],
+  },
+  mockReview: {
+    call: {
+      call_status: 'At Risk',
+      verdict: 'Persistent longitudinal failure: Economic Buyer Patricia has been missing for 3 consecutive calls.',
+      reason: 'Dan cannot approve $10k+ spend; CFO Patricia has not been engaged and is on leave.',
+      highest_priority_risk: {
+        risk: 'Missing Economic Buyer Unresolved for 3 Consecutive Calls',
+        why_it_matters: 'Deal cannot close without CFO Patricia who is unengaged and currently on leave.',
+        evidence: "Dan: 'as I mentioned on our last two calls, I can't approve anything over $10k. You still need to present this to our CFO Patricia'",
+      },
+      what_youre_missing: [
+        {
+          gap: 'Direct Engagement with CFO Patricia',
+          question_to_answer: 'Who is acting CFO proxy with signing authority while Patricia is on leave?',
+        },
+      ],
+      recommended_next_action: 'Identify interim signing proxy or align re-engagement timeline directly with CFO.',
+      key_follow_up_message: 'Dan, while Patricia is away, who is handling interim spend approvals for Q4 tooling?',
+      manager_note: 'Recurring longitudinal risk. Third call with no EB engagement. Freeze close date.',
+    },
+    deal: {
+      status: 'Critical',
+      confidence: 'High',
+      status_reason: 'Longitudinal risk persistence: Economic buyer absent for 3 consecutive calls.',
+      health_score: 28,
+      highest_priority_risk: {
+        risk: 'Economic Buyer missing across 3 consecutive calls',
+        why_it_matters: 'Closing date slipped; signer uncontacted.',
+        evidence: 'Dan confirmed lack of authority across 3 syncs.',
+      },
+      what_youre_missing: [],
+      recommended_next_action: 'Executive sponsor outreach to finance proxy.',
+      manager_note: 'Severe longitudinal stall.',
+      pillars: {
+        compelling_event: {
+          status: 'unconfirmed',
+          confidence: 20,
+          evidence: 'Kickoff delayed due to absent signer.',
+        },
+        economic_buyer: {
+          status: 'unconfirmed',
+          confidence: 0,
+          evidence: 'CFO Patricia unengaged across all 3 calls.',
+        },
+        decision_process: {
+          status: 'unconfirmed',
+          confidence: 15,
+          evidence: 'Approval process blocked by absent EB.',
+        },
+        budget: {
+          status: 'unconfirmed',
+          confidence: 20,
+          evidence: 'Spend over $10k unapproved.',
+        },
+        champion: {
+          status: 'partial',
+          confidence: 40,
+          evidence: 'Dan supportive but powerless to sign.',
+        },
+      },
+    },
+    stakeholder_signals: [
+      {
+        name: 'Dan',
+        role: 'Evaluation Lead',
+        sentiment: 'neutral',
+        evidence: 'Reiterated lack of spending authority over $10k.',
+      },
+      {
+        name: 'Patricia',
+        role: 'CFO',
+        sentiment: null,
+        evidence: 'Uncontacted across all deal conversations.',
+      },
+    ],
+    supporting_evidence: [
+      "Dan: 'as I mentioned on our last two calls, I can't approve anything over $10k. You still need to present this to our CFO Patricia, but she is out on leave until next month.'",
+    ],
+  },
+};
+
 export const ALL_BENCHMARK_SCENARIOS: EvaluationBenchmarkScenario[] = [
   SCENARIO_HAPPY_EARS,
   SCENARIO_WELL_QUALIFIED,
@@ -690,5 +1101,10 @@ export const ALL_BENCHMARK_SCENARIOS: EvaluationBenchmarkScenario[] = [
   SCENARIO_PHANTOM_BUDGET,
   SCENARIO_PROCUREMENT_SURPRISE,
   SCENARIO_STAGE_REGRESSION,
+  SCENARIO_FAKE_NEXT_STEP,
+  SCENARIO_UNRESOLVED_STATUS_QUO,
+  SCENARIO_COMPETITOR_AMBIGUITY,
+  SCENARIO_LONGITUDINAL_EB_RISK,
 ];
+
 

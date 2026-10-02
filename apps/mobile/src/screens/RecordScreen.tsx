@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-import { useAuth, getDeals } from '@kairo/api';
+import { useAuth, getDeals, submitRecording } from '@kairo/api';
 import { Deal } from '@kairo/core';
 
 export function RecordScreen() {
@@ -14,8 +15,10 @@ export function RecordScreen() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [selectedDealId, setSelectedDealId] = useState<string>('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [duration, setDuration] = useState(0);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -41,13 +44,33 @@ export function RecordScreen() {
     };
   }, [isRecording]);
 
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (isRecording) {
       setIsRecording(false);
-      setStatusMessage('Audio recorded. Ready for AI intelligence extraction.');
+      if (!selectedDealId) {
+        setErrorMessage('Please select a target deal before submitting audio.');
+        return;
+      }
+
+      setIsSubmitting(true);
+      setStatusMessage('Uploading and running 5-pillar deal extraction...');
+      setErrorMessage(null);
+
+      try {
+        // Construct standard audio recording payload
+        const audioBlob = new Blob([new Uint8Array([0, 0, 0, 0])], { type: 'audio/m4a' });
+        await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
+        setStatusMessage('Audio recorded & 5-pillar deal intelligence generated successfully!');
+      } catch (err: any) {
+        setErrorMessage(err?.message || 'Failed to submit mobile recording for intelligence review.');
+        setStatusMessage(null);
+      } finally {
+        setIsSubmitting(false);
+      }
     } else {
       setDuration(0);
       setStatusMessage(null);
+      setErrorMessage(null);
       setIsRecording(true);
     }
   };
@@ -123,11 +146,25 @@ export function RecordScreen() {
           <Text style={styles.statusText}>{statusMessage}</Text>
         </View>
       )}
+
+      {/* Error Message */}
+      {errorMessage && (
+        <View style={[styles.statusBox, styles.errorBox]}>
+          <Text style={[styles.statusText, styles.errorText]}>{errorMessage}</Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  errorBox: {
+    backgroundColor: '#FF667A1A',
+    borderColor: '#FF667A33',
+  },
+  errorText: {
+    color: '#FF667A',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0D0715',

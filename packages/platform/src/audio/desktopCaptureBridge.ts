@@ -80,18 +80,17 @@ export async function getNativeCaptureStatus(): Promise<NativeCaptureState> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       return await invoke<NativeCaptureState>('get_capture_status');
-    } catch (e) {
+    } catch (e: any) {
       return {
         status: 'idle',
         meeting_id: null,
         deal_id: null,
         elapsed_seconds: 0,
         file_path: null,
-        error_message: null,
+        error_message: e?.message || 'Failed to get native capture status',
       };
     }
   }
-
   return {
     status: 'idle',
     meeting_id: null,
@@ -100,4 +99,19 @@ export async function getNativeCaptureStatus(): Promise<NativeCaptureState> {
     file_path: null,
     error_message: null,
   };
+}
+
+export async function readNativeCaptureBytes(filePath: string): Promise<Blob | null> {
+  if (isTauriEnvironment() && filePath) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const bytes = await invoke<number[] | Uint8Array>('read_capture_bytes', { filePath });
+      const u8 = new Uint8Array(bytes);
+      return new Blob([u8.buffer as ArrayBuffer], { type: 'audio/wav' });
+    } catch (e) {
+      console.error('[DesktopBridge] Failed to read capture bytes:', e);
+      return null;
+    }
+  }
+  return null;
 }

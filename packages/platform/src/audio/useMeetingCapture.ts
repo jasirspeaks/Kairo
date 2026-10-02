@@ -8,6 +8,7 @@ import {
   stopNativeMeetingCapture,
   discardNativeMeetingCapture,
   getNativeCaptureStatus,
+  readNativeCaptureBytes,
 } from './desktopCaptureBridge';
 import { useAudioRecorder } from './useAudioRecorder';
 
@@ -100,8 +101,18 @@ export function useMeetingCapture(): UseMeetingCaptureResult {
     if (isTauri) {
       try {
         const result = await stopNativeMeetingCapture();
+        let captureBlob: Blob | undefined;
+        if (result.file_path) {
+          try {
+            const rawBytes = await readNativeCaptureBytes(result.file_path);
+            captureBlob = rawBytes || undefined;
+          } catch (readErr) {
+            console.warn('Could not read native capture bytes:', readErr);
+          }
+        }
         setCaptureStatus('completed');
         return {
+          blob: captureBlob || undefined,
           filePath: result.file_path,
           mimeType: 'audio/wav',
           durationSeconds: result.duration_seconds || Math.round(elapsedMs / 1000),

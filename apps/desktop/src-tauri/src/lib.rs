@@ -9,6 +9,7 @@ use commands::{
     stop_meeting_capture,
     discard_meeting_capture,
     get_capture_status,
+    read_capture_bytes,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +26,7 @@ pub fn run() {
             stop_meeting_capture,
             discard_meeting_capture,
             get_capture_status,
+            read_capture_bytes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kairo desktop application");
