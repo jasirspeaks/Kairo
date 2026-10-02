@@ -4,3 +4,5 @@ export * from './pillars';
 export * from './stakeholders';
 export * from './healthScore';
 export * from './activity';
+export * from './consistency';
+

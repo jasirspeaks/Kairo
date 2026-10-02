@@ -203,7 +203,12 @@ KEY FOLLOW-UP MESSAGE (call.key_follow_up_message): short, natural, ready-to-sen
 
 MANAGER NOTE (call.manager_note / deal.manager_note): max 20 words each, blunt and judgment-oriented.
 
-SUPPORTING EVIDENCE: 2-4 of the strongest observations from this transcript at the deal level, each tied to a pillar or a concrete signal.
+SUPPORTING EVIDENCE: 2-4 of the strongest grounded observations from this transcript at the deal level. Each item should be an object with:
+- quote: exact quote or concrete observation snippet from transcript
+- speaker: named buyer/prospect speaker or 'Prospect'/'Rep' if unnamed
+- pillar_key: compelling_event | economic_buyer | decision_process | budget | champion
+- grounding_type: explicit_statement (verbatim stated fact) | behavioral_inference (deduced from hesitation/evasion/enthusiasm) | structural_absence (crucial item asked but unanswered or silent)
+- confidence: integer 0-100 reflecting grounding strength
 
 PILLARS (deal.pillars): see the dedicated section above. Exactly five keys, every time: compelling_event, economic_buyer, decision_process, budget, champion.
 
@@ -221,7 +226,7 @@ BASE SCHEMA (first call, no what_changed_since_last_call key):
     "call_status": "On Track | Needs Attention | At Risk | Stalled",
     "verdict": "",
     "reason": "",
-    "highest_priority_risk": { "risk": "", "why_it_matters": "", "evidence": "" },
+    "highest_priority_risk": { "risk": "", "why_it_matters": "", "evidence": "", "category": "compelling_event | economic_buyer | decision_process | budget | champion | competitor_threat | procurement_delay | general_risk" },
     "what_youre_missing": [ { "gap": "", "question_to_answer": "" } ],
     "recommended_next_action": "",
     "key_follow_up_message": "",
@@ -232,7 +237,7 @@ BASE SCHEMA (first call, no what_changed_since_last_call key):
     "confidence": "High | Medium | Low",
     "status_reason": "",
     "health_score": 0,
-    "highest_priority_risk": { "risk": "", "why_it_matters": "", "evidence": "" },
+    "highest_priority_risk": { "risk": "", "why_it_matters": "", "evidence": "", "category": "compelling_event | economic_buyer | decision_process | budget | champion | competitor_threat | procurement_delay | general_risk" },
     "what_youre_missing": [ { "gap": "", "question_to_answer": "" } ],
     "recommended_next_action": "",
     "manager_note": "",
@@ -249,7 +254,15 @@ BASE SCHEMA (first call, no what_changed_since_last_call key):
   "stakeholder_signals": [
     { "name": "", "role": "", "sentiment": "champion | supporter | neutral | skeptic | blocker", "evidence": "" }
   ],
-  "supporting_evidence": [ "" ]
+  "supporting_evidence": [
+    {
+      "quote": "",
+      "speaker": "",
+      "pillar_key": "compelling_event | economic_buyer | decision_process | budget | champion",
+      "grounding_type": "explicit_statement | behavioral_inference | structural_absence",
+      "confidence": 100
+    }
+  ]
 }
 
 SUBSEQUENT-CALL SCHEMA (include what_changed_since_last_call at the top level, alongside call/deal):
@@ -257,14 +270,22 @@ SUBSEQUENT-CALL SCHEMA (include what_changed_since_last_call at the top level, a
   "call": { ...same shape as above... },
   "deal": { ...same shape as above, including pillars, suggested_deal_stage, and stage_regression_override... },
   "what_changed_since_last_call": {
-    "resolved": [],
-    "persists": [],
-    "new_risks": []
+    "resolved": [ { "risk": "", "category": "compelling_event | economic_buyer | decision_process | budget | champion | competitor_threat | procurement_delay | general_risk" } ],
+    "persists": [ { "risk": "", "category": "compelling_event | economic_buyer | decision_process | budget | champion | competitor_threat | procurement_delay | general_risk" } ],
+    "new_risks": [ { "risk": "", "category": "compelling_event | economic_buyer | decision_process | budget | champion | competitor_threat | procurement_delay | general_risk" } ]
   },
   "stakeholder_signals": [
     { "name": "", "role": "", "sentiment": "champion | supporter | neutral | skeptic | blocker", "evidence": "" }
   ],
-  "supporting_evidence": [ "" ]
+  "supporting_evidence": [
+    {
+      "quote": "",
+      "speaker": "",
+      "pillar_key": "compelling_event | economic_buyer | decision_process | budget | champion",
+      "grounding_type": "explicit_statement | behavioral_inference | structural_absence",
+      "confidence": 100
+    }
+  ]
 }`;
 
 const corsHeaders = {
@@ -288,16 +309,129 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+const VALID_RISK_CATEGORIES = new Set([
+  'compelling_event',
+  'economic_buyer',
+  'decision_process',
+  'budget',
+  'champion',
+  'competitor_threat',
+  'procurement_delay',
+  'general_risk',
+]);
+
+const VALID_GROUNDING_TYPES = new Set(['explicit_statement', 'behavioral_inference', 'structural_absence']);
+
 function normalizeRisk(risk: unknown, label: string): Json {
   const r = risk as Json | undefined;
   if (!r || typeof r.risk !== 'string' || !r.risk.trim()) {
     throw new Error(`Missing ${label}.risk.`);
   }
+  const category = typeof r.category === 'string' && VALID_RISK_CATEGORIES.has(r.category)
+    ? r.category
+    : 'general_risk';
   return {
     risk: r.risk,
     why_it_matters: typeof r.why_it_matters === 'string' ? r.why_it_matters : '',
     evidence: typeof r.evidence === 'string' ? r.evidence : '',
+    category,
   };
+}
+
+function normalizeSupportingEvidence(raw: unknown): Json[] {
+  if (!Array.isArray(raw)) return [];
+  const items = raw.slice(0, 6);
+  const result: Json[] = [];
+
+  for (const item of items) {
+    if (typeof item === 'string' && item.trim()) {
+      result.push({
+        quote: item.trim(),
+        grounding_type: 'explicit_statement',
+        confidence: 100,
+        pillar_key: null,
+        speaker: null,
+      });
+    } else if (item && typeof item === 'object') {
+      const obj = item as Json;
+      const quote = typeof obj.quote === 'string' ? obj.quote.trim() : '';
+      if (!quote) continue;
+
+      const speaker = typeof obj.speaker === 'string' && obj.speaker.trim() ? obj.speaker.trim() : null;
+      const pillar_key = typeof obj.pillar_key === 'string' && PILLAR_KEYS.includes(obj.pillar_key as any)
+        ? obj.pillar_key
+        : null;
+      const grounding_type = typeof obj.grounding_type === 'string' && VALID_GROUNDING_TYPES.has(obj.grounding_type)
+        ? obj.grounding_type
+        : 'explicit_statement';
+      const rawConf = typeof obj.confidence === 'number' && !Number.isNaN(obj.confidence) ? obj.confidence : 100;
+      const confidence = Math.max(0, Math.min(100, Math.round(rawConf)));
+
+      result.push({
+        quote,
+        speaker,
+        pillar_key,
+        grounding_type,
+        confidence,
+      });
+    }
+  }
+
+  return result;
+}
+
+function applyDealConsistency(raw: Json): Json {
+  const deal = raw.deal as Record<string, any> | undefined;
+  if (!deal || typeof deal !== 'object') return raw;
+
+  // 1. Terminal Deal Status and Stage Bounds
+  if (deal.status === 'Won') {
+    deal.health_score = 100;
+    deal.suggested_deal_stage = 'Closed Won';
+  } else if (deal.status === 'Lost') {
+    deal.health_score = 0;
+    deal.suggested_deal_stage = 'Closed Lost';
+  } else {
+    // 2. Non-terminal Status Health Score Bounding
+    if (deal.status === 'Critical' && deal.health_score > 39) {
+      deal.health_score = 39;
+    } else if (deal.status === 'At Risk' && deal.health_score > 65) {
+      deal.health_score = 65;
+    } else if (deal.status === 'Healthy' && deal.health_score < 60) {
+      deal.health_score = 60;
+    }
+  }
+
+  // 3. Pillar Confidence & State Alignment
+  if (deal.pillars && typeof deal.pillars === 'object') {
+    let confirmedCount = 0;
+    let relevantCount = 0;
+
+    for (const key of PILLAR_KEYS) {
+      const p = deal.pillars[key];
+      if (p) {
+        if (p.status === 'confirmed') confirmedCount++;
+        if (p.status !== 'not_yet_relevant') relevantCount++;
+      }
+    }
+
+    if (confirmedCount === 0 && relevantCount >= 2 && deal.status !== 'Won') {
+      if (deal.health_score > 50) {
+        deal.health_score = 50;
+      }
+      if (deal.status === 'Healthy') {
+        deal.status = 'At Risk';
+      }
+    }
+
+    if (confirmedCount >= 4 && deal.status !== 'Critical' && deal.status !== 'Lost') {
+      if (deal.health_score < 65) {
+        deal.health_score = 65;
+      }
+    }
+  }
+
+  return raw;
 }
 
 function normalizeMissing(arr: unknown, label: string): Json[] {
@@ -472,13 +606,9 @@ function normalizeExtraction(raw: Json, isFirstCall: boolean): Json {
   raw.call = call;
   raw.deal = deal;
   raw.stakeholder_signals = normalizeStakeholders(raw.stakeholder_signals);
+  raw.supporting_evidence = normalizeSupportingEvidence(raw.supporting_evidence);
 
-  if (!Array.isArray(raw.supporting_evidence)) raw.supporting_evidence = [];
-  if ((raw.supporting_evidence as unknown[]).length > 4) {
-    raw.supporting_evidence = (raw.supporting_evidence as unknown[]).slice(0, 4);
-  }
-
-  return raw;
+  return applyDealConsistency(raw);
 }
 
 function parseModelJson(text: string): Json {
@@ -511,6 +641,19 @@ const RISK_SCHEMA = {
     risk: { type: 'STRING' },
     why_it_matters: { type: 'STRING' },
     evidence: { type: 'STRING' },
+    category: {
+      type: 'STRING',
+      enum: [
+        'compelling_event',
+        'economic_buyer',
+        'decision_process',
+        'budget',
+        'champion',
+        'competitor_threat',
+        'procurement_delay',
+        'general_risk',
+      ],
+    },
   },
   required: ['risk'],
 };
@@ -523,6 +666,24 @@ const PILLAR_SCHEMA = {
     evidence: { type: 'STRING' },
   },
   required: ['status', 'confidence', 'evidence'],
+};
+
+const EVIDENCE_ITEM_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    quote: { type: 'STRING' },
+    speaker: { type: 'STRING' },
+    pillar_key: {
+      type: 'STRING',
+      enum: ['compelling_event', 'economic_buyer', 'decision_process', 'budget', 'champion'],
+    },
+    grounding_type: {
+      type: 'STRING',
+      enum: ['explicit_statement', 'behavioral_inference', 'structural_absence'],
+    },
+    confidence: { type: 'NUMBER' },
+  },
+  required: ['quote'],
 };
 
 const RESPONSE_SCHEMA = {
@@ -594,9 +755,75 @@ const RESPONSE_SCHEMA = {
     what_changed_since_last_call: {
       type: 'OBJECT',
       properties: {
-        resolved: { type: 'ARRAY', items: { type: 'STRING' } },
-        persists: { type: 'ARRAY', items: { type: 'STRING' } },
-        new_risks: { type: 'ARRAY', items: { type: 'STRING' } },
+        resolved: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              risk: { type: 'STRING' },
+              category: {
+                type: 'STRING',
+                enum: [
+                  'compelling_event',
+                  'economic_buyer',
+                  'decision_process',
+                  'budget',
+                  'champion',
+                  'competitor_threat',
+                  'procurement_delay',
+                  'general_risk',
+                ],
+              },
+            },
+            required: ['risk'],
+          },
+        },
+        persists: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              risk: { type: 'STRING' },
+              category: {
+                type: 'STRING',
+                enum: [
+                  'compelling_event',
+                  'economic_buyer',
+                  'decision_process',
+                  'budget',
+                  'champion',
+                  'competitor_threat',
+                  'procurement_delay',
+                  'general_risk',
+                ],
+              },
+            },
+            required: ['risk'],
+          },
+        },
+        new_risks: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              risk: { type: 'STRING' },
+              category: {
+                type: 'STRING',
+                enum: [
+                  'compelling_event',
+                  'economic_buyer',
+                  'decision_process',
+                  'budget',
+                  'champion',
+                  'competitor_threat',
+                  'procurement_delay',
+                  'general_risk',
+                ],
+              },
+            },
+            required: ['risk'],
+          },
+        },
       },
     },
     stakeholder_signals: {
@@ -611,7 +838,10 @@ const RESPONSE_SCHEMA = {
         },
       },
     },
-    supporting_evidence: { type: 'ARRAY', items: { type: 'STRING' } },
+    supporting_evidence: {
+      type: 'ARRAY',
+      items: EVIDENCE_ITEM_SCHEMA,
+    },
   },
   required: ['call', 'deal', 'stakeholder_signals', 'supporting_evidence'],
 };
@@ -959,7 +1189,7 @@ serve(async (req) => {
       await supabase.rpc('log_ai_inference', {
         p_user_id: userId,
         p_deal_id: deal_context?.deal_id || null,
-        p_conversation_id: body.conversation_id || null,
+        p_conversation_id: body.conversation_id || deal_context?.conversation_id || null,
         p_model_id: modelUsed,
         p_fallback_occurred: fallbackOccurred,
         p_models_attempted: modelsAttempted,

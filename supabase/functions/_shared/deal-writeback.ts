@@ -57,7 +57,7 @@ export type Review = {
     status: string;
     confidence: string;
     health_score: number;
-    highest_priority_risk: { risk: string; why_it_matters: string; evidence: string };
+    highest_priority_risk: { risk: string; why_it_matters: string; evidence: string; category?: string };
     what_youre_missing: unknown[];
     recommended_next_action: string;
     manager_note: string;
@@ -66,7 +66,8 @@ export type Review = {
     suggested_deal_stage?: string;
     stage_regression_override?: boolean;
   };
-  supporting_evidence?: string[];
+  supporting_evidence?: unknown[];
+  what_changed_since_last_call?: unknown;
   stakeholder_signals?: Array<{
     name: string;
     role: string | null;

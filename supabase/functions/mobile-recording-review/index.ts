@@ -400,7 +400,8 @@ serve(async (req: Request) => {
         supabase,
         deal.id,
         userId,
-        conversation.analysis_json as any
+        conversation.analysis_json as any,
+        conversationId
       );
 
       const { error: repairUpdateError } = await supabase
@@ -557,21 +558,59 @@ serve(async (req: Request) => {
       .eq('id', userId)
       .single();
 
-    const { data: existingCalls } = await supabase
-      .from('conversations')
-      .select('analysis_json')
-      .eq('deal_id', deal.id)
-      .neq('id', conversationId)
-      .eq('status', 'complete')
-      .not('analysis_json', 'is', null)
-      .order('created_at', {
-        ascending: true,
-      });
+    const [existingCallsRes, activeRisksRes, dealStateRes, stakeholdersRes] = await Promise.all([
+      supabase
+        .from('conversations')
+        .select('created_at, deal_stage, analysis_json')
+        .eq('deal_id', deal.id)
+        .neq('id', conversationId)
+        .eq('status', 'complete')
+        .not('analysis_json', 'is', null)
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('deal_risks')
+        .select('*')
+        .eq('deal_id', deal.id)
+        .in('status', ['active', 'recurring']),
+      supabase
+        .from('deal_state')
+        .select('*')
+        .eq('deal_id', deal.id)
+        .maybeSingle(),
+      supabase
+        .from('stakeholders')
+        .select('*')
+        .eq('deal_id', deal.id),
+    ]);
 
+    const existingCalls = existingCallsRes.data || [];
     const previousReview =
-      existingCalls && existingCalls.length > 0
+      existingCalls.length > 0
         ? existingCalls[existingCalls.length - 1].analysis_json
         : null;
+
+    const pastCalls = existingCalls.map((c: any) => ({
+      stage: c.deal_stage,
+      status: c.analysis_json?.deal?.status,
+      verdict: c.analysis_json?.call?.verdict,
+      date: c.created_at,
+    }));
+
+    const longitudinalHistory = {
+      past_calls: pastCalls,
+      active_risks: (activeRisksRes.data || []).map((r: any) => ({
+        title: r.title,
+        severity: r.severity,
+        why_it_matters: r.why_it_matters,
+        consecutive_calls: r.consecutive_unresolved_calls,
+      })),
+      pillars: dealStateRes.data?.pillars || null,
+      stakeholders: (stakeholdersRes.data || []).map((s: any) => ({
+        name: s.name,
+        role: s.role,
+        sentiment: s.sentiment,
+      })),
+    };
 
     const reviewRes = await fetch(
       `${SUPABASE_URL}/functions/v1/call-review`,
@@ -583,12 +622,16 @@ serve(async (req: Request) => {
         },
         body: JSON.stringify({
           user_id: userId,
+          conversation_id: conversationId,
           transcript,
           deal_context: {
+            deal_id: deal.id,
+            conversation_id: conversationId,
             deal_name: deal.deal_name,
             company_name: deal.company_name,
             deal_stage: deal.deal_stage,
             previous_review: previousReview,
+            longitudinal_history: longitudinalHistory,
           },
           seller_context: {
             what_you_sell:
