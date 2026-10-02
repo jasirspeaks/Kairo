@@ -203,10 +203,25 @@ export interface Subscription {
   updated_at: string;
 }
 
+export interface CalendarConnection {
+  id: string;
+  user_id: string;
+  provider: 'google';
+  access_token: string;
+  refresh_token: string | null;
+  token_expires_at: string | null;
+  scope: string | null;
+  needs_reconnect: boolean;
+  calendar_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Conversation {
   id: string;
   user_id: string;
   deal_id: string | null;
+  meeting_id?: string | null;
   title: string | null;
   deal_stage: DealStage | null;
   input_type: InputType;
@@ -231,20 +246,51 @@ export interface Stakeholder {
   updated_at: string;
 }
 
-export interface ScheduledMeeting {
+export type MeetingStatus = 'unassigned' | 'assigned' | 'scheduled' | 'completed' | 'cancelled';
+
+export type MeetingSource = 'kairo_native' | 'google_calendar' | 'ad_hoc';
+
+export type CaptureStatus =
+  | 'idle'
+  | 'approaching'
+  | 'recording'
+  | 'uploading'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'discarded';
+
+export interface MeetingAttendee {
+  email: string;
+  name?: string;
+  responseStatus?: 'accepted' | 'declined' | 'tentative' | 'needsAction';
+  organizer?: boolean;
+}
+
+export interface Meeting {
   id: string;
   user_id: string;
-  calendar_event_id: string;
-  title: string | null;
+  calendar_event_id: string | null;
+  title: string;
   start_time: string | null;
   end_time: string | null;
-  attendees: any | null;
-  status: 'unassigned' | 'assigned' | 'completed';
+  attendees: MeetingAttendee[] | null;
+  meeting_link: string | null;
+  source: MeetingSource;
+  status: MeetingStatus;
+  capture_status: CaptureStatus;
   deal_id: string | null;
+  conversation_id: string | null;
   matched_conversation_id: string | null;
+  audio_storage_path: string | null;
+  capture_device_info: Record<string, unknown> | null;
+  cancelled_at: string | null;
   created_at: string;
   updated_at: string;
 }
+
+// ScheduledMeeting alias for backward compatibility
+export type ScheduledMeeting = Meeting;
 
 export type GroundingType = 'explicit_statement' | 'behavioral_inference' | 'structural_absence';
 
@@ -254,6 +300,7 @@ export interface DealEvidence {
   id: string;
   deal_id: string;
   conversation_id: string;
+  meeting_id?: string | null;
   quote: string;
   speaker: string | null;
   pillar_key: PillarKey | null;
@@ -311,5 +358,5 @@ export interface DealLongitudinalHistory {
   evidence: DealEvidence[];
   transitions: DealStateTransition[];
   conversations: Conversation[];
+  meetings?: Meeting[];
 }
-
