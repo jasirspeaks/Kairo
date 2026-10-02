@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
+import { reviewCall, saveDealState, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, getDealLongitudinalHistory, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from '../../components/ui/Button';
@@ -74,10 +74,19 @@ export function NewDeal() {
   useEffect(() => {
     const state = location.state as { existingDealId?: string } | null;
     if (state?.existingDealId) {
-      setScheduledDealId(state.existingDealId);
-      scheduledDealIdRef.current = state.existingDealId;
+      const existingId = state.existingDealId;
+      setScheduledDealId(existingId);
+      scheduledDealIdRef.current = existingId;
       dealIsPreexisting.current = true;
       setStep('transcript');
+
+      supabase.from('deals').select('*').eq('id', existingId).single().then(({ data }) => {
+        if (data) {
+          setDealName(data.deal_name || '');
+          setCompanyName(data.company_name || '');
+          if (data.deal_value) setDealValue(String(data.deal_value));
+        }
+      });
     }
     // location.state is stable for the lifetime of this mount -- only run once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,31 +332,37 @@ export function NewDeal() {
         scheduledDealIdRef.current = dealId;
       }
 
-      // First call for this deal: call-review still produces the full
-      // deal-shaped extraction (call + deal halves) -- there's no separate
-      // "first call" code path on the frontend, the AI handles that
-      // distinction internally based on previous_review being null.
+      let previousReview: any = null;
+      let hist: any = null;
+      let currentStage = INITIAL_DEAL_STAGE;
+
+      if (dealIsPreexisting.current && dealId) {
+        const [{ data: existingState }, { data: existingDeal }, histData] = await Promise.all([
+          supabase.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
+          supabase.from('deals').select('deal_stage').eq('id', dealId).maybeSingle(),
+          getDealLongitudinalHistory(dealId).catch(() => null),
+        ]);
+        if (existingDeal?.deal_stage) currentStage = existingDeal.deal_stage;
+        if (existingState) {
+          previousReview = (existingState as any).deal ? existingState : { deal: existingState, call: null };
+        }
+        hist = histData;
+      }
+
       const review = await reviewCall(text, {
+        deal_id: dealId || undefined,
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
-        deal_stage: INITIAL_DEAL_STAGE,
-        previous_review: null,
+        deal_stage: currentStage,
+        previous_review: previousReview,
+        longitudinal_history: hist || undefined,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
           who_you_are: profile?.who_you_are || undefined,
         },
       });
 
-      // Stage is now fully automatic: resolveDealStage reads
-      // review.deal.suggested_deal_stage (what call-review concretely
-      // observed happened) and applies it if it advances the deal past
-      // INITIAL_DEAL_STAGE, or promotes straight to Closed Won/Lost on an
-      // unambiguous close -- even on a brand-new deal's very first call.
-      // Resolved BEFORE the conversations insert so deal_stage on that row
-      // is the stage this call resulted in, matching the live deals.deal_stage
-      // that Call Review reads -- see the matching comment in Review.tsx's
-      // handleAddCall for why this ordering matters for Deal Activity.
-      const resolvedStage = resolveDealStage(INITIAL_DEAL_STAGE, review);
+      const resolvedStage = resolveDealStage(currentStage, review);
 
       const { data: conv, error: convError } = await supabase
         .from('conversations')
@@ -365,11 +380,8 @@ export function NewDeal() {
 
       if (convError || !conv) throw new Error('Failed to save conversation.');
 
-      // Deal Review needs data starting at call 1, not just call 2+.
-      // review.deal is already the complete current-state extraction --
-      // write it straight to deal_state, no aggregation step. persist_deal_review
-      // owns deal_state, stakeholders, and stage writeback atomically.
-      await saveDealState(dealId, user.id, review, resolvedStage);
+      // Persist deal review state and pass conversationId for atomic evidence & history tracking
+      await saveDealState(dealId, user.id, review, resolvedStage, conv.id);
 
       callSucceeded.current = true;
       navigate(`/app/deals/${dealId}/calls/${conv.id}`);

@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { supabase, supabaseUrl, supabaseAnonKey } from '../../lib/supabase';
+import { createCheckoutSession, createCustomerPortalSession } from '../../lib/kairo';
 import { Button } from '../../components/ui/Button';
 import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { DeleteAccountModal } from '../../components/ui/DeleteAccountModal';
@@ -59,6 +60,12 @@ export function Settings() {
   const [calendarErrorMessage, setCalendarErrorMessage] = useState('');
   const [disconnectingCalendar, setDisconnectingCalendar] = useState(false);
   const [connectingCalendar, setConnectingCalendar] = useState(false);
+
+  // Billing
+  const [upgrading, setUpgrading] = useState(false);
+  const [managingBilling, setManagingBilling] = useState(false);
+  const [billingError, setBillingError] = useState('');
+  const [checkoutBanner, setCheckoutBanner] = useState<'success' | 'cancelled' | null>(null);
 
   // Account deletion
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -117,6 +124,22 @@ export function Settings() {
       window.setTimeout(() => setCalendarBanner(null), 7000);
     }
 
+    const checkoutParam = searchParams.get('checkout');
+    if (checkoutParam === 'success') {
+      setCheckoutBanner('success');
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('checkout');
+      nextParams.delete('session_id');
+      setSearchParams(nextParams, { replace: true });
+      window.setTimeout(() => setCheckoutBanner(null), 6000);
+    } else if (checkoutParam === 'cancelled') {
+      setCheckoutBanner('cancelled');
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('checkout');
+      setSearchParams(nextParams, { replace: true });
+      window.setTimeout(() => setCheckoutBanner(null), 5000);
+    }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -133,6 +156,38 @@ export function Settings() {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleUpgrade() {
+    setUpgrading(true);
+    setBillingError('');
+    try {
+      const { url } = await createCheckoutSession();
+      if (url) {
+        window.location.assign(url);
+      }
+    } catch (err: any) {
+      console.error('Settings: Upgrade checkout failed:', err);
+      setBillingError(err.message || 'Could not initiate checkout. Please try again.');
+    } finally {
+      setUpgrading(false);
+    }
+  }
+
+  async function handleManageBilling() {
+    setManagingBilling(true);
+    setBillingError('');
+    try {
+      const { url } = await createCustomerPortalSession();
+      if (url) {
+        window.location.assign(url);
+      }
+    } catch (err: any) {
+      console.error('Settings: Customer portal failed:', err);
+      setBillingError(err.message || 'Could not open billing management. Please try again.');
+    } finally {
+      setManagingBilling(false);
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Calendar
@@ -540,6 +595,27 @@ export function Settings() {
               </h3>
             </div>
 
+            {checkoutBanner === 'success' && (
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg p-3 mt-3">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>Thank you for upgrading! Your subscription is now active.</span>
+              </div>
+            )}
+
+            {checkoutBanner === 'cancelled' && (
+              <div className="flex items-center gap-2 bg-amber-400/10 border border-amber-400/20 text-amber-400 text-xs font-medium rounded-lg p-3 mt-3">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>Checkout was cancelled. You can upgrade anytime.</span>
+              </div>
+            )}
+
+            {billingError && (
+              <div className="flex items-center gap-2 bg-red-400/10 border border-red-400/20 text-red-400 text-xs font-medium rounded-lg p-3 mt-3">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{billingError}</span>
+              </div>
+            )}
+
             {subscriptionLoading ? (
               <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse mt-4" />
             ) : !subscription ? (
@@ -550,39 +626,57 @@ export function Settings() {
             ) : (
               <div className="space-y-4 mt-4">
                 {subscription.status === 'trialing' && (
-                  <div className="flex items-start gap-2 bg-primary/8 border border-primary/20 rounded-lg px-4 py-3">
-                    <Clock className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-textPrimary text-xs font-medium">
-                        {trialDaysLeft === 0
-                          ? 'Your trial ends today'
-                          : `${trialDaysLeft} day${
-                              trialDaysLeft === 1 ? '' : 's'
-                            } left in your trial`}
-                      </p>
-
-                      <p className="text-textSecondary text-xs mt-0.5">
-                        Trial ends {formatDate(subscription.trial_end)}. You
-                        can view everything in Kairo after that — adding new
-                        deals, calls, and meetings pauses until you upgrade.
-                      </p>
+                  <div className="flex items-start justify-between gap-3 bg-primary/8 border border-primary/20 rounded-lg px-4 py-3">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Clock className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-textPrimary text-xs font-medium">
+                          {trialDaysLeft === 0
+                            ? 'Your trial ends today'
+                            : `${trialDaysLeft} day${
+                                trialDaysLeft === 1 ? '' : 's'
+                              } left in your trial`}
+                        </p>
+                        <p className="text-textSecondary text-xs mt-0.5">
+                          Trial ends {formatDate(subscription.trial_end)}. You
+                          can view everything in Kairo after that — adding new
+                          deals, calls, and meetings pauses until you upgrade.
+                        </p>
+                      </div>
                     </div>
+                    <Button
+                      onClick={handleUpgrade}
+                      loading={upgrading}
+                      size="sm"
+                      className="flex-shrink-0 ml-2"
+                    >
+                      Upgrade Early
+                    </Button>
                   </div>
                 )}
 
                 {subscription.status === 'active' && (
-                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-
-                    <span className="text-emerald-400 text-xs font-medium">
-                      Active
-                      {subscription.current_period_end
-                        ? ` — renews ${formatDate(
-                            subscription.current_period_end
-                          )}`
-                        : ''}
-                    </span>
+                  <div className="flex items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span className="text-emerald-400 text-xs font-medium">
+                        Active Pro Subscription
+                        {subscription.current_period_end
+                          ? ` — renews ${formatDate(
+                              subscription.current_period_end
+                            )}`
+                          : ''}
+                      </span>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleManageBilling}
+                      loading={managingBilling}
+                      className="flex-shrink-0"
+                    >
+                      Manage Billing
+                    </Button>
                   </div>
                 )}
 
@@ -591,19 +685,14 @@ export function Settings() {
                     <p className="text-textPrimary text-xs font-medium">
                       Your access has expired. Upgrade to continue using Kairo.
                     </p>
-
-                    <a
-                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent(
-                        'Upgrading my Kairo plan'
-                      )}&body=${encodeURIComponent(
-                        `Hi, I'd like to upgrade my Kairo account (${
-                          profile?.email ?? ''
-                        }) to a paid plan.`
-                      )}`}
-                      className="inline-flex items-center justify-center flex-shrink-0 font-medium rounded-lg transition-all duration-200 active:scale-95 text-xs px-4 py-2 bg-primary hover:bg-primaryLight text-white hover:shadow-purple-glow"
+                    <Button
+                      onClick={handleUpgrade}
+                      loading={upgrading}
+                      size="sm"
+                      className="flex-shrink-0"
                     >
-                      Upgrade
-                    </a>
+                      Upgrade to Pro
+                    </Button>
                   </div>
                 )}
 
@@ -612,19 +701,15 @@ export function Settings() {
                     <p className="text-textPrimary text-xs font-medium">
                       Your subscription payment is past due.
                     </p>
-
-                    <a
-                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent(
-                        'Kairo subscription payment'
-                      )}&body=${encodeURIComponent(
-                        `Hi, I'd like to resolve the payment issue on my Kairo account (${
-                          profile?.email ?? ''
-                        }).`
-                      )}`}
-                      className="inline-flex items-center justify-center flex-shrink-0 font-medium rounded-lg transition-all duration-200 active:scale-95 text-xs px-4 py-2 bg-primary hover:bg-primaryLight text-white hover:shadow-purple-glow"
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={handleManageBilling}
+                      loading={managingBilling}
+                      className="flex-shrink-0"
                     >
-                      Get help
-                    </a>
+                      Update Payment Method
+                    </Button>
                   </div>
                 )}
 
@@ -633,39 +718,15 @@ export function Settings() {
                     <p className="text-textPrimary text-xs font-medium">
                       Your subscription is canceled.
                     </p>
-
-                    <a
-                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent(
-                        'Reactivate my Kairo plan'
-                      )}&body=${encodeURIComponent(
-                        `Hi, I'd like to reactivate my Kairo account (${
-                          profile?.email ?? ''
-                        }).`
-                      )}`}
-                      className="inline-flex items-center justify-center flex-shrink-0 font-medium rounded-lg transition-all duration-200 active:scale-95 text-xs px-4 py-2 bg-primary hover:bg-primaryLight text-white hover:shadow-purple-glow"
+                    <Button
+                      onClick={handleUpgrade}
+                      loading={upgrading}
+                      size="sm"
+                      className="flex-shrink-0"
                     >
-                      Get help
-                    </a>
+                      Reactivate Subscription
+                    </Button>
                   </div>
-                )}
-
-                {canWrite && subscription.status === 'trialing' && (
-                  <p className="text-textMuted text-xs">
-                    Ready to upgrade early?{' '}
-                    <a
-                      href={`mailto:jasirwrites@gmail.com?subject=${encodeURIComponent(
-                        'Upgrading my Kairo plan'
-                      )}&body=${encodeURIComponent(
-                        `Hi, I'd like to upgrade my Kairo account (${
-                          profile?.email ?? ''
-                        }) to a paid plan.`
-                      )}`}
-                      className="text-primary hover:text-white transition-colors font-medium"
-                    >
-                      Get in touch
-                    </a>
-                    .
-                  </p>
                 )}
               </div>
             )}

@@ -146,6 +146,7 @@ export async function saveDealState(
   userId: string,
   review: DealReview,
   resolvedStage?: DealStage,
+  conversationId?: string,
   client: KairoClient = getKairoClient()
 ): Promise<void> {
   let stage = resolvedStage;
@@ -173,9 +174,39 @@ export async function saveDealState(
     p_user_id: userId,
     p_review: review,
     p_resolved_stage: stage,
+    p_conversation_id: conversationId || null,
   });
 
   if (error) {
     throw new Error(`Failed to persist deal review: ${error.message}`);
   }
+}
+
+export async function getDealLongitudinalHistory(
+  dealId: string,
+  client: KairoClient = getKairoClient()
+) {
+  const [dealRes, stateRes, risksRes, pillarRes, evidenceRes, transitionsRes, convsRes] =
+    await Promise.all([
+      client.from('deals').select('*').eq('id', dealId).maybeSingle(),
+      client.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
+      client.from('deal_risks').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }),
+      client.from('deal_pillar_history').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }),
+      client.from('deal_evidence').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }),
+      client.from('deal_state_transitions').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }),
+      client.from('conversations').select('*').eq('deal_id', dealId).order('created_at', { ascending: true }),
+    ]);
+
+  if (dealRes.error) throw dealRes.error;
+  if (!dealRes.data) throw new Error('Deal not found');
+
+  return {
+    deal: dealRes.data,
+    state: stateRes.data || null,
+    risks: risksRes.data || [],
+    pillarHistory: pillarRes.data || [],
+    evidence: evidenceRes.data || [],
+    transitions: transitionsRes.data || [],
+    conversations: convsRes.data || [],
+  };
 }

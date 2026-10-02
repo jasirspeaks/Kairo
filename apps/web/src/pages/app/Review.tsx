@@ -5,7 +5,7 @@ import {
   TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
+import { reviewCall, saveDealState, getCallStatusStyle, getCallStatusColor, resolveDealStage, getDealLongitudinalHistory } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Deal, Conversation } from '../../types';
@@ -113,13 +113,20 @@ export function Review() {
     let convId: string | null = null;
 
     try {
-      const previousReview = conv?.analysis_json || null;
+      const [{ data: currentDealState }, hist] = await Promise.all([
+        supabase.from('deal_state').select('*').eq('deal_id', deal.id).maybeSingle(),
+        getDealLongitudinalHistory(deal.id).catch(() => null),
+      ]);
+
+      const previousReview = currentDealState || conv?.analysis_json || null;
 
       const review = await reviewCall(text, {
+        deal_id: deal.id,
         deal_name: deal.deal_name,
         company_name: deal.company_name,
         deal_stage: deal.deal_stage,
-        previous_review: previousReview,
+        previous_review: previousReview ? ((previousReview as any).deal ? previousReview : { deal: previousReview, call: null } as any) : null,
+        longitudinal_history: hist || undefined,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
           who_you_are: profile?.who_you_are || undefined,
@@ -162,7 +169,7 @@ export function Review() {
       // -- computed by call-review with the full prior history as context.
       // Write directly, no aggregation step. persist_deal_review owns
       // deal_state, stakeholders, and stage writeback atomically.
-      await saveDealState(deal.id, user.id, review, resolvedStage);
+      await saveDealState(deal.id, user.id, review, resolvedStage, newConv.id);
 
       setNewTranscript('');
       setAddingCall(false);

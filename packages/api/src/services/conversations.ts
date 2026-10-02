@@ -10,10 +10,12 @@ export interface SellerContext {
 }
 
 export interface DealContext {
+  deal_id?: string;
   deal_name: string;
   company_name: string;
   deal_stage?: string;
   previous_review?: DealReview | null;
+  longitudinal_history?: Record<string, any>;
   seller_context?: SellerContext;
 }
 

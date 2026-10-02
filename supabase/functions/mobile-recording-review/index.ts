@@ -636,7 +636,8 @@ serve(async (req: Request) => {
       supabase,
       deal.id,
       userId,
-      review
+      review,
+      conversationId
     );
 
     console.log(

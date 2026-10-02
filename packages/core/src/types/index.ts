@@ -245,3 +245,71 @@ export interface ScheduledMeeting {
   created_at: string;
   updated_at: string;
 }
+
+export type GroundingType = 'explicit_statement' | 'behavioral_inference' | 'structural_absence';
+
+export type PillarKey = 'compelling_event' | 'economic_buyer' | 'decision_process' | 'budget' | 'champion';
+
+export interface DealEvidence {
+  id: string;
+  deal_id: string;
+  conversation_id: string;
+  quote: string;
+  speaker: string | null;
+  pillar_key: PillarKey | null;
+  grounding_type: GroundingType;
+  confidence: number;
+  created_at: string;
+}
+
+export type DealRiskStatus = 'active' | 'mitigated' | 'resolved' | 'recurring';
+export type DealRiskSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface DealRisk {
+  id: string;
+  deal_id: string;
+  title: string;
+  why_it_matters: string | null;
+  status: DealRiskStatus;
+  severity: DealRiskSeverity;
+  first_identified_call_id: string | null;
+  resolved_call_id: string | null;
+  consecutive_unresolved_calls: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DealPillarHistoryItem {
+  id: string;
+  deal_id: string;
+  conversation_id: string;
+  pillar_key: PillarKey;
+  status: PillarStatus;
+  confidence: number;
+  evidence_text: string | null;
+  created_at: string;
+}
+
+export interface DealStateTransition {
+  id: string;
+  deal_id: string;
+  conversation_id: string | null;
+  from_stage: DealStage | null;
+  to_stage: DealStage;
+  from_status: DealStatus | null;
+  to_status: DealStatus;
+  health_score_delta: number;
+  transition_reason: string | null;
+  created_at: string;
+}
+
+export interface DealLongitudinalHistory {
+  deal: Deal;
+  state: DealState | null;
+  risks: DealRisk[];
+  pillarHistory: DealPillarHistoryItem[];
+  evidence: DealEvidence[];
+  transitions: DealStateTransition[];
+  conversations: Conversation[];
+}
+

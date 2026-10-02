@@ -19,5 +19,8 @@ export {
   syncGoogleCalendar,
   submitRecording,
   describeRecordingError,
+  getDealLongitudinalHistory,
+  createCheckoutSession,
+  createCustomerPortalSession,
   GOOGLE_CALENDAR_URL,
 } from '@kairo/api';

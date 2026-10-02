@@ -904,7 +904,32 @@ serve(async (req) => {
         }
       }
 
-      if (deal_context.previous_review) {
+      if (deal_context.longitudinal_history) {
+        const hist = deal_context.longitudinal_history as Record<string, any>;
+        userMessage += `\nLONGITUDINAL DEAL MEMORY\n`;
+        if (Array.isArray(hist.past_calls) && hist.past_calls.length > 0) {
+          userMessage += `Past Interactions (${hist.past_calls.length} calls):\n`;
+          hist.past_calls.forEach((c: any, idx: number) => {
+            userMessage += `  - Call ${idx + 1} (${c.date || 'prior'}): Stage=${c.stage || 'Unknown'}, Status=${c.status || 'Unknown'}, Verdict="${c.verdict || ''}"\n`;
+          });
+        }
+        if (Array.isArray(hist.active_risks) && hist.active_risks.length > 0) {
+          userMessage += `Active Risk Ledger:\n`;
+          hist.active_risks.forEach((r: any) => {
+            userMessage += `  - [${r.severity || 'high'}] ${r.title} (Why: ${r.why_it_matters || ''})\n`;
+          });
+        }
+        if (hist.pillars && typeof hist.pillars === 'object') {
+          userMessage += `Cumulative Pillar State:\n${JSON.stringify(hist.pillars, null, 2)}\n`;
+        }
+        if (Array.isArray(hist.stakeholders) && hist.stakeholders.length > 0) {
+          userMessage += `Known Buyer Network:\n`;
+          hist.stakeholders.forEach((s: any) => {
+            userMessage += `  - ${s.name} (${s.role || 'Unknown role'}): Sentiment=${s.sentiment || 'neutral'}\n`;
+          });
+        }
+        userMessage += `\nThis is NOT the first call. You MUST include what_changed_since_last_call, and your "deal" assessment must account for this longitudinal history, not just this call.\n`;
+      } else if (deal_context.previous_review) {
         userMessage += `\nPRIOR DEAL STATE (from the most recent previous call)\n${JSON.stringify(deal_context.previous_review, null, 2)}\n`;
         userMessage += `\nThis is NOT the first call. You MUST include what_changed_since_last_call, and your "deal" assessment must account for this full history, not just this call.\n`;
       } else {

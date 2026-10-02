@@ -3,10 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, Phone, Users, Clock, Target,
   ChevronRight, Building2, UserPlus, TrendingUp, TrendingDown,
-  Minus, CheckCircle2, AlertCircle, ArrowRight
+  Minus, CheckCircle2, AlertCircle, ArrowRight, Quote, ShieldAlert
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { getStatusStyle } from '../../lib/kairo';
+import { getStatusStyle, getDealLongitudinalHistory } from '../../lib/kairo';
 import {
   Deal,
   DealState,
@@ -14,6 +14,11 @@ import {
   Stakeholder,
   DealPillars,
   PillarState,
+  PillarKey,
+  DealEvidence,
+  DealRisk,
+  DealPillarHistoryItem,
+  DealLongitudinalHistory,
   SENTIMENT_LABEL,
   SENTIMENT_COLOR,
   PILLAR_LABELS,
@@ -27,50 +32,72 @@ import {
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
+import { EvidenceInspector } from '../../components/evidence/EvidenceInspector';
 import { formatDate, cn } from '../../lib/utils';
 
-// Deal Review is a pure read. deal_state is always current because
-// call-review already computed it that way on the most recent call --
-// there is no refresh action anywhere in this page or the product.
-
-function PillarBar({ label, pillar }: { label: string; pillar: PillarState }) {
+function PillarBar({
+  pillarKey,
+  label,
+  pillar,
+  evidenceCount = 0,
+  onInspectEvidence,
+}: {
+  pillarKey: PillarKey;
+  label: string;
+  pillar: PillarState;
+  evidenceCount?: number;
+  onInspectEvidence?: (pillarKey: PillarKey) => void;
+}) {
   const [open, setOpen] = useState(false);
   const isNotYetRelevant = pillar.status === 'not_yet_relevant';
   const hasEvidence = !!pillar.evidence;
 
   return (
     <div className="border-b border-border last:border-b-0">
-      <button
-        onClick={() => hasEvidence && setOpen(v => !v)}
-        className={cn(
-          'w-full text-left py-3',
-          hasEvidence ? 'cursor-pointer' : 'cursor-default'
+      <div className="py-3 flex items-center justify-between gap-3">
+        <button
+          onClick={() => hasEvidence && setOpen(v => !v)}
+          className={cn(
+            'flex-1 text-left min-w-0',
+            hasEvidence ? 'cursor-pointer' : 'cursor-default'
+          )}
+        >
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <span className="text-textPrimary text-xs font-semibold">{label}</span>
+            {hasEvidence && (
+              <ChevronRight
+                className={cn('w-3.5 h-3.5 text-textMuted transition-transform flex-shrink-0', open && 'rotate-90')}
+              />
+            )}
+          </div>
+          <div className="h-1.5 rounded-full bg-surfaceHigh overflow-hidden">
+            {isNotYetRelevant ? (
+              <div
+                className="h-full w-full rounded-full"
+                style={{
+                  backgroundImage: 'repeating-linear-gradient(45deg, #3A3450 0, #3A3450 5px, #2A2438 5px, #2A2438 10px)',
+                }}
+              />
+            ) : (
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${pillar.confidence}%`, backgroundColor: pillarBarColor(pillar.confidence) }}
+              />
+            )}
+          </div>
+        </button>
+
+        {onInspectEvidence && (
+          <button
+            onClick={() => onInspectEvidence(pillarKey)}
+            className="flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold text-textMuted hover:text-primary px-2 py-1 rounded bg-surfaceHigh/60 hover:bg-primary/10 border border-border transition-colors ml-2"
+            title="Inspect verbatim transcript quotes"
+          >
+            <Quote className="w-3 h-3 text-primary" />
+            <span>Quotes{evidenceCount > 0 ? ` (${evidenceCount})` : ''}</span>
+          </button>
         )}
-      >
-        <div className="flex items-center justify-between gap-3 mb-1.5">
-          <span className="text-textPrimary text-xs font-semibold">{label}</span>
-          {hasEvidence && (
-            <ChevronRight
-              className={cn('w-3.5 h-3.5 text-textMuted transition-transform flex-shrink-0', open && 'rotate-90')}
-            />
-          )}
-        </div>
-        <div className="h-1.5 rounded-full bg-surfaceHigh overflow-hidden">
-          {isNotYetRelevant ? (
-            <div
-              className="h-full w-full rounded-full"
-              style={{
-                backgroundImage: 'repeating-linear-gradient(45deg, #3A3450 0, #3A3450 5px, #2A2438 5px, #2A2438 10px)',
-              }}
-            />
-          ) : (
-            <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${pillar.confidence}%`, backgroundColor: pillarBarColor(pillar.confidence) }}
-            />
-          )}
-        </div>
-      </button>
+      </div>
 
       {open && hasEvidence && (
         <div className="pb-3 -mt-0.5 animate-fade-in">
@@ -83,7 +110,15 @@ function PillarBar({ label, pillar }: { label: string; pillar: PillarState }) {
   );
 }
 
-function PillarStrip({ pillars }: { pillars: DealPillars | null }) {
+function PillarStrip({
+  pillars,
+  evidence = [],
+  onInspectEvidence,
+}: {
+  pillars: DealPillars | null;
+  evidence?: DealEvidence[];
+  onInspectEvidence?: (pillarKey: PillarKey) => void;
+}) {
   if (!pillars) {
     return (
       <div className="card p-4 md:p-5 mb-4 md:mb-5 w-full">
@@ -95,28 +130,28 @@ function PillarStrip({ pillars }: { pillars: DealPillars | null }) {
     );
   }
 
+  const countForPillar = (key: PillarKey) => evidence.filter(e => e.pillar_key === key).length;
+
   return (
     <div className="card p-4 md:p-5 mb-4 md:mb-5 w-full">
       <h2 className="section-label mb-2">What We Know So Far</h2>
       <div>
         {PILLAR_ORDER.map(key => (
-          <PillarBar key={key} label={PILLAR_LABELS[key]} pillar={pillars[key]} />
+          <PillarBar
+            key={key}
+            pillarKey={key}
+            label={PILLAR_LABELS[key]}
+            pillar={pillars[key]}
+            evidenceCount={countForPillar(key)}
+            onInspectEvidence={onInspectEvidence}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-// --- Risk Evolution: a real timeline, not repeated card blocks --------
-// One row per call. Calls after the first use their real
-// what_changed_since_last_call payload (a true diff against the prior
-// call). The first call has no prior state to diff against -- call-review
-// deliberately omits that field on call #1, so instead of hiding Risk
-// Evolution entirely until call #2, we synthesize a single "first read"
-// entry from that call's own highest_priority_risk and what_youre_missing.
-// It's framed as a first read, not a change, since there's nothing yet to
-// compare against.
-
+// --- Risk Evolution: a real timeline + durable risk ledger --------
 type EvolutionEntry = {
   call: Conversation;
   resolved: string[];
@@ -142,10 +177,6 @@ function buildEvolution(calls: Conversation[]): EvolutionEntry[] {
         };
       }
 
-      // No diff payload -- only synthesize a first-read entry for the
-      // actual first call (i === 0). A later call missing this field is
-      // an upstream data gap, not a first call, so it's skipped rather
-      // than mislabeled.
       if (i !== 0) return null;
 
       const risk = call.analysis_json?.deal?.highest_priority_risk?.risk;
@@ -255,20 +286,93 @@ function EvolutionRow({ entry, defaultOpen }: { entry: EvolutionEntry; defaultOp
   );
 }
 
-function RiskEvolutionPanel({ evolution }: { evolution: EvolutionEntry[] }) {
-  if (evolution.length === 0) {
-    return (
-      <p className="text-textMuted text-xs py-2">
-        Risk evolution appears once this deal has more than one call.
-      </p>
-    );
-  }
+function RiskEvolutionPanel({
+  evolution,
+  durableRisks = [],
+  onInspectRisk,
+}: {
+  evolution: EvolutionEntry[];
+  durableRisks?: DealRisk[];
+  onInspectRisk?: (risk: DealRisk) => void;
+}) {
+  const activeRisks = durableRisks.filter(r => r.status === 'active');
+  const resolvedRisks = durableRisks.filter(r => r.status === 'resolved');
 
   return (
-    <div className="space-y-2">
-      {evolution.map((entry, i) => (
-        <EvolutionRow key={entry.call.id} entry={entry} defaultOpen={i === 0} />
-      ))}
+    <div className="space-y-6">
+      {/* Durable Risk Ledger if tracked */}
+      {durableRisks.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-textMuted flex items-center gap-1.5">
+            <ShieldAlert className="w-3.5 h-3.5 text-primary" />
+            Durable Risk Ledger
+          </h3>
+
+          <div className="grid grid-cols-1 gap-2.5">
+            {activeRisks.map(risk => (
+              <div
+                key={risk.id}
+                className="bg-surfaceHigh/60 border border-red-400/20 rounded-lg p-3.5 flex items-start justify-between gap-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-400/10 text-red-400">
+                      Active
+                    </span>
+                    <span className="text-xs font-semibold text-textPrimary">{risk.title}</span>
+                  </div>
+                  {risk.why_it_matters && (
+                    <p className="text-xs text-textSecondary leading-relaxed">{risk.why_it_matters}</p>
+                  )}
+                </div>
+
+                {onInspectRisk && (
+                  <button
+                    onClick={() => onInspectRisk(risk)}
+                    className="flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold text-textMuted hover:text-primary px-2.5 py-1 rounded bg-surface border border-border transition-colors"
+                  >
+                    <Quote className="w-3 h-3 text-primary" />
+                    <span>Evidence</span>
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {resolvedRisks.map(risk => (
+              <div
+                key={risk.id}
+                className="bg-surfaceHigh/40 border border-border rounded-lg p-3 flex items-center justify-between gap-3 opacity-75"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                  <span className="text-xs text-textSecondary line-through truncate">{risk.title}</span>
+                </div>
+                <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/10 flex-shrink-0">
+                  Resolved
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Call-by-call timeline diff */}
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">
+          Call-by-Call Evolution Timeline
+        </h3>
+        {evolution.length === 0 ? (
+          <p className="text-textMuted text-xs py-2">
+            Risk evolution appears once this deal has more than one call.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {evolution.map((entry, i) => (
+              <EvolutionRow key={entry.call.id} entry={entry} defaultOpen={i === 0} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -313,13 +417,6 @@ function StakeholdersPanel({ stakeholders }: { stakeholders: Stakeholder[] }) {
   );
 }
 
-// Action Plan / Risk Evolution / Stakeholders share one full-width card
-// with a pill-style tab switcher instead of three stacked cards with
-// duplicate chrome. One header, one border, one visual unit -- the reader
-// picks which lens they want instead of scanning three near-identical
-// boxes. Action Plan groups What's Still Missing, Next Recommended Action,
-// and Manager Note together since they're causally linked: the gap, the
-// move that closes it, and any human override on that move.
 type DealReviewTab = 'action_plan' | 'evolution' | 'stakeholders';
 
 function ActionPlanPanel({ dealState }: { dealState: DealState }) {
@@ -412,17 +509,25 @@ function DealReviewTabBar({
 }
 
 function DealReviewTabPanel({
-  dealState, evolution, stakeholders, activeTab,
+  dealState, evolution, stakeholders, activeTab, durableRisks, onInspectRisk,
 }: {
   dealState: DealState;
   evolution: EvolutionEntry[];
   stakeholders: Stakeholder[];
   activeTab: DealReviewTab;
+  durableRisks: DealRisk[];
+  onInspectRisk: (risk: DealRisk) => void;
 }) {
   return (
     <div className="card p-4 md:p-5 w-full">
       {activeTab === 'action_plan' && <ActionPlanPanel dealState={dealState} />}
-      {activeTab === 'evolution' && <RiskEvolutionPanel evolution={evolution} />}
+      {activeTab === 'evolution' && (
+        <RiskEvolutionPanel
+          evolution={evolution}
+          durableRisks={durableRisks}
+          onInspectRisk={onInspectRisk}
+        />
+      )}
       {activeTab === 'stakeholders' && <StakeholdersPanel stakeholders={stakeholders} />}
     </div>
   );
@@ -461,6 +566,29 @@ function DealActivityFeed({ activity, dealId, navigate }: { activity: ActivityIt
             );
           }
 
+          if (item.kind === 'stage_transition') {
+            return (
+              <div key={item.id} className="flex items-start gap-3 px-4 py-3.5 bg-surfaceHigh/20">
+                <div className="w-7 h-7 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-textPrimary text-xs font-medium truncate">
+                      Stage updated · {item.transition.from_stage ? `${item.transition.from_stage} → ` : ''}{item.transition.to_stage}
+                    </p>
+                    <span className="text-textMuted text-xs flex-shrink-0">{formatDate(item.at)}</span>
+                  </div>
+                  {item.transition.transition_reason && (
+                    <p className="text-textMuted text-xs truncate mt-0.5">
+                      {item.transition.transition_reason}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           const s = item.stakeholder;
           return (
             <div key={item.id} className="flex items-start gap-3 px-4 py-3.5">
@@ -495,12 +623,19 @@ export function DealReview() {
   const [dealState, setDealState] = useState<DealState | null>(null);
   const [calls, setCalls] = useState<Conversation[]>([]);
   const [stakeholders, setStakeholders] = useState<Stakeholder[]>([]);
+  const [history, setHistory] = useState<DealLongitudinalHistory | null>(null);
   const [nextMeeting, setNextMeeting] = useState<{ start_time: string; title: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [reviewTab, setReviewTab] = useState<DealReviewTab>('action_plan');
 
+  // Evidence Inspector state
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectPillar, setInspectPillar] = useState<PillarKey | null>(null);
+  const [inspectRisk, setInspectRisk] = useState<DealRisk | null>(null);
+  const [inspectTitle, setInspectTitle] = useState<string | undefined>(undefined);
+
   const evolution = useMemo(() => buildEvolution(calls), [calls]);
-  const activity = useMemo(() => buildActivity(calls, stakeholders), [calls, stakeholders]);
+  const activity = useMemo(() => buildActivity(calls, stakeholders, history?.transitions || []), [calls, stakeholders, history]);
 
   useEffect(() => {
     if (!dealId) return;
@@ -511,7 +646,7 @@ export function DealReview() {
   async function fetchData() {
     setLoading(true);
 
-    const [{ data: dealData }, { data: stateData }, { data: callsData }, { data: stakeholderData }, { data: meetingData }] =
+    const [{ data: dealData }, { data: stateData }, { data: callsData }, { data: stakeholderData }, { data: meetingData }, histData] =
       await Promise.all([
         supabase.from('deals').select('*').eq('id', dealId).single(),
         supabase.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
@@ -521,6 +656,7 @@ export function DealReview() {
           .eq('deal_id', dealId).eq('status', 'assigned').is('cancelled_at', null)
           .gte('start_time', new Date().toISOString())
           .order('start_time', { ascending: true }).limit(1).maybeSingle(),
+        dealId ? getDealLongitudinalHistory(dealId).catch(() => null) : Promise.resolve(null),
       ]);
 
     setDeal(dealData);
@@ -528,7 +664,41 @@ export function DealReview() {
     setCalls(callsData || []);
     setStakeholders(stakeholderData || []);
     setNextMeeting(meetingData || null);
+    setHistory(histData);
     setLoading(false);
+  }
+
+  function handleInspectPillar(pillarKey: PillarKey) {
+    setInspectPillar(pillarKey);
+    setInspectRisk(null);
+    setInspectTitle(PILLAR_LABELS[pillarKey]);
+    setInspectorOpen(true);
+  }
+
+  function handleInspectRisk(risk: DealRisk) {
+    setInspectRisk(risk);
+    setInspectPillar(null);
+    setInspectTitle(risk.title);
+    setInspectorOpen(true);
+  }
+
+  function handleInspectHeroRisk() {
+    if (!effectiveDealState.highest_priority_risk_full) return;
+    const heroRiskText = effectiveDealState.highest_priority_risk_full.risk;
+    const matchingDurableRisk: DealRisk = history?.risks?.find(r => r.title.toLowerCase() === heroRiskText.toLowerCase()) || {
+      id: 'hero-risk',
+      deal_id: dealId || '',
+      title: heroRiskText,
+      why_it_matters: effectiveDealState.highest_priority_risk_full.why_it_matters,
+      status: 'active',
+      severity: 'critical',
+      first_identified_call_id: null,
+      resolved_call_id: null,
+      consecutive_unresolved_calls: 1,
+      created_at: deal?.created_at || new Date().toISOString(),
+      updated_at: deal?.updated_at || new Date().toISOString(),
+    };
+    handleInspectRisk(matchingDurableRisk);
   }
 
   if (loading) return (
@@ -573,10 +743,7 @@ export function DealReview() {
         <TopBar title={deal.deal_name} onBack={() => navigate('/app/deals')} />
       </div>
 
-      {/* ---- Header block: identity + status. Deliberately separate from
-          the metrics strip below so the page reads top-down as a report:
-          who is this deal, what's its status, then the numbers, then the
-          answer to "what's most important right now." */}
+      {/* Header block: identity + status */}
       <div className="mb-4 md:mb-5">
         <div className="hidden md:flex items-start justify-between">
           <div>
@@ -604,10 +771,7 @@ export function DealReview() {
         </div>
       </div>
 
-      {/* ---- Metrics strip: Health Score gets a dedicated, larger slot on
-          the left since it's the single number that summarizes the whole
-          deal; the remaining four facts sit in an even row beside it.
-          One card, one border -- not five competing columns. */}
+      {/* Metrics strip */}
       <div className="card p-4 md:p-5 mb-4 md:mb-5 w-full">
         <div className="grid grid-cols-[auto_1fr] gap-4 md:gap-6 items-center">
           <div className="flex items-center gap-3 pr-4 md:pr-6 border-r border-border">
@@ -656,7 +820,7 @@ export function DealReview() {
         </div>
       </div>
 
-      {/* ---- Awaiting Evidence banner when no calls have been reviewed yet ---- */}
+      {/* Awaiting Evidence banner when no calls have been reviewed yet */}
       {calls.length === 0 && (
         <div className="rounded-xl border border-primary/25 bg-primary/[0.06] p-4 md:p-6 mb-4 md:mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -680,15 +844,21 @@ export function DealReview() {
         </div>
       )}
 
-      {/* ---- Highest Priority Risk: the hero card. This is the one
-          question the product exists to answer, so it's the only card
-          with a filled (not just outlined) accent treatment, sits first,
-          and is never toggled away. Everything else is secondary to it. */}
+      {/* Highest Priority Risk: hero card */}
       {effectiveDealState.highest_priority_risk_full?.risk && (
         <div className="rounded-xl border border-red-400/25 bg-red-400/[0.06] p-4 md:p-6 mb-4 md:mb-5">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="w-4 h-4 text-red-400" />
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-red-400">Highest Priority Risk</h2>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400" />
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-red-400">Highest Priority Risk</h2>
+            </div>
+            <button
+              onClick={handleInspectHeroRisk}
+              className="flex items-center gap-1 text-[11px] font-semibold text-red-400 hover:text-red-300 px-2.5 py-1 rounded bg-red-400/10 border border-red-400/20 transition-colors"
+            >
+              <Quote className="w-3 h-3" />
+              <span>Inspect Evidence</span>
+            </button>
           </div>
           <p className="text-textPrimary text-base font-semibold mb-3 leading-snug">
             {effectiveDealState.highest_priority_risk_full.risk}
@@ -704,17 +874,14 @@ export function DealReview() {
         </div>
       )}
 
-      {/* ---- What We Know So Far: five-pillar qualification strip.
-          Sits between the hero risk card and the tab group -- ambient
-          state like the health score, not a drill-down, so it's never
-          hidden behind a tab. */}
-      <PillarStrip pillars={effectiveDealState.pillars} />
+      {/* Qualification Pillar Strip */}
+      <PillarStrip
+        pillars={effectiveDealState.pillars}
+        evidence={history?.evidence || []}
+        onInspectEvidence={handleInspectPillar}
+      />
 
-      {/* ---- Tab group: Action Plan (default), Risk Evolution,
-          Stakeholders. Pill buttons sit outside and above the content
-          card, sized to their own labels rather than stretched full
-          width. Timeline has been removed -- Deal Activity below already
-          covers the chronological read. */}
+      {/* Tab group: Action Plan, Risk Evolution, Stakeholders */}
       <div className="mb-4 md:mb-5 w-full">
         <div className="mb-3">
           <DealReviewTabBar
@@ -729,11 +896,25 @@ export function DealReview() {
           evolution={evolution}
           stakeholders={stakeholders}
           activeTab={reviewTab}
+          durableRisks={history?.risks || []}
+          onInspectRisk={handleInspectRisk}
         />
       </div>
 
-      {/* ---- Deal Activity: chronological read, always at the bottom. */}
+      {/* Deal Activity: chronological read */}
       <DealActivityFeed activity={activity} dealId={dealId} navigate={navigate} />
+
+      {/* Evidence Inspector Drawer */}
+      <EvidenceInspector
+        open={inspectorOpen}
+        onClose={() => setInspectorOpen(false)}
+        dealId={dealId || ''}
+        pillarKey={inspectPillar}
+        risk={inspectRisk}
+        title={inspectTitle}
+        evidence={history?.evidence || []}
+        pillarHistory={history?.pillarHistory || []}
+      />
     </div>
   );
 }

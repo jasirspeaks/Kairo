@@ -5,3 +5,4 @@ export * from './calendar';
 export * from './stakeholders';
 export * from './profiles';
 export * from './subscriptions';
+export * from './billing';
