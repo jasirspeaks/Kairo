@@ -198,4 +198,48 @@ describe('Domain Deal Logic - Activity Timeline', () => {
     expect(timeline[1].id).toBe('s1'); // Jan 15
     expect(timeline[2].id).toBe('c1'); // Jan 10
   });
+
+  it('correctly includes stage transitions in chronological order', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: 'Qualification',
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+    ];
+
+    const stakeholders: Stakeholder[] = [];
+
+    const transitions = [
+      {
+        id: 't1',
+        deal_id: 'd1',
+        conversation_id: 'c1',
+        from_stage: 'Discovery' as const,
+        to_stage: 'Proposal' as const,
+        from_status: 'Healthy' as const,
+        to_status: 'Healthy' as const,
+        health_score_delta: 5,
+        transition_reason: 'Proposal requested by buyer',
+        created_at: '2026-01-12T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, stakeholders, transitions);
+    expect(timeline.length).toBe(2);
+    expect(timeline[0].id).toBe('t1');
+    expect(timeline[0].kind).toBe('stage_transition');
+    expect(timeline[1].id).toBe('c1');
+    expect(timeline[1].kind).toBe('call');
+  });
 });
