@@ -786,12 +786,15 @@ serve(async (req) => {
       });
     }
 
+    let consumedEventId: string | null = null;
+
     if (!isInternalReview) {
       const { data: quotaResult, error: quotaError } = await supabase.rpc(
         'consume_review_quota',
         {
           p_user_id: userId,
           p_max_reviews: 20,
+          p_idempotency_key: typeof body.idempotency_key === 'string' ? body.idempotency_key : null,
         }
       );
 
@@ -799,7 +802,16 @@ serve(async (req) => {
         throw new Error(`Review quota check failed: ${quotaError.message}`);
       }
 
-      if (quotaResult === 'not_allowed') {
+      const status =
+        typeof quotaResult === 'object' && quotaResult !== null
+          ? (quotaResult as Record<string, unknown>).status
+          : quotaResult;
+      const eventId =
+        typeof quotaResult === 'object' && quotaResult !== null
+          ? ((quotaResult as Record<string, unknown>).event_id as string | undefined)
+          : null;
+
+      if (status === 'not_allowed') {
         return new Response(JSON.stringify({
           error: 'Your trial or subscription does not currently allow new reviews.',
         }), {
@@ -808,7 +820,7 @@ serve(async (req) => {
         });
       }
 
-      if (quotaResult === 'quota_exceeded') {
+      if (status === 'quota_exceeded') {
         return new Response(JSON.stringify({
           error: 'Rate limit reached. You can run up to 20 reviews per 24 hours.',
         }), {
@@ -817,6 +829,7 @@ serve(async (req) => {
         });
       }
 
+      consumedEventId = eventId ?? null;
       quotaConsumed = true;
     }
 
@@ -899,16 +912,11 @@ serve(async (req) => {
 
     if (quotaConsumed && !isInternalReview && userId) {
       try {
-        const { data: latestEvent } = await supabase
-          .from('review_usage_events')
-          .select('id')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (latestEvent?.id) {
-          await supabase.from('review_usage_events').delete().eq('id', latestEvent.id);
+        if (consumedEventId) {
+          await supabase.rpc('refund_review_quota', {
+            p_event_id: consumedEventId,
+            p_user_id: userId,
+          });
         }
       } catch (rollbackErr) {
         console.error('call-review: failed to refund quota event:', rollbackErr);

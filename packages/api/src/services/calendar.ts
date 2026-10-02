@@ -4,16 +4,12 @@ import { getClientConfig, getKairoClient, KairoClient } from '../client';
 export const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/r';
 
 export async function checkCalendarConnected(
-  userId: string,
+  _userId?: string,
   client: KairoClient = getKairoClient()
 ): Promise<boolean> {
-  const { data } = await client
-    .from('calendar_connections')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('provider', 'google')
-    .maybeSingle();
-  return !!data;
+  const { data, error } = await client.rpc('get_calendar_connection_status');
+  if (error || !data) return false;
+  return Array.isArray(data) ? data.length > 0 : !!data;
 }
 
 export async function syncGoogleCalendar(

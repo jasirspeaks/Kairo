@@ -59,6 +59,7 @@ export async function deleteConversation(
 export async function reviewCall(
   transcript: string,
   deal_context?: DealContext,
+  idempotencyKey?: string,
   client: KairoClient = getKairoClient()
 ): Promise<DealReview> {
   const { data: { session } } = await client.auth.getSession();
@@ -80,6 +81,7 @@ export async function reviewCall(
       transcript,
       deal_context,
       seller_context: deal_context?.seller_context,
+      idempotency_key: idempotencyKey,
     }),
   });
 

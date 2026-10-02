@@ -144,12 +144,7 @@ export function Settings() {
     setCheckingCalendar(true);
 
     try {
-      const { data, error } = await supabase
-        .from('calendar_connections')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('provider', 'google')
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('get_calendar_connection_status');
 
       if (error) {
         console.error('Settings: failed to check calendar connection:', error);
@@ -157,7 +152,7 @@ export function Settings() {
         return;
       }
 
-      setCalendarConnected(!!data);
+      setCalendarConnected(Array.isArray(data) ? data.length > 0 : !!data);
     } catch (error) {
       console.error('Settings: calendar connection check failed:', error);
       setCalendarConnected(false);
