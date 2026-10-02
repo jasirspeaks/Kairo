@@ -215,7 +215,7 @@ export function Dashboard() {
     setDeals(reviewedActiveDeals);
 
     const { data: meetingsData } = await supabase
-      .from('scheduled_meetings')
+      .from('meetings')
       .select('*, deals(deal_name)')
       .eq('user_id', user!.id)
       .eq('status', 'assigned')

@@ -645,28 +645,30 @@ export function DealReview() {
   }, [dealId]);
 
   async function fetchData() {
+    if (!dealId) return;
     setLoading(true);
 
-    const [{ data: dealData }, { data: stateData }, { data: callsData }, { data: stakeholderData }, { data: meetingData }, histData] =
-      await Promise.all([
-        supabase.from('deals').select('*').eq('id', dealId).single(),
-        supabase.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
-        supabase.from('conversations').select('*').eq('deal_id', dealId).order('created_at', { ascending: true }),
-        supabase.from('stakeholders').select('*').eq('deal_id', dealId).order('created_at', { ascending: true }),
-        supabase.from('scheduled_meetings').select('start_time, title')
-          .eq('deal_id', dealId).eq('status', 'assigned').is('cancelled_at', null)
-          .gte('start_time', new Date().toISOString())
-          .order('start_time', { ascending: true }).limit(1).maybeSingle(),
-        dealId ? getDealLongitudinalHistory(dealId).catch(() => null) : Promise.resolve(null),
-      ]);
-
-    setDeal(dealData);
-    setDealState(stateData);
-    setCalls(callsData || []);
-    setStakeholders(stakeholderData || []);
-    setNextMeeting(meetingData || null);
-    setHistory(histData);
-    setLoading(false);
+    try {
+      const histData = await getDealLongitudinalHistory(dealId);
+      setDeal(histData.deal);
+      setDealState(histData.state);
+      setCalls(histData.conversations || []);
+      setStakeholders(histData.stakeholders || []);
+      const now = new Date();
+      const upcoming = (histData.meetings || []).find(
+        (m) =>
+          !m.cancelled_at &&
+          (m.status === 'assigned' || m.status === 'scheduled') &&
+          m.start_time &&
+          new Date(m.start_time) >= now
+      );
+      setNextMeeting(upcoming ? { start_time: upcoming.start_time, title: upcoming.title } : null);
+      setHistory(histData);
+    } catch (err) {
+      console.error('Failed to load deal history:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleInspectPillar(pillarKey: PillarKey) {

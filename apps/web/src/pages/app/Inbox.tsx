@@ -83,7 +83,7 @@ export function Inbox() {
       .channel(`inbox-page-${uid}-${channelId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'scheduled_meetings', filter: `user_id=eq.${uid}` },
+        { event: '*', schema: 'public', table: 'meetings', filter: `user_id=eq.${uid}` },
         () => {
           if (userRef.current?.id === uid) {
             fetchData(uid);
@@ -127,7 +127,7 @@ export function Inbox() {
     // instead of disappearing.
     const [{ data: allMeetings }, { data: dealsData }] = await Promise.all([
       supabase
-        .from('scheduled_meetings')
+        .from('meetings')
         .select('*')
         .eq('user_id', currentUserId)
         .in('status', ['unassigned', 'assigned'])
@@ -212,7 +212,7 @@ export function Inbox() {
       }
 
       const { error: updateError } = await supabase
-        .from('scheduled_meetings')
+        .from('meetings')
         .update({
           deal_id: dealId,
           status: 'assigned',

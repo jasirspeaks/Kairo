@@ -62,7 +62,7 @@ export function Deals() {
     const [{ data: states }, { data: lastCalls }, { data: meetings }] = await Promise.all([
       supabase.from('deal_state').select('deal_id, current_status').in('deal_id', dealIds),
       supabase.from('conversations').select('deal_id, created_at, status').in('deal_id', dealIds).order('created_at', { ascending: false }),
-      supabase.from('scheduled_meetings').select('deal_id, start_time')
+      supabase.from('meetings').select('deal_id, start_time')
         .in('deal_id', dealIds).eq('status', 'assigned').is('cancelled_at', null)
         .gte('start_time', new Date().toISOString()).order('start_time', { ascending: true }),
     ]);

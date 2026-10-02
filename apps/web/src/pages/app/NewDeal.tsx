@@ -130,7 +130,7 @@ export function NewDeal() {
   // directly rather than trusting that the fetch alone means success.
   async function checkForAssignedMeeting(dealId: string): Promise<boolean> {
     const { data } = await supabase
-      .from('scheduled_meetings')
+      .from('meetings')
       .select('id')
       .eq('deal_id', dealId)
       .eq('status', 'assigned')

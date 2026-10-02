@@ -7,7 +7,7 @@ export function useInboxCount(userId: string | undefined): number {
   const fetchCount = useCallback(async (uid: string) => {
     const client = getKairoClient();
     const { count: meetingsCount } = await client
-      .from('scheduled_meetings')
+      .from('meetings')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', uid)
       .eq('status', 'unassigned')
@@ -32,7 +32,7 @@ export function useInboxCount(userId: string | undefined): number {
         {
           event: '*',
           schema: 'public',
-          table: 'scheduled_meetings',
+          table: 'meetings',
           filter: `user_id=eq.${userId}`,
         },
         () => fetchCount(userId)

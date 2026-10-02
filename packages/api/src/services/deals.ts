@@ -186,7 +186,7 @@ export async function getDealLongitudinalHistory(
   dealId: string,
   client: KairoClient = getKairoClient()
 ) {
-  const [dealRes, stateRes, risksRes, pillarRes, evidenceRes, transitionsRes, convsRes, meetingsRes] =
+  const [dealRes, stateRes, risksRes, pillarRes, evidenceRes, transitionsRes, convsRes, meetingsRes, stakeholdersRes] =
     await Promise.all([
       client.from('deals').select('*').eq('id', dealId).maybeSingle(),
       client.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
@@ -196,6 +196,7 @@ export async function getDealLongitudinalHistory(
       client.from('deal_state_transitions').select('*').eq('deal_id', dealId).order('created_at', { ascending: false }),
       client.from('conversations').select('*').eq('deal_id', dealId).order('created_at', { ascending: true }),
       client.from('meetings').select('*').eq('deal_id', dealId).is('cancelled_at', null).order('start_time', { ascending: true }),
+      client.from('stakeholders').select('*').eq('deal_id', dealId).order('created_at', { ascending: true }),
     ]);
 
   if (dealRes.error) throw dealRes.error;
@@ -210,5 +211,6 @@ export async function getDealLongitudinalHistory(
     transitions: transitionsRes.data || [],
     conversations: convsRes.data || [],
     meetings: meetingsRes.data || [],
+    stakeholders: stakeholdersRes.data || [],
   };
 }

@@ -368,4 +368,5 @@ export interface DealLongitudinalHistory {
   transitions: DealStateTransition[];
   conversations: Conversation[];
   meetings?: Meeting[];
+  stakeholders?: Stakeholder[];
 }
