@@ -1,9 +1,11 @@
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use parking_lot::Mutex;
@@ -60,15 +62,187 @@ pub struct ActiveSession {
     pub is_paused: Arc<AtomicBool>,
     pub pause_start: Option<Instant>,
     pub is_running: Arc<AtomicBool>,
-    pub _stream: cpal::Stream,
+    pub mic_stream: cpal::Stream,
+    pub sys_stream: Option<cpal::Stream>,
+    pub mic_queue: Arc<Mutex<VecDeque<f32>>>,
+    pub sys_queue: Arc<Mutex<VecDeque<f32>>>,
     pub writer: Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>,
     pub samples_written: Arc<Mutex<u64>>,
+    pub mixer_handle: Option<JoinHandle<()>>,
 }
 
 pub struct CaptureEngine {
     session: Mutex<Option<ActiveSession>>,
     last_status: Mutex<NativeCaptureStatus>,
     last_error: Mutex<Option<String>>,
+}
+
+const TARGET_SAMPLE_RATE: u32 = 16000;
+const TARGET_CHANNELS: u16 = 1;
+const MIXER_CHUNK_SAMPLES: usize = 320; // 20ms at 16000Hz
+
+fn is_system_audio_supported(host: &cpal::Host) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(device) = host.default_output_device() {
+            return device.default_output_config().is_ok();
+        }
+        false
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = host;
+        false
+    }
+}
+
+fn build_resampling_input_stream(
+    device: &cpal::Device,
+    config: &cpal::SupportedStreamConfig,
+    sample_queue: Arc<Mutex<VecDeque<f32>>>,
+    is_running: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
+) -> Result<cpal::Stream, String> {
+    let source_sample_rate = config.sample_rate().0;
+    let source_channels = config.channels() as usize;
+    let step = source_sample_rate as f64 / TARGET_SAMPLE_RATE as f64;
+
+    let err_fn = |err| {
+        eprintln!("[KairoAudioCapture] Stream error: {}", err);
+    };
+
+    let sample_format = config.sample_format();
+
+    let stream = match sample_format {
+        cpal::SampleFormat::F32 => {
+            let mut resample_phase: f64 = 0.0;
+            device.build_input_stream(
+                &config.clone().into(),
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    if !is_running.load(Ordering::Relaxed) || is_paused.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    if source_channels == 0 || data.is_empty() {
+                        return;
+                    }
+
+                    let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
+                    for chunk in data.chunks_exact(source_channels) {
+                        let sum: f32 = chunk.iter().sum();
+                        mono_frames.push(sum / source_channels as f32);
+                    }
+
+                    let mut resampled = Vec::new();
+                    while (resample_phase as usize) < mono_frames.len() {
+                        let idx = resample_phase as usize;
+                        let s = mono_frames[idx].clamp(-1.0, 1.0);
+                        resampled.push(s);
+                        resample_phase += step;
+                    }
+                    resample_phase -= mono_frames.len() as f64;
+                    if resample_phase < 0.0 {
+                        resample_phase = 0.0;
+                    }
+
+                    if !resampled.is_empty() {
+                        let mut q = sample_queue.lock();
+                        // Bound queue to 5 seconds of audio to prevent unbounded memory growth
+                        if q.len() < 80000 {
+                            q.extend(resampled);
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::I16 => {
+            let mut resample_phase: f64 = 0.0;
+            device.build_input_stream(
+                &config.clone().into(),
+                move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                    if !is_running.load(Ordering::Relaxed) || is_paused.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    if source_channels == 0 || data.is_empty() {
+                        return;
+                    }
+
+                    let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
+                    for chunk in data.chunks_exact(source_channels) {
+                        let sum: f32 = chunk.iter().map(|&s| s as f32 / 32768.0).sum();
+                        mono_frames.push(sum / source_channels as f32);
+                    }
+
+                    let mut resampled = Vec::new();
+                    while (resample_phase as usize) < mono_frames.len() {
+                        let idx = resample_phase as usize;
+                        let s = mono_frames[idx].clamp(-1.0, 1.0);
+                        resampled.push(s);
+                        resample_phase += step;
+                    }
+                    resample_phase -= mono_frames.len() as f64;
+                    if resample_phase < 0.0 {
+                        resample_phase = 0.0;
+                    }
+
+                    if !resampled.is_empty() {
+                        let mut q = sample_queue.lock();
+                        if q.len() < 80000 {
+                            q.extend(resampled);
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            )
+        }
+        cpal::SampleFormat::U16 => {
+            let mut resample_phase: f64 = 0.0;
+            device.build_input_stream(
+                &config.clone().into(),
+                move |data: &[u16], _: &cpal::InputCallbackInfo| {
+                    if !is_running.load(Ordering::Relaxed) || is_paused.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    if source_channels == 0 || data.is_empty() {
+                        return;
+                    }
+
+                    let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
+                    for chunk in data.chunks_exact(source_channels) {
+                        let sum: f32 = chunk.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum();
+                        mono_frames.push(sum / source_channels as f32);
+                    }
+
+                    let mut resampled = Vec::new();
+                    while (resample_phase as usize) < mono_frames.len() {
+                        let idx = resample_phase as usize;
+                        let s = mono_frames[idx].clamp(-1.0, 1.0);
+                        resampled.push(s);
+                        resample_phase += step;
+                    }
+                    resample_phase -= mono_frames.len() as f64;
+                    if resample_phase < 0.0 {
+                        resample_phase = 0.0;
+                    }
+
+                    if !resampled.is_empty() {
+                        let mut q = sample_queue.lock();
+                        if q.len() < 80000 {
+                            q.extend(resampled);
+                        }
+                    }
+                },
+                err_fn,
+                None,
+            )
+        }
+        _ => return Err("Unsupported audio input sample format".to_string()),
+    }
+    .map_err(|e| format!("Failed to build CPAL audio stream: {}", e))?;
+
+    Ok(stream)
 }
 
 impl CaptureEngine {
@@ -99,15 +273,15 @@ impl CaptureEngine {
             }
         }
 
+        let system_audio_supported = is_system_audio_supported(&host);
+
         CaptureCapabilitiesResponse {
             microphone_supported: !available_devices.is_empty(),
-            // Cross-platform system audio capture requires platform-specific loopback drivers/WASAPI loopback.
-            // Explicitly report capability state so unsupported modes are never claimed.
-            system_audio_supported: false,
+            system_audio_supported,
             available_devices,
             default_device_name,
-            target_sample_rate: 16000,
-            target_channels: 1,
+            target_sample_rate: TARGET_SAMPLE_RATE,
+            target_channels: TARGET_CHANNELS,
         }
     }
 
@@ -118,11 +292,11 @@ impl CaptureEngine {
         }
 
         let host = cpal::default_host();
-        let device = host
+        let mic_device = host
             .default_input_device()
             .ok_or_else(|| "No default audio input device (microphone) found on this system".to_string())?;
 
-        let supported_config = device
+        let mic_config = mic_device
             .default_input_config()
             .map_err(|e| format!("Failed to get default input audio config: {}", e))?;
 
@@ -132,9 +306,6 @@ impl CaptureEngine {
         let timestamp = chrono::Utc::now().timestamp();
         let file_name = format!("kairo_meeting_{}_{}.wav", meeting_id, timestamp);
         let file_path = temp_dir.join(file_name);
-
-        const TARGET_SAMPLE_RATE: u32 = 16000;
-        const TARGET_CHANNELS: u16 = 1;
 
         let spec = hound::WavSpec {
             channels: TARGET_CHANNELS,
@@ -146,147 +317,146 @@ impl CaptureEngine {
         let writer = hound::WavWriter::create(&file_path, spec)
             .map_err(|e| format!("Failed to initialize WAV file: {}", e))?;
         let writer_arc = Arc::new(Mutex::new(Some(writer)));
-        let writer_clone = writer_arc.clone();
 
         let is_running = Arc::new(AtomicBool::new(true));
         let is_paused = Arc::new(AtomicBool::new(false));
 
-        let is_running_clone = is_running.clone();
-        let is_paused_clone = is_paused.clone();
+        let mic_queue = Arc::new(Mutex::new(VecDeque::with_capacity(16000)));
+        let sys_queue = Arc::new(Mutex::new(VecDeque::with_capacity(16000)));
 
-        let source_sample_rate = supported_config.sample_rate().0;
-        let source_channels = supported_config.channels() as usize;
-        let samples_written_counter = Arc::new(Mutex::new(0u64));
-        let samples_counter_clone = samples_written_counter.clone();
+        let mic_stream = build_resampling_input_stream(
+            &mic_device,
+            &mic_config,
+            mic_queue.clone(),
+            is_running.clone(),
+            is_paused.clone(),
+        )?;
 
-        let err_fn = |err| {
-            eprintln!("[KairoAudioCapture] Stream error: {}", err);
-        };
-
-        let sample_format = supported_config.sample_format();
-
-        let mut resample_phase: f64 = 0.0;
-        let step = source_sample_rate as f64 / TARGET_SAMPLE_RATE as f64;
-
-        let stream = match sample_format {
-            cpal::SampleFormat::F32 => {
-                device.build_input_stream(
-                    &supported_config.into(),
-                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                        if !is_running_clone.load(Ordering::Relaxed) || is_paused_clone.load(Ordering::Relaxed) {
-                            return;
-                        }
-
-                        let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
-                        for chunk in data.chunks_exact(source_channels) {
-                            let sum: f32 = chunk.iter().sum();
-                            mono_frames.push(sum / source_channels as f32);
-                        }
-
-                        let mut writer_guard = writer_clone.lock();
-                        if let Some(ref mut w) = *writer_guard {
-                            let mut local_count = 0u64;
-                            while (resample_phase as usize) < mono_frames.len() {
-                                let idx = resample_phase as usize;
-                                let sample_f32 = mono_frames[idx].clamp(-1.0, 1.0);
-                                let sample_i16 = (sample_f32 * 32767.0) as i16;
-                                if w.write_sample(sample_i16).is_ok() {
-                                    local_count += 1;
-                                }
-                                resample_phase += step;
-                            }
-                            resample_phase -= mono_frames.len() as f64;
-                            if resample_phase < 0.0 {
-                                resample_phase = 0.0;
-                            }
-                            *samples_counter_clone.lock() += local_count;
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I16 => {
-                device.build_input_stream(
-                    &supported_config.into(),
-                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                        if !is_running_clone.load(Ordering::Relaxed) || is_paused_clone.load(Ordering::Relaxed) {
-                            return;
-                        }
-
-                        let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
-                        for chunk in data.chunks_exact(source_channels) {
-                            let sum: f32 = chunk.iter().map(|&s| s as f32 / 32768.0).sum();
-                            mono_frames.push(sum / source_channels as f32);
-                        }
-
-                        let mut writer_guard = writer_clone.lock();
-                        if let Some(ref mut w) = *writer_guard {
-                            let mut local_count = 0u64;
-                            while (resample_phase as usize) < mono_frames.len() {
-                                let idx = resample_phase as usize;
-                                let sample_f32 = mono_frames[idx].clamp(-1.0, 1.0);
-                                let sample_i16 = (sample_f32 * 32767.0) as i16;
-                                if w.write_sample(sample_i16).is_ok() {
-                                    local_count += 1;
-                                }
-                                resample_phase += step;
-                            }
-                            resample_phase -= mono_frames.len() as f64;
-                            if resample_phase < 0.0 {
-                                resample_phase = 0.0;
-                            }
-                            *samples_counter_clone.lock() += local_count;
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-            }
-            cpal::SampleFormat::U16 => {
-                device.build_input_stream(
-                    &supported_config.into(),
-                    move |data: &[u16], _: &cpal::InputCallbackInfo| {
-                        if !is_running_clone.load(Ordering::Relaxed) || is_paused_clone.load(Ordering::Relaxed) {
-                            return;
-                        }
-
-                        let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
-                        for chunk in data.chunks_exact(source_channels) {
-                            let sum: f32 = chunk.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum();
-                            mono_frames.push(sum / source_channels as f32);
-                        }
-
-                        let mut writer_guard = writer_clone.lock();
-                        if let Some(ref mut w) = *writer_guard {
-                            let mut local_count = 0u64;
-                            while (resample_phase as usize) < mono_frames.len() {
-                                let idx = resample_phase as usize;
-                                let sample_f32 = mono_frames[idx].clamp(-1.0, 1.0);
-                                let sample_i16 = (sample_f32 * 32767.0) as i16;
-                                if w.write_sample(sample_i16).is_ok() {
-                                    local_count += 1;
-                                }
-                                resample_phase += step;
-                            }
-                            resample_phase -= mono_frames.len() as f64;
-                            if resample_phase < 0.0 {
-                                resample_phase = 0.0;
-                            }
-                            *samples_counter_clone.lock() += local_count;
-                        }
-                    },
-                    err_fn,
-                    None,
-                )
-            }
-            _ => return Err("Unsupported audio input sample format".to_string()),
-        }
-        .map_err(|e| format!("Failed to build CPAL input stream: {}", e))?;
-
-        stream
+        mic_stream
             .play()
-            .map_err(|e| format!("Failed to start audio stream: {}", e))?;
+            .map_err(|e| format!("Failed to start microphone stream: {}", e))?;
+
+        // System audio loopback (Windows WASAPI loopback support)
+        let mut sys_stream_opt: Option<cpal::Stream> = None;
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(sys_device) = host.default_output_device() {
+                if let Ok(sys_config) = sys_device.default_output_config() {
+                    match build_resampling_input_stream(
+                        &sys_device,
+                        &sys_config,
+                        sys_queue.clone(),
+                        is_running.clone(),
+                        is_paused.clone(),
+                    ) {
+                        Ok(sys_stream) => {
+                            if sys_stream.play().is_ok() {
+                                sys_stream_opt = Some(sys_stream);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[KairoAudioCapture] System loopback stream setup note: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        let samples_written_counter = Arc::new(Mutex::new(0u64));
+
+        // Start background mixing thread
+        let mixer_writer = writer_arc.clone();
+        let mixer_running = is_running.clone();
+        let mixer_paused = is_paused.clone();
+        let mixer_mic_queue = mic_queue.clone();
+        let mixer_sys_queue = sys_queue.clone();
+        let mixer_samples_counter = samples_written_counter.clone();
+
+        let mixer_handle = thread::spawn(move || {
+            let mut mic_buf = vec![0.0f32; MIXER_CHUNK_SAMPLES];
+            let mut sys_buf = vec![0.0f32; MIXER_CHUNK_SAMPLES];
+
+            while mixer_running.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(20));
+
+                if mixer_paused.load(Ordering::Relaxed) {
+                    let mut mq = mixer_mic_queue.lock();
+                    mq.clear();
+                    let mut sq = mixer_sys_queue.lock();
+                    sq.clear();
+                    continue;
+                }
+
+                // Drain up to MIXER_CHUNK_SAMPLES from mic queue
+                let mut mic_count = 0;
+                {
+                    let mut mq = mixer_mic_queue.lock();
+                    while mic_count < MIXER_CHUNK_SAMPLES && !mq.is_empty() {
+                        if let Some(s) = mq.pop_front() {
+                            mic_buf[mic_count] = s;
+                            mic_count += 1;
+                        }
+                    }
+                }
+                for i in mic_count..MIXER_CHUNK_SAMPLES {
+                    mic_buf[i] = 0.0;
+                }
+
+                // Drain up to MIXER_CHUNK_SAMPLES from system queue
+                let mut sys_count = 0;
+                {
+                    let mut sq = mixer_sys_queue.lock();
+                    while sys_count < MIXER_CHUNK_SAMPLES && !sq.is_empty() {
+                        if let Some(s) = sq.pop_front() {
+                            sys_buf[sys_count] = s;
+                            sys_count += 1;
+                        }
+                    }
+                }
+                for i in sys_count..MIXER_CHUNK_SAMPLES {
+                    sys_buf[i] = 0.0;
+                }
+
+                let frames_to_write = if mic_count > 0 || sys_count > 0 {
+                    mic_count.max(sys_count)
+                } else {
+                    0
+                };
+
+                if frames_to_write > 0 {
+                    let mut w_guard = mixer_writer.lock();
+                    if let Some(ref mut w) = *w_guard {
+                        let mut count = 0u64;
+                        for i in 0..frames_to_write {
+                            let mixed = (mic_buf[i] + sys_buf[i]).clamp(-1.0, 1.0);
+                            let sample_i16 = (mixed * 32767.0) as i16;
+                            if w.write_sample(sample_i16).is_ok() {
+                                count += 1;
+                            }
+                        }
+                        *mixer_samples_counter.lock() += count;
+                    }
+                }
+            }
+
+            // Final drain when stopping
+            let mut w_guard = mixer_writer.lock();
+            if let Some(ref mut w) = *w_guard {
+                let mut mq = mixer_mic_queue.lock();
+                let mut sq = mixer_sys_queue.lock();
+                let mut count = 0u64;
+                while !mq.is_empty() || !sq.is_empty() {
+                    let m = mq.pop_front().unwrap_or(0.0);
+                    let s = sq.pop_front().unwrap_or(0.0);
+                    let mixed = (m + s).clamp(-1.0, 1.0);
+                    let sample_i16 = (mixed * 32767.0) as i16;
+                    if w.write_sample(sample_i16).is_ok() {
+                        count += 1;
+                    }
+                }
+                *mixer_samples_counter.lock() += count;
+            }
+        });
 
         let session = ActiveSession {
             meeting_id: meeting_id.clone(),
@@ -297,9 +467,13 @@ impl CaptureEngine {
             is_paused,
             pause_start: None,
             is_running,
-            _stream: stream,
+            mic_stream,
+            sys_stream: sys_stream_opt,
+            mic_queue,
+            sys_queue,
             writer: writer_arc,
             samples_written: samples_written_counter,
+            mixer_handle: Some(mixer_handle),
         };
 
         *session_guard = Some(session);
@@ -349,11 +523,16 @@ impl CaptureEngine {
 
     pub fn stop_capture(&self) -> Result<CaptureResultResponse, String> {
         let mut session_guard = self.session.lock();
-        let session = session_guard.take().ok_or_else(|| "No active capture session to stop".to_string())?;
+        let mut session = session_guard.take().ok_or_else(|| "No active capture session to stop".to_string())?;
 
-        session.is_running.store(false, Ordering::Relaxed);
+        session.is_running.store(false, Ordering::SeqCst);
 
-        // Finalize WAV writer to flush headers and actual audio frames
+        // Wait for mixer thread to finish flush
+        if let Some(handle) = session.mixer_handle.take() {
+            let _ = handle.join();
+        }
+
+        // Finalize WAV writer to flush headers and audio frames
         {
             let mut writer_guard = session.writer.lock();
             if let Some(w) = writer_guard.take() {
@@ -363,7 +542,7 @@ impl CaptureEngine {
 
         let total_samples = *session.samples_written.lock();
         let calculated_duration = if total_samples > 0 {
-            total_samples / 16000
+            total_samples / TARGET_SAMPLE_RATE as u64
         } else {
             session.start_time.elapsed().as_secs().saturating_sub(session.paused_duration_secs)
         };
@@ -372,6 +551,14 @@ impl CaptureEngine {
             .map(|m| m.len())
             .unwrap_or(0);
 
+        if file_size <= 44 && total_samples == 0 {
+            let _ = std::fs::remove_file(&session.file_path);
+            *self.last_status.lock() = NativeCaptureStatus::Failed;
+            let err = "Recording ended without capturing any valid audio frames (0 samples).".to_string();
+            *self.last_error.lock() = Some(err.clone());
+            return Err(err);
+        }
+
         *self.last_status.lock() = NativeCaptureStatus::Completed;
 
         Ok(CaptureResultResponse {
@@ -379,16 +566,19 @@ impl CaptureEngine {
             deal_id: session.deal_id,
             file_path: session.file_path.to_string_lossy().to_string(),
             duration_seconds: calculated_duration,
-            sample_rate: 16000,
-            channels: 1,
+            sample_rate: TARGET_SAMPLE_RATE,
+            channels: TARGET_CHANNELS,
             file_size_bytes: file_size,
         })
     }
 
     pub fn discard_capture(&self) -> Result<(), String> {
         let mut session_guard = self.session.lock();
-        if let Some(session) = session_guard.take() {
-            session.is_running.store(false, Ordering::Relaxed);
+        if let Some(mut session) = session_guard.take() {
+            session.is_running.store(false, Ordering::SeqCst);
+            if let Some(handle) = session.mixer_handle.take() {
+                let _ = handle.join();
+            }
             {
                 let mut writer_guard = session.writer.lock();
                 let _ = writer_guard.take();

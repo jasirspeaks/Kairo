@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth, getDeals, getMeetings, submitRecording, updateMeetingCaptureStatus } from '@kairo/api';
 import { Deal, MeetingWithDeal } from '@kairo/core';
-import { useMeetingCapture } from '@kairo/platform';
+import { useMeetingCapture, getNativeCaptureCapabilities, NativeCaptureCapabilities } from '@kairo/platform';
 
 export function RecordReviewView() {
   const { user } = useAuth();
@@ -26,8 +26,13 @@ export function RecordReviewView() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [capabilities, setCapabilities] = useState<NativeCaptureCapabilities | null>(null);
 
   const capture = useMeetingCapture();
+
+  useEffect(() => {
+    getNativeCaptureCapabilities().then(setCapabilities).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -120,13 +125,33 @@ export function RecordReviewView() {
   return (
     <div className="flex-1 flex flex-col gap-6 overflow-y-auto p-6 max-w-4xl mx-auto w-full animate-fade-in">
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-textPrimary font-display">
-          Meeting Capture & Deal Intelligence
-        </h1>
-        <p className="text-xs text-textSecondary mt-0.5">
-          Dual-channel desktop audio engine spools meeting conversation directly into Kairo's 5-pillar qualification model
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-textPrimary font-display">
+            Meeting Capture & Deal Intelligence
+          </h1>
+          <p className="text-xs text-textSecondary mt-0.5">
+            Dual-channel desktop audio engine spools meeting conversation directly into Kairo's 5-pillar qualification model
+          </p>
+        </div>
+        {capabilities && (
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+              capabilities.microphone_supported
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+            }`}>
+              {capabilities.microphone_supported ? 'Mic: Active' : 'Mic: Missing'}
+            </span>
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+              capabilities.system_audio_supported
+                ? 'bg-primary/10 text-primary border-primary/20'
+                : 'bg-surfaceHigh text-textMuted border-border'
+            }`}>
+              {capabilities.system_audio_supported ? 'System Audio: Active' : 'System Audio: OS Unsupported'}
+            </span>
+          </div>
+        )}
       </div>
 
       {successMessage && (

@@ -6,7 +6,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
@@ -96,6 +95,26 @@ export function RecordScreen() {
     }
   };
 
+  const discardRecording = async () => {
+    const recording = recordingRef.current;
+    if (recording) {
+      try {
+        await recording.stopAndUnloadAsync();
+        const uri = recording.getURI();
+        if (uri) {
+          await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+        }
+      } catch {
+        // Ignore cleanup errors on discard
+      }
+      recordingRef.current = null;
+    }
+    setIsRecording(false);
+    setDuration(0);
+    setStatusMessage('Recording discarded.');
+    setErrorMessage(null);
+  };
+
   const stopAndSubmitRecording = async () => {
     const recording = recordingRef.current;
     if (!recording) {
@@ -113,18 +132,20 @@ export function RecordScreen() {
     setStatusMessage('Finalizing audio capture...');
     setErrorMessage(null);
 
+    let recordedUri: string | null = null;
+
     try {
       // 1. Stop and unload hardware recording
       await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      recordedUri = recording.getURI();
       recordingRef.current = null;
 
-      if (!uri) {
+      if (!recordedUri) {
         throw new Error('Recording ended without producing a valid audio file URI.');
       }
 
       // 2. Validate file existence and non-zero size
-      const fileInfo = await FileSystem.getInfoAsync(uri);
+      const fileInfo = await FileSystem.getInfoAsync(recordedUri);
       if (!fileInfo.exists) {
         throw new Error('Recorded audio file could not be found on device storage.');
       }
@@ -133,9 +154,23 @@ export function RecordScreen() {
         throw new Error('Recorded audio file is empty (0 bytes). Please check microphone input.');
       }
 
-      // 3. Fetch real audio blob from local filesystem URI
-      const response = await fetch(uri);
-      const audioBlob = await response.blob();
+      // 3. Fetch real audio blob from local filesystem URI with fallback
+      let audioBlob: Blob;
+      try {
+        const response = await fetch(recordedUri);
+        audioBlob = await response.blob();
+      } catch (fetchErr) {
+        const b64 = await FileSystem.readAsStringAsync(recordedUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const byteCharacters = atob(b64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        audioBlob = new Blob([byteArray], { type: 'audio/m4a' });
+      }
 
       if (!audioBlob || audioBlob.size === 0) {
         throw new Error('Audio payload contains 0 bytes. Recording discarded.');
@@ -146,10 +181,16 @@ export function RecordScreen() {
       // 4. Submit genuine audio payload through pipeline
       await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
       setStatusMessage('Audio recorded & 5-pillar deal intelligence generated successfully!');
+
+      // 5. Clean up temporary recording file from filesystem
+      await FileSystem.deleteAsync(recordedUri, { idempotent: true }).catch(() => {});
     } catch (err: any) {
       console.error('[MobileRecorder] Submission failed:', err);
       setErrorMessage(err?.message || 'Failed to process mobile audio recording.');
       setStatusMessage(null);
+      if (recordedUri) {
+        await FileSystem.deleteAsync(recordedUri, { idempotent: true }).catch(() => {});
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -231,9 +272,19 @@ export function RecordScreen() {
           {isSubmitting
             ? 'Processing and transcribing audio...'
             : isRecording
-            ? 'Recording audio... Tap red square to stop & analyze'
+            ? 'Recording audio... Tap red square to finish & analyze'
             : 'Tap microphone button to start recording'}
         </Text>
+
+        {isRecording && (
+          <TouchableOpacity
+            style={styles.discardButton}
+            onPress={discardRecording}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.discardButtonText}>Discard Recording</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Status Message */}
@@ -372,6 +423,20 @@ const styles = StyleSheet.create({
     color: '#796B8A',
     fontSize: 12,
     textAlign: 'center',
+  },
+  discardButton: {
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#FF667A1A',
+    borderWidth: 1,
+    borderColor: '#FF667A33',
+  },
+  discardButtonText: {
+    color: '#FF667A',
+    fontSize: 12,
+    fontWeight: '600',
   },
   statusBox: {
     backgroundColor: '#3DD68C1A',

@@ -567,7 +567,16 @@ serve(async (req) => {
         upsertPayload.id = kairoMeetingId;
         upsertPayload.status = 'scheduled';
         if (kairoDealId) {
-          upsertPayload.deal_id = kairoDealId;
+          const { data: validDeal } = await supabase
+            .from('deals')
+            .select('id')
+            .eq('id', kairoDealId)
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (validDeal) {
+            upsertPayload.deal_id = kairoDealId;
+          }
         }
       } else if (claimsIntent) {
         upsertPayload.status =
