@@ -92,7 +92,7 @@ export function RecordReviewView() {
       }
 
       if (res.blob) {
-        await submitRecording(selectedDealId, res.blob, res.mimeType);
+        await submitRecording(selectedDealId, res.blob, res.mimeType, selectedMeetingId || null);
       }
 
       if (selectedMeetingId) {

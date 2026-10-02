@@ -52,6 +52,11 @@ function guessMimeType(path: string): string {
       return 'audio/mpeg';
     case 'webm':
       return 'audio/webm';
+    case 'wav':
+      return 'audio/wav';
+    case 'ogg':
+    case 'opus':
+      return 'audio/ogg';
     default:
       return 'audio/mp4';
   }
@@ -639,6 +644,19 @@ serve(async (req: Request) => {
       review,
       conversationId
     );
+
+    if (conversation.meeting_id) {
+      await supabase
+        .from('meetings')
+        .update({
+          conversation_id: conversationId,
+          matched_conversation_id: conversationId,
+          status: 'completed',
+          capture_status: 'completed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversation.meeting_id);
+    }
 
     console.log(
       `mobile-recording-review: completed conversation ${conversationId} for deal ${deal.id}`

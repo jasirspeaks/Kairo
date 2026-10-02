@@ -100,18 +100,22 @@ function extensionForMimeType(mimeType: string): string {
   if (mimeType.startsWith('audio/mp4')) return 'm4a';
   if (mimeType.startsWith('audio/aac')) return 'aac';
   if (mimeType.startsWith('audio/webm')) return 'webm';
+  if (mimeType.startsWith('audio/wav') || mimeType.startsWith('audio/x-wav')) return 'wav';
+  if (mimeType.startsWith('audio/ogg') || mimeType.startsWith('audio/opus')) return 'ogg';
   return 'm4a';
 }
 
 export interface SubmitRecordingResult {
   conversationId: string;
   dealId: string;
+  meetingId?: string;
 }
 
 export async function submitRecording(
   dealId: string,
   blob: Blob,
   mimeType: string,
+  meetingId?: string | null,
   client: KairoClient = getKairoClient()
 ): Promise<SubmitRecordingResult> {
   const { data: { session } } = await client.auth.getSession();
@@ -125,6 +129,7 @@ export async function submitRecording(
     .insert({
       user_id: userId,
       deal_id: dealId,
+      meeting_id: meetingId || null,
       input_type: 'audio',
       status: 'pending',
     })
@@ -156,6 +161,18 @@ export async function submitRecording(
     await client.storage.from('recordings').remove([storagePath]);
     await client.from('conversations').delete().eq('id', newConv.id);
     throw new Error('Failed to save the recording. Please try again.');
+  }
+
+  if (meetingId) {
+    await client
+      .from('meetings')
+      .update({
+        audio_storage_path: storagePath,
+        conversation_id: newConv.id,
+        capture_status: 'uploading',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', meetingId);
   }
 
   const { supabaseUrl } = getClientConfig();

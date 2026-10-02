@@ -86,7 +86,7 @@ export function useMeetingWatcher({
       await updateMeetingCaptureStatus(currentMeeting.id, 'processing');
 
       if (res.blob && currentMeeting.deal_id) {
-        await submitRecording(currentMeeting.deal_id, res.blob, res.mimeType);
+        await submitRecording(currentMeeting.deal_id, res.blob, res.mimeType, currentMeeting.id);
       }
 
       await updateMeetingCaptureStatus(currentMeeting.id, 'completed');
