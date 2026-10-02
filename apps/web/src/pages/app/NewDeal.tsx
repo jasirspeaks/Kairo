@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
+import { reviewCall, saveDealState, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from '../../components/ui/Button';
@@ -367,9 +367,9 @@ export function NewDeal() {
 
       // Deal Review needs data starting at call 1, not just call 2+.
       // review.deal is already the complete current-state extraction --
-      // write it straight to deal_state, no aggregation step.
+      // write it straight to deal_state, no aggregation step. persist_deal_review
+      // owns deal_state, stakeholders, and stage writeback atomically.
       await saveDealState(dealId, user.id, review, resolvedStage);
-      await saveStakeholders(dealId, user.id, review);
 
       callSucceeded.current = true;
       navigate(`/app/deals/${dealId}/calls/${conv.id}`);

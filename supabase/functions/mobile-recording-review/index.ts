@@ -433,24 +433,35 @@ serve(async (req: Request) => {
       );
     }
 
-    // Only now is this run considered a processing attempt.
-    processingStarted = true;
+    // Atomically claim the conversation before starting work.
+    const isRetry = body.retry_attempt === true;
+    const { data: claimed, error: claimError } = await supabase.rpc(
+      'claim_conversation_review',
+      {
+        p_conversation_id: conversationId,
+        p_user_id: userId,
+        p_retry: isRetry,
+      }
+    );
 
-    const { error: processingUpdateError } = await supabase
-      .from('conversations')
-      .update({
-        status: 'processing',
-        retry_after: null,
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conversationId);
-
-    if (processingUpdateError) {
+    if (claimError) {
       throw new Error(
-        `Failed to mark conversation as processing: ${processingUpdateError.message}`
+        `Failed to claim conversation review: ${claimError.message}`
       );
     }
+
+    if (!claimed) {
+      return jsonRes(
+        {
+          error:
+            'Conversation is not available for review (already processing or not pending)',
+        },
+        409
+      );
+    }
+
+    // Only now is this run considered a processing attempt.
+    processingStarted = true;
 
     // Prefer a previously saved transcript. This is critical for retries:
     // once transcription succeeded, retrying the analysis should not require

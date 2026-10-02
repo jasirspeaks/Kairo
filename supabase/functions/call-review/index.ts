@@ -759,6 +759,32 @@ serve(async (req) => {
     }
 
     const isInternalReview = token === SUPABASE_SERVICE_ROLE_KEY;
+    let quotaConsumed = false;
+
+    if (!transcript || typeof transcript !== 'string') {
+      return new Response(JSON.stringify({ error: 'Transcript is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (transcript.trim().length < 100) {
+      return new Response(JSON.stringify({
+        error: 'Transcript is too short. Please provide a more complete conversation.',
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (transcript.length > 50000) {
+      return new Response(JSON.stringify({
+        error: 'Transcript is too long. Please trim it to under 50,000 characters.',
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!isInternalReview) {
       const { data: quotaResult, error: quotaError } = await supabase.rpc(
@@ -790,31 +816,8 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-    }
 
-    if (!transcript || typeof transcript !== 'string') {
-      return new Response(JSON.stringify({ error: 'Transcript is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (transcript.trim().length < 100) {
-      return new Response(JSON.stringify({
-        error: 'Transcript is too short. Please provide a more complete conversation.',
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (transcript.length > 50000) {
-      return new Response(JSON.stringify({
-        error: 'Transcript is too long. Please trim it to under 50,000 characters.',
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      quotaConsumed = true;
     }
 
     const isFirstCall = !deal_context?.previous_review;
@@ -893,6 +896,25 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error('call-review error:', err);
+
+    if (quotaConsumed && !isInternalReview && userId) {
+      try {
+        const { data: latestEvent } = await supabase
+          .from('review_usage_events')
+          .select('id')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestEvent?.id) {
+          await supabase.from('review_usage_events').delete().eq('id', latestEvent.id);
+        }
+      } catch (rollbackErr) {
+        console.error('call-review: failed to refund quota event:', rollbackErr);
+      }
+    }
+
     return new Response(JSON.stringify({
       error: err instanceof Error ? err.message : 'Internal server error',
     }), {

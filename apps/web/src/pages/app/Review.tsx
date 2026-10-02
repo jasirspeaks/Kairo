@@ -5,7 +5,7 @@ import {
   TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, saveStakeholders, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
+import { reviewCall, saveDealState, getCallStatusStyle, getCallStatusColor, resolveDealStage } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Deal, Conversation } from '../../types';
@@ -160,9 +160,9 @@ export function Review() {
 
       // review.deal is already the deal's complete current-state assessment
       // -- computed by call-review with the full prior history as context.
-      // Write directly, no aggregation step.
+      // Write directly, no aggregation step. persist_deal_review owns
+      // deal_state, stakeholders, and stage writeback atomically.
       await saveDealState(deal.id, user.id, review, resolvedStage);
-      await saveStakeholders(deal.id, user.id, review);
 
       setNewTranscript('');
       setAddingCall(false);
