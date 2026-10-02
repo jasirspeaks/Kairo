@@ -6,32 +6,28 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  Calendar,
+  Building2,
+  Clock,
+  Play,
+  Pause,
+  Trash2,
 } from 'lucide-react';
-import { useAudioRecorder } from '@kairo/platform';
-import { useAuth, getDeals, submitRecording } from '@kairo/api';
-import { Deal } from '@kairo/core';
+import { useAuth, getDeals, getMeetings, submitRecording, updateMeetingCaptureStatus } from '@kairo/api';
+import { Deal, MeetingWithDeal } from '@kairo/core';
+import { useMeetingCapture } from '@kairo/platform';
 
 export function RecordReviewView() {
   const { user } = useAuth();
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [meetings, setMeetings] = useState<MeetingWithDeal[]>([]);
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string>('');
   const [selectedDealId, setSelectedDealId] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [audioMimeType, setAudioMimeType] = useState<string>('audio/webm');
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const {
-    status,
-    elapsedMs,
-    levels,
-    errorMessage,
-    start,
-    stop,
-  } = useAudioRecorder();
-
-  const isRecording = status === 'recording';
+  const capture = useMeetingCapture();
 
   useEffect(() => {
     if (user) {
@@ -41,33 +37,42 @@ export function RecordReviewView() {
           setSelectedDealId(data[0].id);
         }
       });
+
+      getMeetings(user.id, { upcomingOnly: true, limit: 10 }).then((data) => {
+        setMeetings(data);
+        if (data.length > 0 && !selectedMeetingId) {
+          setSelectedMeetingId(data[0].id);
+          if (data[0].deal_id) {
+            setSelectedDealId(data[0].deal_id);
+          }
+        }
+      });
     }
   }, [user]);
+
+  const handleMeetingSelect = (meetingId: string) => {
+    setSelectedMeetingId(meetingId);
+    const meeting = meetings.find((m) => m.id === meetingId);
+    if (meeting?.deal_id) {
+      setSelectedDealId(meeting.deal_id);
+    }
+  };
 
   const handleStart = async () => {
     setStatusMessage(null);
     setSuccessMessage(null);
-    setAudioBlob(null);
-    setAudioUrl(null);
-    await start();
-  };
 
-  const handleStop = async () => {
-    const result = await stop();
-    if (result?.blob) {
-      setAudioBlob(result.blob);
-      setAudioMimeType(result.mimeType || 'audio/webm');
-      setAudioUrl(URL.createObjectURL(result.blob));
+    const meetingId = selectedMeetingId || `ad_hoc_${Date.now()}`;
+    await capture.startCapture(meetingId, selectedDealId || null);
+
+    if (selectedMeetingId) {
+      await updateMeetingCaptureStatus(selectedMeetingId, 'recording');
     }
   };
 
-  const handleProcess = async () => {
+  const handleStopAndProcess = async () => {
     if (!selectedDealId) {
-      setStatusMessage('Please select a deal before submitting.');
-      return;
-    }
-    if (!audioBlob) {
-      setStatusMessage('No recording available to process.');
+      setStatusMessage('Please select an associated deal before processing.');
       return;
     }
 
@@ -76,12 +81,30 @@ export function RecordReviewView() {
     setSuccessMessage(null);
 
     try {
-      await submitRecording(selectedDealId, audioBlob, audioMimeType);
-      setSuccessMessage('Call intelligence processed and deal updated successfully.');
-      setAudioBlob(null);
-      setAudioUrl(null);
+      const res = await capture.stopCapture();
+      if (!res) {
+        setStatusMessage('Recording was empty or could not be finalized.');
+        return;
+      }
+
+      if (selectedMeetingId) {
+        await updateMeetingCaptureStatus(selectedMeetingId, 'processing');
+      }
+
+      if (res.blob) {
+        await submitRecording(selectedDealId, res.blob, res.mimeType);
+      }
+
+      if (selectedMeetingId) {
+        await updateMeetingCaptureStatus(selectedMeetingId, 'completed');
+      }
+
+      setSuccessMessage('Meeting captured and 5-pillar deal intelligence generated successfully!');
     } catch (err: any) {
-      setStatusMessage(err?.message || 'Failed to process recording.');
+      setStatusMessage(err?.message || 'Failed to process intelligence for recording.');
+      if (selectedMeetingId) {
+        await updateMeetingCaptureStatus(selectedMeetingId, 'failed');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -94,17 +117,15 @@ export function RecordReviewView() {
     return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const currentLevel = levels.length > 0 ? levels[levels.length - 1] : 0;
-
   return (
-    <div className="flex-1 flex flex-col gap-6 overflow-y-auto p-6 max-w-4xl mx-auto w-full">
+    <div className="flex-1 flex flex-col gap-6 overflow-y-auto p-6 max-w-4xl mx-auto w-full animate-fade-in">
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-textPrimary font-display">
-          Record & Review Call
+          Meeting Capture & Deal Intelligence
         </h1>
         <p className="text-xs text-textSecondary mt-0.5">
-          Capture conversation audio with native desktop microphone processing and AI intelligence extraction
+          Dual-channel desktop audio engine spools meeting conversation directly into Kairo's 5-pillar qualification model
         </p>
       </div>
 
@@ -115,10 +136,66 @@ export function RecordReviewView() {
         </div>
       )}
 
-      {(errorMessage || statusMessage) && (
+      {(capture.errorMessage || statusMessage) && (
         <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-          <span>{errorMessage || statusMessage}</span>
+          <span>{capture.errorMessage || statusMessage}</span>
+        </div>
+      )}
+
+      {/* Upcoming Scheduled Meetings Selector */}
+      {meetings.length > 0 && (
+        <div className="card p-5 flex flex-col gap-3 border-primary/20 bg-surfaceHigh/40">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-textPrimary flex items-center gap-1.5">
+              <Calendar className="w-4 h-4 text-primary" />
+              Scheduled Meetings
+            </span>
+            <span className="text-[11px] text-textMuted font-mono">
+              Auto-linked to Deals
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {meetings.map((m) => {
+              const isSelected = selectedMeetingId === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => handleMeetingSelect(m.id)}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    isSelected
+                      ? 'border-primary bg-primary/10 shadow-sm'
+                      : 'border-border bg-surfaceHigh hover:border-primary/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-textPrimary truncate">{m.title}</p>
+                    <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-surface border border-border text-textMuted">
+                      {m.capture_status}
+                    </span>
+                  </div>
+                  {m.deal_name && (
+                    <p className="text-[11px] text-textSecondary flex items-center gap-1 mt-1 truncate">
+                      <Building2 className="w-3 h-3 text-primary" />
+                      {m.deal_name} {m.company_name ? `(${m.company_name})` : ''}
+                    </p>
+                  )}
+                  {m.start_time && (
+                    <p className="text-[11px] text-textMuted flex items-center gap-1 mt-0.5">
+                      <Clock className="w-3 h-3" />
+                      {new Date(m.start_time).toLocaleString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -144,95 +221,91 @@ export function RecordReviewView() {
         </select>
       </div>
 
-      {/* Recorder Interface */}
-      <div className="card p-8 flex flex-col items-center justify-center gap-6 text-center">
-        <div className="flex flex-col items-center gap-2">
+      {/* Main Recording Console */}
+      <div className="card p-8 flex flex-col items-center justify-center gap-6 text-center border-dashed">
+        <div className="relative">
+          {capture.isCapturing && (
+            <div className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" />
+          )}
           <div
-            className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 ${
-              isRecording
-                ? 'bg-rose-500/20 border-2 border-rose-500 animate-pulse shadow-lg shadow-rose-500/20'
-                : 'bg-primary/20 border-2 border-primary/40'
+            className={`w-20 h-20 rounded-full flex items-center justify-center border-2 transition-all shadow-inner ${
+              capture.isCapturing
+                ? 'bg-red-500/10 border-red-500 text-red-500'
+                : 'bg-surfaceHigh border-border text-textMuted'
             }`}
           >
-            {isRecording ? (
-              <Square
-                onClick={handleStop}
-                className="w-8 h-8 text-rose-400 cursor-pointer"
-              />
-            ) : (
-              <Mic
-                onClick={handleStart}
-                className="w-8 h-8 text-primary cursor-pointer hover:scale-110 transition-transform"
-              />
-            )}
+            <Mic className="w-8 h-8" />
           </div>
-
-          <div className="text-sm font-semibold font-mono text-textPrimary mt-2">
-            {formatSeconds(elapsedMs)}
-          </div>
-          <p className="text-xs text-textMuted">
-            {isRecording ? 'Recording active call audio...' : 'Click microphone to begin desktop recording'}
-          </p>
         </div>
 
-        {/* Level visualizer bar */}
-        {isRecording && (
-          <div className="w-64 h-2 rounded-full bg-surfaceHigh overflow-hidden border border-border">
-            <div
-              className="h-full bg-emerald-400 transition-all duration-75"
-              style={{ width: `${Math.min(100, Math.max(5, currentLevel * 100))}%` }}
-            />
+        <div className="flex flex-col items-center gap-1">
+          <div className="text-2xl font-bold font-mono tracking-wider text-textPrimary">
+            {formatSeconds(capture.elapsedMs)}
           </div>
-        )}
+          <span className="text-xs text-textMuted uppercase tracking-widest font-semibold">
+            {capture.isCapturing ? (capture.isPaused ? 'Capture Paused' : 'Live Desktop Audio Stream') : 'Capture Engine Ready'}
+          </span>
+        </div>
 
-        {/* Action button */}
+        {/* Action Controls */}
         <div className="flex items-center gap-3">
-          {isRecording ? (
-            <button
-              onClick={handleStop}
-              className="btn-secondary text-xs px-6 py-2.5 flex items-center gap-2 border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
-            >
-              <Square className="w-3.5 h-3.5" />
-              <span>Stop Recording</span>
-            </button>
-          ) : (
+          {!capture.isCapturing ? (
             <button
               onClick={handleStart}
-              className="btn-primary text-xs px-6 py-2.5 flex items-center gap-2"
+              className="btn-primary py-2.5 px-6 flex items-center gap-2 text-xs font-semibold shadow-lg shadow-primary/20"
             >
-              <Mic className="w-3.5 h-3.5" />
-              <span>Start Desktop Recording</span>
+              <Mic className="w-4 h-4" />
+              <span>Start Capture</span>
             </button>
+          ) : (
+            <>
+              {capture.isPaused ? (
+                <button
+                  onClick={capture.resumeCapture}
+                  className="btn-secondary py-2 px-4 flex items-center gap-2 text-xs text-emerald-400 border-emerald-400/30"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Resume</span>
+                </button>
+              ) : (
+                <button
+                  onClick={capture.pauseCapture}
+                  className="btn-secondary py-2 px-4 flex items-center gap-2 text-xs text-amber-400 border-amber-400/30"
+                >
+                  <Pause className="w-4 h-4" />
+                  <span>Pause</span>
+                </button>
+              )}
+
+              <button
+                onClick={handleStopAndProcess}
+                disabled={isSubmitting}
+                className="btn-primary py-2 px-5 flex items-center gap-2 text-xs bg-primary hover:bg-primaryHover text-white"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Analyzing Deal...</span>
+                  </>
+                ) : (
+                  <>
+                    <Square className="w-4 h-4 fill-current" />
+                    <span>Finish & Analyze</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={capture.discardCapture}
+                disabled={isSubmitting}
+                className="btn-secondary py-2 px-3 text-xs text-red-400 border-red-400/30 hover:bg-red-400/10"
+                title="Discard recording"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
           )}
         </div>
-
-        {/* Audio playback preview */}
-        {audioUrl && !isRecording && (
-          <div className="w-full pt-4 border-t border-border flex flex-col items-center gap-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Capture completed</span>
-            </div>
-            <audio src={audioUrl} controls className="w-full max-w-md h-10" />
-            <button
-              onClick={handleProcess}
-              disabled={isSubmitting}
-              className="btn-primary text-xs py-2 px-5 flex items-center gap-2 mt-2 disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Processing & Extracting Intelligence...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Process Call Intelligence</span>
-                </>
-              )}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

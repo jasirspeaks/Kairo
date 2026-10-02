@@ -28,6 +28,49 @@ export interface UseAudioRecorderResult {
   discard: () => void;
 }
 
+export type NativeCaptureStatus =
+  | 'idle'
+  | 'recording'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'discarded';
+
+export interface NativeCaptureState {
+  status: NativeCaptureStatus;
+  meeting_id: string | null;
+  deal_id: string | null;
+  elapsed_seconds: number;
+  file_path: string | null;
+  error_message: string | null;
+}
+
+export interface NativeCaptureResult {
+  meeting_id: string;
+  deal_id: string | null;
+  file_path: string;
+  duration_seconds: number;
+  sample_rate: number;
+  channels: number;
+  file_size_bytes: number;
+}
+
+export interface UseMeetingCaptureResult {
+  isCapturing: boolean;
+  isPaused: boolean;
+  captureStatus: NativeCaptureStatus;
+  elapsedMs: number;
+  activeMeetingId: string | null;
+  activeDealId: string | null;
+  levels: number[];
+  errorMessage: string | null;
+  startCapture: (meetingId: string, dealId?: string | null) => Promise<void>;
+  pauseCapture: () => Promise<void>;
+  resumeCapture: () => Promise<void>;
+  stopCapture: () => Promise<{ blob?: Blob; filePath?: string; mimeType: string; durationSeconds: number } | null>;
+  discardCapture: () => Promise<void>;
+}
+
 export interface StorageAdapter {
   getItem(key: string): Promise<string | null> | string | null;
   setItem(key: string, value: string): Promise<void> | void;
@@ -38,3 +81,4 @@ export interface OpenUrlOptions {
   target?: '_blank' | '_self';
   openExternal?: boolean;
 }
+

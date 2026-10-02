@@ -7,19 +7,24 @@ import {
   ChevronRight,
   Sparkles,
   RefreshCw,
+  Calendar,
+  Building2,
+  Mic,
 } from 'lucide-react';
 import {
   formatDealValue,
   getHealthScoreColor,
   DEAL_STAGES,
+  MeetingWithDeal,
 } from '@kairo/core';
-import { getDashboardDeals, useAuth, type DealWithState } from '@kairo/api';
+import { getDashboardDeals, getMeetings, useAuth, type DealWithState } from '@kairo/api';
 import { useNavigate } from 'react-router-dom';
 
 export function DashboardView() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [deals, setDeals] = useState<DealWithState[]>([]);
+  const [meetings, setMeetings] = useState<MeetingWithDeal[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
@@ -29,8 +34,12 @@ export function DashboardView() {
     }
     setLoading(true);
     try {
-      const data = await getDashboardDeals(user.id);
-      setDeals(data);
+      const [dealsData, meetingsData] = await Promise.all([
+        getDashboardDeals(user.id),
+        getMeetings(user.id, { upcomingOnly: true, limit: 4 }),
+      ]);
+      setDeals(dealsData);
+      setMeetings(meetingsData);
     } catch (err) {
       console.error('Failed to load dashboard deals', err);
     } finally {
@@ -43,9 +52,7 @@ export function DashboardView() {
   }, [user]);
 
   const totalValue = deals.reduce((acc, d) => acc + (d.deal_value || 0), 0);
-  const highRiskDeals = deals.filter(
-    (d) => d.risk_level === 'high'
-  );
+  const highRiskDeals = deals.filter((d) => d.risk_level === 'high');
   const avgHealthScore =
     deals.length > 0
       ? Math.round(
@@ -57,7 +64,7 @@ export function DashboardView() {
       : 0;
 
   return (
-    <div className="flex-1 flex flex-col gap-6 overflow-y-auto p-6">
+    <div className="flex-1 flex flex-col gap-6 overflow-y-auto p-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -128,6 +135,65 @@ export function DashboardView() {
         </div>
       </div>
 
+      {/* Upcoming Scheduled Meetings strip */}
+      {meetings.length > 0 && (
+        <div className="card p-5 flex flex-col gap-3 bg-surfaceHigh/40 border-primary/20">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-textPrimary flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-primary" />
+              <span>Upcoming Scheduled Meetings</span>
+            </h2>
+            <button
+              onClick={() => navigate('/review')}
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              <span>Capture Console</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {meetings.map((m) => (
+              <div
+                key={m.id}
+                onClick={() => navigate('/review')}
+                className="p-3.5 rounded-lg border border-border bg-surfaceHigh hover:border-primary/50 cursor-pointer transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-xs font-bold text-textPrimary truncate">{m.title}</p>
+                    <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                      {m.capture_status}
+                    </span>
+                  </div>
+                  {m.deal_name && (
+                    <p className="text-[11px] text-textSecondary flex items-center gap-1 mt-1 truncate">
+                      <Building2 className="w-3 h-3 text-primary" />
+                      {m.deal_name}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-textMuted mt-3 pt-2 border-t border-border/50">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {m.start_time
+                      ? new Date(m.start_time).toLocaleTimeString(undefined, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : 'Upcoming'}
+                  </span>
+                  <span className="text-primary font-medium flex items-center gap-1">
+                    <Mic className="w-3 h-3" /> Auto-Capture
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Deals list */}
       <div className="card p-5 flex flex-col gap-4">
         <div className="flex items-center justify-between">
@@ -181,23 +247,26 @@ export function DashboardView() {
                       {score}
                     </div>
                     <div>
-                      <h3 className="text-xs font-semibold text-textPrimary">
+                      <div className="text-xs font-semibold text-textPrimary">
                         {deal.company_name}
-                      </h3>
-                      <p className="text-[11px] text-textMuted">
-                        {deal.champion || deal.deal_name} • {deal.deal_stage}
-                      </p>
+                      </div>
+                      <div className="text-[11px] text-textMuted">
+                        {deal.deal_name} • {deal.deal_stage}
+                      </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="text-xs font-semibold text-textPrimary">
+                      <div className="text-xs font-semibold text-textPrimary">
                         {formatDealValue(deal.deal_value)}
-                      </p>
-                      <p className="text-[10px] text-textMuted font-mono">
-                        {deal.risk_level ? `${deal.risk_level.toUpperCase()} RISK` : 'NORMAL'}
-                      </p>
+                      </div>
+                      <div
+                        className="text-[10px] font-semibold uppercase tracking-wider"
+                        style={{ color }}
+                      >
+                        {deal.deal_state?.current_status || 'In Progress'}
+                      </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-textMuted" />
                   </div>

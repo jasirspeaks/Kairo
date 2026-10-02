@@ -32,6 +32,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { TopBar } from '../../components/layout/TopBar';
+import { ScheduleMeetingButton } from '../../components/ui/ScheduleMeetingButton';
 import { EvidenceInspector } from '../../components/evidence/EvidenceInspector';
 import { formatDate, cn } from '../../lib/utils';
 
@@ -752,22 +753,38 @@ export function DealReview() {
               <Building2 className="w-3.5 h-3.5" /> {deal.company_name}
             </p>
           </div>
-          <span
-            className="text-sm font-bold px-3 py-1.5 rounded-full border flex-shrink-0"
-            style={getStatusStyle(effectiveDealState.current_status || 'Unknown')}
-          >
-            {effectiveDealState.current_status || 'Unknown'}
-          </span>
+          <div className="flex items-center gap-3">
+            <ScheduleMeetingButton
+              dealId={deal.id}
+              dealName={deal.deal_name}
+              companyName={deal.company_name}
+              onMeetingScheduled={fetchData}
+            />
+            <span
+              className="text-sm font-bold px-3 py-1.5 rounded-full border flex-shrink-0"
+              style={getStatusStyle(effectiveDealState.current_status || 'Unknown')}
+            >
+              {effectiveDealState.current_status || 'Unknown'}
+            </span>
+          </div>
         </div>
 
         <div className="flex md:hidden items-center justify-between">
           <p className="text-textSecondary text-sm">{deal.company_name}</p>
-          <span
-            className="text-xs font-bold px-2.5 py-1 rounded-full border"
-            style={getStatusStyle(effectiveDealState.current_status || 'Unknown')}
-          >
-            {effectiveDealState.current_status || 'Unknown'}
-          </span>
+          <div className="flex items-center gap-2">
+            <ScheduleMeetingButton
+              dealId={deal.id}
+              dealName={deal.deal_name}
+              companyName={deal.company_name}
+              onMeetingScheduled={fetchData}
+            />
+            <span
+              className="text-xs font-bold px-2.5 py-1 rounded-full border"
+              style={getStatusStyle(effectiveDealState.current_status || 'Unknown')}
+            >
+              {effectiveDealState.current_status || 'Unknown'}
+            </span>
+          </div>
         </div>
       </div>
 

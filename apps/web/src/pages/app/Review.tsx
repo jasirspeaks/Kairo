@@ -395,7 +395,14 @@ export function Review() {
             record, not the place to add the next one. */}
         {isLatestCall && (
           <div className="flex flex-col sm:flex-row gap-2 pt-1">
-            <ScheduleMeetingButton userId={user?.id} dealId={dealId} className="flex-1" />
+            <ScheduleMeetingButton
+              userId={user?.id}
+              dealId={dealId}
+              dealName={deal?.deal_name}
+              companyName={deal?.company_name}
+              onMeetingScheduled={fetchData}
+              className="flex-1"
+            />
             <Button
               onClick={() => (canWrite ? setAddingCall(true) : setShowUpgradeModal(true))}
               variant="secondary"

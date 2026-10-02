@@ -292,6 +292,12 @@ export interface Meeting {
 // ScheduledMeeting alias for backward compatibility
 export type ScheduledMeeting = Meeting;
 
+export interface MeetingWithDeal extends Meeting {
+  deal_name?: string;
+  company_name?: string;
+  deal?: Deal | null;
+}
+
 export type GroundingType = 'explicit_statement' | 'behavioral_inference' | 'structural_absence';
 
 export type PillarKey = 'compelling_event' | 'economic_buyer' | 'decision_process' | 'budget' | 'champion';

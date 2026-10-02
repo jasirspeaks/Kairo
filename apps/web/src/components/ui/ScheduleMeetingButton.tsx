@@ -1,72 +1,49 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, X, CheckCircle2 } from 'lucide-react';
-import { checkCalendarConnected, syncGoogleCalendar } from '../../lib/kairo';
-import { supabase } from '../../lib/supabase';
+import { Calendar, X } from 'lucide-react';
+import { checkCalendarConnected, MeetingWithDeal } from '../../lib/kairo';
+import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from './Button';
 import { UpgradeModal } from './UpgradeModal';
-
-const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/r';
+import { ScheduleMeetingModal } from './ScheduleMeetingModal';
 
 interface ScheduleMeetingButtonProps {
-  userId: string | undefined;
-  // Which deal this click is scheduling for. When present, Kairo records a
-  // "schedule intent" so the next brand-new event the user creates in
-  // Google Calendar gets auto-assigned to this deal -- the user never has
-  // to come back and manually attach it in Inbox. Omit this prop (e.g. a
-  // generic "view my calendar" context with no deal in scope) to open
-  // Google Calendar without recording an intent.
+  userId?: string;
   dealId?: string;
+  dealName?: string;
+  companyName?: string;
   className?: string;
   variant?: 'secondary' | 'icon';
   size?: 'sm' | 'md' | 'lg';
+  onMeetingScheduled?: (meeting: MeetingWithDeal) => void;
 }
 
-// "Schedule Next Meeting" everywhere in the product (Call Review, Deal
-// Review) needs to agree on three things: is this user's Google Calendar
-// actually connected, which deal is this click for, and did the meeting
-// they just made in Google Calendar actually get linked back. If the
-// calendar isn't connected, say so plainly and point at Settings rather
-// than opening a blank/broken calendar view.
-export function ScheduleMeetingButton({ userId, dealId, className, variant = 'secondary', size = 'md' }: ScheduleMeetingButtonProps) {
+export function ScheduleMeetingButton({
+  userId: propUserId,
+  dealId,
+  dealName,
+  companyName,
+  className,
+  variant = 'secondary',
+  size = 'md',
+  onMeetingScheduled,
+}: ScheduleMeetingButtonProps) {
+  const { user } = useAuth();
+  const userId = propUserId || user?.id;
   const navigate = useNavigate();
   const { canWrite } = useSubscription(userId);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const awaitingReturn = useRef(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
     checkCalendarConnected(userId).then(setConnected);
   }, [userId]);
 
-  // When the user comes back to this tab after a click that opened Google
-  // Calendar, trigger one sync so the new event (if they made one) gets
-  // pulled in and, via the schedule intent, auto-assigned to this deal.
-  // This is the only reliable moment Kairo has to know "they're probably
-  // done over there" -- there's no webhook for "user finished in a tab
-  // they opened by hand."
-  useEffect(() => {
-    async function handleFocus() {
-      if (!awaitingReturn.current || !userId) return;
-      awaitingReturn.current = false;
-      setConfirming(true);
-      await syncGoogleCalendar();
-      setTimeout(() => setConfirming(false), 4000);
-    }
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [userId]);
-
   async function handleClick() {
-    // Checked first, before the calendar-connected check -- an expired
-    // account shouldn't be walked through "connect your calendar" only
-    // to be blocked at the actual write. Only gates the pending_schedule_
-    // intents insert below; opening Google Calendar itself is harmless
-    // and left alone, but there's no reason to invite that click either.
     if (!canWrite) {
       setShowUpgradeModal(true);
       return;
@@ -77,73 +54,93 @@ export function ScheduleMeetingButton({ userId, dealId, className, variant = 'se
       return;
     }
 
-    if (userId && dealId) {
-      // Best-effort -- if this write fails, the user still gets to
-      // Google Calendar, they'll just need to assign the meeting to the
-      // deal manually from Inbox afterward.
-      await supabase.from('pending_schedule_intents').insert({ user_id: userId, deal_id: dealId });
-      awaitingReturn.current = true;
+    if (dealId) {
+      setShowScheduleModal(true);
     }
-
-    window.open(GOOGLE_CALENDAR_URL, '_blank', 'noopener,noreferrer');
   }
 
-  const confirmationBanner = confirming && (
-    <div className="mt-2 flex items-center gap-2 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2 animate-fade-in">
-      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-      <p className="text-emerald-400 text-xs">
-        {dealId ? "Checking for your new meeting to link it to this deal…" : 'Syncing your calendar…'}
-      </p>
-    </div>
+  const promptComponent = showPrompt && (
+    <CalendarConnectPrompt
+      onClose={() => setShowPrompt(false)}
+      onGoToSettings={() => navigate('/app/settings')}
+    />
   );
 
-  if (variant === 'icon') {
-    return (
-      <>
+  return (
+    <>
+      {variant === 'icon' ? (
         <button
           onClick={handleClick}
-          className={className || 'w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary'}
+          className={
+            className ||
+            'w-8 h-8 flex items-center justify-center rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors'
+          }
           aria-label="Schedule Next Meeting"
         >
           <Calendar className="w-4 h-4" />
         </button>
-        {showPrompt && (
-          <CalendarConnectPrompt onClose={() => setShowPrompt(false)} onGoToSettings={() => navigate('/app/settings')} />
-        )}
-        <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
-        {confirmationBanner}
-      </>
-    );
-  }
-
-  return (
-    <>
-      <Button variant="secondary" size={size} className={className} onClick={handleClick}>
-        <Calendar className="w-4 h-4" /> Schedule Next Meeting
-      </Button>
-      {showPrompt && (
-        <CalendarConnectPrompt onClose={() => setShowPrompt(false)} onGoToSettings={() => navigate('/app/settings')} />
+      ) : (
+        <Button
+          variant="secondary"
+          size={size}
+          className={className}
+          onClick={handleClick}
+        >
+          <Calendar className="w-4 h-4" /> Schedule Next Meeting
+        </Button>
       )}
-      <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
-      {confirmationBanner}
+
+      {promptComponent}
+      <UpgradeModal
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
+
+      {dealId && (
+        <ScheduleMeetingModal
+          open={showScheduleModal}
+          onClose={() => setShowScheduleModal(false)}
+          dealId={dealId}
+          dealName={dealName}
+          companyName={companyName}
+          onMeetingScheduled={(m) => {
+            if (onMeetingScheduled) onMeetingScheduled(m);
+          }}
+        />
+      )}
     </>
   );
 }
 
-function CalendarConnectPrompt({ onClose, onGoToSettings }: { onClose: () => void; onGoToSettings: () => void }) {
+function CalendarConnectPrompt({
+  onClose,
+  onGoToSettings,
+}: {
+  onClose: () => void;
+  onGoToSettings: () => void;
+}) {
   return (
     <div className="mt-2 flex items-start gap-2 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3 animate-fade-in">
       <Calendar className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
-        <p className="text-textPrimary text-xs font-medium mb-0.5">Google Calendar isn't connected</p>
+        <p className="text-textPrimary text-xs font-medium mb-0.5">
+          Google Calendar isn't connected
+        </p>
         <p className="text-textSecondary text-xs leading-relaxed mb-2">
           Connect your calendar in Settings to schedule meetings from Kairo.
         </p>
-        <button onClick={onGoToSettings} className="text-primary text-xs font-semibold">
+        <button
+          onClick={onGoToSettings}
+          className="text-primary text-xs font-semibold hover:underline"
+        >
           Go to Settings →
         </button>
       </div>
-      <button onClick={onClose} className="text-textMuted flex-shrink-0" aria-label="Dismiss">
+      <button
+        onClick={onClose}
+        className="text-textMuted hover:text-textPrimary flex-shrink-0"
+        aria-label="Dismiss"
+      >
         <X className="w-3.5 h-3.5" />
       </button>
     </div>

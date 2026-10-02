@@ -223,3 +223,18 @@ export async function deleteMeeting(
 
   if (error) throw error;
 }
+
+export const meetingsService = {
+  getMeetings,
+  getMeeting,
+  getDealMeetings,
+  getUpcomingDealMeeting,
+  createMeeting,
+  updateMeeting,
+  updateMeetingCaptureStatus,
+  assignMeetingToDeal,
+  linkMeetingConversation,
+  deleteMeeting,
+};
+
+

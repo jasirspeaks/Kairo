@@ -9,6 +9,10 @@ export {
   getStatusStyle,
   getRiskLevel,
   resolveDealStage,
+  type Meeting,
+  type MeetingWithDeal,
+  type MeetingStatus,
+  type CaptureStatus,
 } from '@kairo/core';
 
 export {
@@ -16,7 +20,10 @@ export {
   saveDealState,
   saveStakeholders,
   checkCalendarConnected,
+  getCalendarConnectionStatus,
   syncGoogleCalendar,
+  scheduleMeetingViaGoogle,
+  meetingsService,
   submitRecording,
   describeRecordingError,
   getDealLongitudinalHistory,
