@@ -307,6 +307,7 @@ export interface DealEvidence {
   deal_id: string;
   conversation_id: string;
   meeting_id?: string | null;
+  ai_inference_id?: string | null;
   quote: string;
   speaker: string | null;
   pillar_key: PillarKey | null;
@@ -328,6 +329,8 @@ export interface DealRisk {
   first_identified_call_id: string | null;
   resolved_call_id: string | null;
   consecutive_unresolved_calls: number;
+  risk_category?: string | null;
+  fingerprint?: string | null;
   created_at: string;
   updated_at: string;
 }
