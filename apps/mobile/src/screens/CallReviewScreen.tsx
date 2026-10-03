@@ -6,8 +6,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Linking,
+  Alert,
 } from 'react-native';
-import { getDeal, getConversations } from '@kairo/api';
+import { getDeal, getConversations, GOOGLE_CALENDAR_URL } from '@kairo/api';
 import {
   getCallStatusColor,
   type Deal,
@@ -27,6 +29,7 @@ export function CallReviewScreen({
   const { goBack, navigate } = useNavigation();
   const [deal, setDeal] = useState<Deal | null>(null);
   const [conv, setConv] = useState<Conversation | null>(null);
+  const [allCalls, setAllCalls] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -44,9 +47,11 @@ export function CallReviewScreen({
         getConversations(dealId),
       ]);
       setDeal(dealData);
+      const calls = callsData || [];
+      setAllCalls(calls);
       const target = callId
-        ? (callsData || []).find((c) => c.id === callId)
-        : (callsData || [])[(callsData || []).length - 1];
+        ? calls.find((c) => c.id === callId)
+        : calls[calls.length - 1];
       setConv(target || null);
     } catch (err) {
       console.error('Failed to load call data:', err);
@@ -54,6 +59,9 @@ export function CallReviewScreen({
       setLoading(false);
     }
   };
+
+  const isLatestCall =
+    conv && allCalls.length > 0 && conv.id === allCalls[allCalls.length - 1].id;
 
   const handleCopy = () => {
     setCopied(true);
@@ -93,7 +101,7 @@ export function CallReviewScreen({
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         {/* Call Identity Header */}
         <View style={styles.identityRow}>
-          <Text style={styles.companyName}>{deal.company_name}</Text>
+          <Text style={styles.companyName}>🏢 {deal.company_name}</Text>
           <View
             style={[
               styles.statusPill,
@@ -167,7 +175,7 @@ export function CallReviewScreen({
             <View style={styles.followUpHeader}>
               <Text style={styles.sectionLabel}>KEY FOLLOW-UP MESSAGE</Text>
               <TouchableOpacity onPress={handleCopy} style={styles.copyBtn}>
-                <Text style={styles.copyBtnText}>{copied ? 'Copied' : 'Copy'}</Text>
+                <Text style={styles.copyBtnText}>{copied ? '✓ Copied' : '📋 Copy'}</Text>
               </TouchableOpacity>
             </View>
             <View style={styles.messageBox}>
@@ -184,15 +192,31 @@ export function CallReviewScreen({
           </View>
         )}
 
-        {/* Actions Bar */}
-        <View style={styles.actionsBar}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => navigate('new_deal', { existingDealId: deal.id })}
-          >
-            <Text style={styles.actionButtonText}>+ Add Call Transcript</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Actions Bar for Latest Call */}
+        {isLatestCall && (
+          <View style={styles.actionsBar}>
+            <TouchableOpacity
+              style={styles.actionBtnSecondary}
+              onPress={() => Linking.openURL(GOOGLE_CALENDAR_URL)}
+            >
+              <Text style={styles.actionBtnSecondaryText}>📅 Schedule Meeting</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtnPrimary}
+              onPress={() => navigate('new_deal', { existingDealId: deal.id })}
+            >
+              <Text style={styles.actionBtnPrimaryText}>+ Add Call</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtnSecondary}
+              onPress={() => navigate('record', { dealId: deal.id })}
+            >
+              <Text style={styles.actionBtnSecondaryText}>🎙️ Record Now</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -240,11 +264,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   companyName: {
     fontSize: 14,
     color: colors.textSecondary,
+    fontWeight: '600',
   },
   statusPill: {
     paddingHorizontal: 10,
@@ -258,9 +283,9 @@ const styles = StyleSheet.create({
   },
   verdictCard: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
     borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
     padding: 14,
     marginBottom: 14,
   },
@@ -270,29 +295,29 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   verdictText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
-    lineHeight: 18,
     marginBottom: 4,
+    lineHeight: 20,
   },
   verdictReason: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.textSecondary,
-    lineHeight: 16,
+    lineHeight: 18,
   },
   heroRiskCard: {
-    backgroundColor: '#FF667A0D',
-    borderRadius: 14,
+    backgroundColor: colors.dangerBg,
+    borderColor: colors.dangerBorder,
     borderWidth: 1,
-    borderColor: '#FF667A33',
+    borderRadius: 12,
     padding: 14,
     marginBottom: 14,
   },
   heroRiskTag: {
     fontSize: 10,
-    fontWeight: '800',
-    color: colors.red,
+    fontWeight: '700',
+    color: colors.dangerText,
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -300,8 +325,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.textPrimary,
-    lineHeight: 18,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   heroRiskWhy: {
     fontSize: 12,
@@ -310,48 +334,46 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   evidenceBox: {
-    backgroundColor: colors.surfaceHigh,
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 8,
     padding: 10,
     borderWidth: 1,
     borderColor: colors.border,
   },
   evidenceTag: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '700',
     color: colors.textMuted,
     marginBottom: 2,
   },
   evidenceText: {
-    fontSize: 11,
-    color: colors.textPrimary,
+    fontSize: 12,
+    color: colors.textSecondary,
     fontStyle: 'italic',
-    lineHeight: 15,
+    lineHeight: 16,
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
     borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
     padding: 14,
     marginBottom: 14,
   },
   sectionLabel: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.textMuted,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     marginBottom: 8,
   },
   missingList: {
     gap: 8,
   },
   missingItem: {
-    backgroundColor: colors.surfaceHigh,
-    padding: 10,
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: 10,
   },
   missingGap: {
     fontSize: 12,
@@ -364,33 +386,35 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   followUpCard: {
-    backgroundColor: '#7042C512',
-    padding: 14,
-    borderRadius: 14,
+    backgroundColor: colors.primaryGlow,
+    borderColor: colors.primary,
     borderWidth: 1,
-    borderColor: '#7042C533',
+    borderRadius: 12,
+    padding: 14,
     marginBottom: 14,
   },
   followUpTag: {
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.primary,
     marginBottom: 4,
   },
   followUpText: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.textPrimary,
-    lineHeight: 17,
+    lineHeight: 18,
   },
   followUpHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   copyBtn: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: colors.surfaceElevated,
   },
   copyBtnText: {
     fontSize: 11,
@@ -398,50 +422,61 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   messageBox: {
-    backgroundColor: colors.surfaceHigh,
-    padding: 12,
+    backgroundColor: colors.surfaceElevated,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: 12,
   },
   messageText: {
     fontSize: 12,
-    color: colors.textPrimary,
-    lineHeight: 17,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   managerNoteCard: {
-    backgroundColor: colors.surfaceHigh,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
+    backgroundColor: colors.surface,
     borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
     marginBottom: 14,
   },
   managerNoteTag: {
     fontSize: 10,
     fontWeight: '700',
     color: colors.textMuted,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   managerNoteText: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 16,
   },
   actionsBar: {
+    gap: 8,
     marginTop: 4,
+    paddingBottom: 20,
   },
-  actionButton: {
-    backgroundColor: colors.surfaceHigh,
+  actionBtnPrimary: {
+    backgroundColor: colors.primary,
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  actionButtonText: {
-    fontSize: 13,
+  actionBtnPrimaryText: {
+    color: colors.white,
+    fontSize: 14,
     fontWeight: '700',
-    color: colors.primary,
+  },
+  actionBtnSecondary: {
+    backgroundColor: colors.surfaceElevated,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  actionBtnSecondaryText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,18 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
+  Alert,
 } from 'react-native';
-import { supabase, reviewCall, saveDealState, checkCalendarConnected, GOOGLE_CALENDAR_URL, useAuth, useSubscription } from '@kairo/api';
+import {
+  supabase,
+  reviewCall,
+  saveDealState,
+  checkCalendarConnected,
+  getDealLongitudinalHistory,
+  GOOGLE_CALENDAR_URL,
+  useAuth,
+  useSubscription,
+} from '@kairo/api';
 import { INITIAL_DEAL_STAGE, resolveDealStage } from '@kairo/core';
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
@@ -20,7 +30,7 @@ type Step = 'deal' | 'transcript';
 export function NewDealScreen() {
   const { user, profile } = useAuth();
   const { canWrite } = useSubscription(user?.id);
-  const { navigate, goBack } = useNavigation();
+  const { navigate, goBack, routeParams } = useNavigation();
 
   const [step, setStep] = useState<Step>('deal');
   const [dealName, setDealName] = useState('');
@@ -30,6 +40,43 @@ export function NewDealScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
   const [creatingDeal, setCreatingDeal] = useState(false);
+
+  const scheduledDealIdRef = useRef<string | null>(null);
+  const callSucceeded = useRef(false);
+  const dealIsPreexisting = useRef(false);
+
+  // Bootstrap from routeParams when DealReview's "Add Call" navigates here
+  useEffect(() => {
+    const existingId = routeParams?.existingDealId;
+    if (existingId) {
+      scheduledDealIdRef.current = existingId;
+      dealIsPreexisting.current = true;
+      setStep('transcript');
+
+      supabase
+        .from('deals')
+        .select('*')
+        .eq('id', existingId)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setDealName(data.deal_name || '');
+            setCompanyName(data.company_name || '');
+            if (data.deal_value) setDealValue(String(data.deal_value));
+          }
+        });
+    }
+  }, [routeParams?.existingDealId]);
+
+  // Orphan deal cleanup: if created deal row but user navigated away before call submission
+  useEffect(() => {
+    return () => {
+      const dealIdToDelete = scheduledDealIdRef.current;
+      if (dealIdToDelete && !callSucceeded.current && !dealIsPreexisting.current) {
+        supabase.from('deals').delete().eq('id', dealIdToDelete);
+      }
+    };
+  }, []);
 
   async function createDealRow(): Promise<string | null> {
     if (!user) return null;
@@ -53,10 +100,18 @@ export function NewDealScreen() {
       setError('Failed to create deal.');
       return null;
     }
+    scheduledDealIdRef.current = deal.id;
     return deal.id;
   }
 
   async function handleScheduleFirstMeeting() {
+    if (!canWrite) {
+      Alert.alert(
+        'Upgrade Required',
+        'Your trial has ended. Please upgrade your subscription in Settings to add meetings and deals.'
+      );
+      return;
+    }
     if (!user) return;
     setError('');
     setCreatingDeal(true);
@@ -69,7 +124,7 @@ export function NewDealScreen() {
         return;
       }
 
-      const dealId = await createDealRow();
+      const dealId = scheduledDealIdRef.current || (await createDealRow());
       if (!dealId) {
         setCreatingDeal(false);
         return;
@@ -86,6 +141,13 @@ export function NewDealScreen() {
   }
 
   function handleGoToTranscript() {
+    if (!canWrite) {
+      Alert.alert(
+        'Upgrade Required',
+        'Your trial has ended. Please upgrade your subscription in Settings to review new calls.'
+      );
+      return;
+    }
     if (!dealName.trim() || !companyName.trim()) {
       setError('Please provide both Deal Name and Company Name.');
       return;
@@ -94,17 +156,39 @@ export function NewDealScreen() {
     setStep('transcript');
   }
 
-  function handleGoToRecord() {
+  async function handleGoToRecord() {
+    if (!canWrite) {
+      Alert.alert(
+        'Upgrade Required',
+        'Your trial has ended. Please upgrade your subscription in Settings to record new calls.'
+      );
+      return;
+    }
     if (!dealName.trim() || !companyName.trim()) {
       setError('Please provide both Deal Name and Company Name.');
       return;
     }
     setError('');
-    navigate('record');
+
+    let dealId = scheduledDealIdRef.current;
+    if (!dealId) {
+      dealId = await createDealRow();
+    }
+    if (dealId) {
+      navigate('record', { dealId });
+    }
   }
 
   async function handleSubmitTranscript() {
     if (!user) return;
+    if (!canWrite) {
+      Alert.alert(
+        'Upgrade Required',
+        'Your trial has ended. Please upgrade your subscription in Settings to review new calls.'
+      );
+      return;
+    }
+
     const text = transcript.trim();
     if (!text) {
       setError('Please paste a transcript before reviewing.');
@@ -114,27 +198,55 @@ export function NewDealScreen() {
       setError('Transcript is too short. Must be at least 100 characters.');
       return;
     }
+    if (text.length > 50000) {
+      setError('Transcript is too long (maximum 50,000 characters).');
+      return;
+    }
 
     setAnalyzing(true);
     setError('');
 
-    let dealId: string | null = null;
+    let dealId: string | null = scheduledDealIdRef.current;
+    let createdDealHere = false;
+
     try {
-      dealId = await createDealRow();
-      if (!dealId) throw new Error('Failed to create deal.');
+      if (!dealId) {
+        dealId = await createDealRow();
+        if (!dealId) throw new Error('Failed to create deal.');
+        createdDealHere = true;
+      }
+
+      let previousReview: any = null;
+      let hist: any = null;
+      let currentStage = INITIAL_DEAL_STAGE;
+
+      if (dealIsPreexisting.current && dealId) {
+        const [{ data: existingState }, { data: existingDeal }, histData] = await Promise.all([
+          supabase.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
+          supabase.from('deals').select('deal_stage').eq('id', dealId).maybeSingle(),
+          getDealLongitudinalHistory(dealId).catch(() => null),
+        ]);
+        if (existingDeal?.deal_stage) currentStage = existingDeal.deal_stage;
+        if (existingState) {
+          previousReview = (existingState as any).deal ? existingState : { deal: existingState, call: null };
+        }
+        hist = histData;
+      }
 
       const review = await reviewCall(text, {
         deal_id: dealId,
         deal_name: dealName.trim(),
         company_name: companyName.trim(),
-        deal_stage: INITIAL_DEAL_STAGE,
+        deal_stage: currentStage,
+        previous_review: previousReview,
+        longitudinal_history: hist || undefined,
         seller_context: {
           what_you_sell: profile?.what_you_sell || undefined,
           who_you_are: profile?.who_you_are || undefined,
         },
       });
 
-      const resolvedStage = resolveDealStage(INITIAL_DEAL_STAGE, review);
+      const resolvedStage = resolveDealStage(currentStage, review);
 
       const { data: conv, error: convError } = await supabase
         .from('conversations')
@@ -154,9 +266,10 @@ export function NewDealScreen() {
 
       await saveDealState(dealId, user.id, review, resolvedStage, conv.id);
 
+      callSucceeded.current = true;
       navigate('call_review', { dealId, callId: conv.id });
     } catch (err: any) {
-      if (dealId) {
+      if (dealId && createdDealHere) {
         await supabase.from('deals').delete().eq('id', dealId);
       }
       setError(err?.message || 'Something went wrong during analysis.');
@@ -167,10 +280,10 @@ export function NewDealScreen() {
   return (
     <View style={styles.container}>
       <TopBar
-        title={step === 'deal' ? 'Create New Deal' : 'Analyze First Call'}
+        title={step === 'deal' ? 'Create New Deal' : 'Analyze Call'}
         showBack
         onBackPress={() => {
-          if (step === 'transcript') {
+          if (step === 'transcript' && !dealIsPreexisting.current) {
             setStep('deal');
           } else {
             goBack();
@@ -198,7 +311,7 @@ export function NewDealScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Acme Corp"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={colors.textMuted}
                 value={companyName}
                 onChangeText={setCompanyName}
                 autoFocus
@@ -210,7 +323,7 @@ export function NewDealScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Acme Corp - Enterprise Expansion"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={colors.textMuted}
                 value={dealName}
                 onChangeText={setDealName}
               />
@@ -221,7 +334,7 @@ export function NewDealScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. 50000"
-                placeholderTextColor={colors.text.tertiary}
+                placeholderTextColor={colors.textMuted}
                 value={dealValue}
                 onChangeText={setDealValue}
                 keyboardType="numeric"
@@ -308,10 +421,11 @@ export function NewDealScreen() {
               multiline
               numberOfLines={12}
               placeholder="Speaker 1: Hi, thanks for joining today...&#10;Speaker 2: Happy to be here. We are looking for a solution to..."
-              placeholderTextColor={colors.text.tertiary}
+              placeholderTextColor={colors.textMuted}
               value={transcript}
               onChangeText={setTranscript}
               textAlignVertical="top"
+              autoFocus
             />
 
             <TouchableOpacity
@@ -326,7 +440,7 @@ export function NewDealScreen() {
               {analyzing ? (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator color={colors.white} size="small" />
-                  <Text style={styles.primaryButtonText}>Analyzing Conversation...</Text>
+                  <Text style={styles.primaryButtonText}>Running 5-Pillar Analysis...</Text>
                 </View>
               ) : (
                 <Text style={styles.primaryButtonText}>Run 5-Pillar Analysis</Text>
@@ -369,7 +483,7 @@ const styles = StyleSheet.create({
   sectionHeading: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.text.tertiary,
+    color: colors.textMuted,
     letterSpacing: 0.8,
     marginBottom: 4,
   },
@@ -379,18 +493,18 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.text.secondary,
+    color: colors.textSecondary,
     marginBottom: 6,
   },
   input: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: colors.text.primary,
+    color: colors.textPrimary,
   },
   optionCard: {
     flexDirection: 'row',
@@ -421,24 +535,24 @@ const styles = StyleSheet.create({
   optionTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.text.primary,
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   optionSubtitle: {
     fontSize: 12,
-    color: colors.text.secondary,
+    color: colors.textSecondary,
     lineHeight: 16,
   },
   optionChevron: {
     fontSize: 22,
-    color: colors.text.tertiary,
+    color: colors.textMuted,
     fontWeight: '300',
   },
   dealSummaryCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 14,
     marginBottom: 16,
   },
@@ -451,7 +565,7 @@ const styles = StyleSheet.create({
   dealSummaryName: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.text.primary,
+    color: colors.textPrimary,
     marginTop: 2,
   },
   dealSummaryValue: {
@@ -462,23 +576,23 @@ const styles = StyleSheet.create({
   },
   hintText: {
     fontSize: 13,
-    color: colors.text.secondary,
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   transcriptInput: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 14,
     fontSize: 13,
-    color: colors.text.primary,
+    color: colors.textPrimary,
     height: 220,
     marginBottom: 20,
   },
   primaryButton: {
     backgroundColor: colors.primary,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',

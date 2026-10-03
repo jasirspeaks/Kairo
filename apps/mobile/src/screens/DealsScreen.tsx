@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useAuth, getDeals, getDealState } from '@kairo/api';
+import { useAuth, supabase } from '@kairo/api';
 import {
   formatDealValue,
   getStatusColor,
@@ -20,25 +20,43 @@ import {
 } from '@kairo/core';
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
+import { TopBar } from '../components/layout/TopBar';
 
 type TimelineFilter = 'all' | '7d' | '30d' | '90d';
 type StatusFilter = 'active' | 'all' | DealStatus;
 
 interface DealRowItem extends Deal {
   current_status: DealStatus | null;
+  last_contact: string | null;
+  next_meeting: string | null;
+}
+
+function formatDate(dateString: string | null): string {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function DealsScreen() {
   const { user } = useAuth();
-  const { navigate } = useNavigation();
+  const { navigate, routeParams } = useNavigation();
   const [deals, setDeals] = useState<DealRowItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<DealStage | 'all'>('all');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    routeParams?.filter === 'at-risk' ? 'At Risk' : 'all'
+  );
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all');
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    if (routeParams?.filter === 'at-risk') {
+      setStatusFilter('At Risk');
+      setShowFilters(true);
+    }
+  }, [routeParams?.filter]);
 
   const fetchDeals = async () => {
     if (!user) {
@@ -46,17 +64,55 @@ export function DealsScreen() {
       return;
     }
     try {
-      const rawDeals = await getDeals(user.id);
-      const rowsWithState = await Promise.all(
-        rawDeals.map(async (d) => {
-          const state = await getDealState(d.id).catch(() => null);
-          return {
-            ...d,
-            current_status: state?.current_status || null,
-          };
-        })
+      const { data: rawDeals } = await supabase
+        .from('deals')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (!rawDeals || rawDeals.length === 0) {
+        setDeals([]);
+        return;
+      }
+
+      const dealIds = rawDeals.map((d) => d.id);
+
+      const [{ data: states }, { data: lastCalls }, { data: meetings }] = await Promise.all([
+        supabase.from('deal_state').select('deal_id, current_status').in('deal_id', dealIds),
+        supabase
+          .from('conversations')
+          .select('deal_id, created_at, status')
+          .in('deal_id', dealIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('meetings')
+          .select('deal_id, start_time')
+          .in('deal_id', dealIds)
+          .eq('status', 'assigned')
+          .is('cancelled_at', null)
+          .gte('start_time', new Date().toISOString())
+          .order('start_time', { ascending: true }),
+      ]);
+
+      const statusByDeal = new Map((states || []).map((s) => [s.deal_id, s.current_status]));
+      const completedCalls = (lastCalls || []).filter((c) => c.status === 'complete');
+      const lastContactByDeal = new Map<string, string>();
+      completedCalls.forEach((c) => {
+        if (!lastContactByDeal.has(c.deal_id)) lastContactByDeal.set(c.deal_id, c.created_at);
+      });
+      const nextMeetingByDeal = new Map<string, string>();
+      (meetings || []).forEach((m) => {
+        if (!nextMeetingByDeal.has(m.deal_id)) nextMeetingByDeal.set(m.deal_id, m.start_time);
+      });
+
+      setDeals(
+        rawDeals.map((d) => ({
+          ...d,
+          current_status: statusByDeal.get(d.id) || null,
+          last_contact: lastContactByDeal.get(d.id) || null,
+          next_meeting: nextMeetingByDeal.get(d.id) || null,
+        }))
       );
-      setDeals(rowsWithState);
     } catch (err) {
       console.error('Failed to load deals:', err);
     } finally {
@@ -105,7 +161,8 @@ export function DealsScreen() {
 
       const window = timelineMs[timelineFilter];
       if (window !== null) {
-        if (now - new Date(d.updated_at).getTime() > window) return false;
+        const reference = d.last_contact || d.updated_at;
+        if (now - new Date(reference).getTime() > window) return false;
       }
 
       return true;
@@ -121,143 +178,245 @@ export function DealsScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.primary}
-        />
-      }
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Deals</Text>
-          <Text style={styles.subtitle}>
-            All deals, filterable by timeline, stage, and status.
-          </Text>
-        </View>
-      </View>
+    <View style={styles.container}>
+      <TopBar
+        title="Deals"
+        action={
+          <TouchableOpacity
+            style={styles.headerAddBtn}
+            onPress={() => navigate('new_deal')}
+            accessibilityLabel="New Deal"
+          >
+            <Text style={styles.headerAddBtnText}>+</Text>
+          </TouchableOpacity>
+        }
+      />
 
-      {/* Search & Filter Trigger */}
-      <View style={styles.searchRow}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search deals or companies..."
-          placeholderTextColor={colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
-        />
-        <TouchableOpacity
-          style={[styles.filterToggle, showFilters && styles.filterToggleActive]}
-          onPress={() => setShowFilters((v) => !v)}
-        >
-          <Text style={[styles.filterToggleText, showFilters && styles.filterToggleTextActive]}>
-            Filters
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Filter Options Panel */}
-      {showFilters && (
-        <View style={styles.filtersCard}>
-          <Text style={styles.filterSectionTitle}>TIMELINE</Text>
-          <View style={styles.pillRow}>
-            {(['all', '7d', '30d', '90d'] as TimelineFilter[]).map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.filterPill, timelineFilter === t && styles.filterPillActive]}
-                onPress={() => setTimelineFilter(t)}
-              >
-                <Text style={[styles.filterPillText, timelineFilter === t && styles.filterPillTextActive]}>
-                  {t === 'all' ? 'All Time' : `Last ${t}`}
-                </Text>
-              </TouchableOpacity>
-            ))}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {/* Search & Filter Trigger */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search deals or companies..."
+              placeholderTextColor={colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+            />
           </View>
 
-          <Text style={styles.filterSectionTitle}>STATUS</Text>
-          <View style={styles.pillRow}>
-            {(['all', 'active', 'Healthy', 'At Risk', 'Critical', 'Stalled'] as StatusFilter[]).map(
-              (s) => (
+          <TouchableOpacity
+            style={[styles.filterToggle, showFilters && styles.filterToggleActive]}
+            onPress={() => setShowFilters((v) => !v)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.filterIcon}>⚙️</Text>
+            <Text
+              style={[
+                styles.filterToggleText,
+                showFilters && styles.filterToggleTextActive,
+              ]}
+            >
+              Filters
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Filter Options Panel */}
+        {showFilters && (
+          <View style={styles.filtersCard}>
+            {/* Timeline Filter */}
+            <Text style={styles.filterSectionTitle}>TIMELINE</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+              {(['all', '7d', '30d', '90d'] as TimelineFilter[]).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.filterPill, timelineFilter === t && styles.filterPillActive]}
+                  onPress={() => setTimelineFilter(t)}
+                >
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      timelineFilter === t && styles.filterPillTextActive,
+                    ]}
+                  >
+                    {t === 'all' ? 'All Time' : `Last ${t}`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Stage Filter */}
+            <Text style={[styles.filterSectionTitle, { marginTop: 12 }]}>DEAL STAGE</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+              <TouchableOpacity
+                style={[styles.filterPill, stageFilter === 'all' && styles.filterPillActive]}
+                onPress={() => setStageFilter('all')}
+              >
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    stageFilter === 'all' && styles.filterPillTextActive,
+                  ]}
+                >
+                  All Stages
+                </Text>
+              </TouchableOpacity>
+              {DEAL_STAGES.map((s) => (
+                <TouchableOpacity
+                  key={s}
+                  style={[styles.filterPill, stageFilter === s && styles.filterPillActive]}
+                  onPress={() => setStageFilter(s)}
+                >
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      stageFilter === s && styles.filterPillTextActive,
+                    ]}
+                  >
+                    {s}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Status Filter */}
+            <Text style={[styles.filterSectionTitle, { marginTop: 12 }]}>DEAL STATUS</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+              {(
+                [
+                  'all',
+                  'active',
+                  'Healthy',
+                  'Promising',
+                  'At Risk',
+                  'Critical',
+                  'Stalled',
+                  'Recovering',
+                  'Won',
+                  'Lost',
+                  'Unknown',
+                ] as StatusFilter[]
+              ).map((s) => (
                 <TouchableOpacity
                   key={s}
                   style={[styles.filterPill, statusFilter === s && styles.filterPillActive]}
                   onPress={() => setStatusFilter(s)}
                 >
-                  <Text style={[styles.filterPillText, statusFilter === s && styles.filterPillTextActive]}>
-                    {s === 'all' ? 'All' : s}
-                  </Text>
-                </TouchableOpacity>
-              )
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* Deals List */}
-      <View style={styles.list}>
-        {filteredDeals.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>
-              {deals.length === 0 ? 'No deals yet' : 'No deals match your filters'}
-            </Text>
-            <Text style={styles.emptyText}>
-              {deals.length === 0
-                ? 'Create your first deal to start tracking it with Kairo.'
-                : 'Try adjusting your search query or filters.'}
-            </Text>
-          </View>
-        ) : (
-          filteredDeals.map((deal) => {
-            const status = deal.current_status || 'Unknown';
-            const statusColor = getStatusColor(status);
-
-            return (
-              <TouchableOpacity
-                key={deal.id}
-                style={styles.dealCard}
-                onPress={() => navigate('deal_review', { dealId: deal.id })}
-              >
-                <View style={styles.dealHeader}>
-                  <Text style={styles.dealName} numberOfLines={1}>
-                    {deal.deal_name}
-                  </Text>
-                  <Text style={styles.dealValue}>{formatDealValue(deal.deal_value)}</Text>
-                </View>
-
-                <Text style={styles.companyName} numberOfLines={1}>
-                  {deal.company_name}
-                </Text>
-
-                <View style={styles.metaRow}>
-                  <View style={styles.stagePill}>
-                    <Text style={styles.stageText}>{deal.deal_stage}</Text>
-                  </View>
-
-                  <View
+                  <Text
                     style={[
-                      styles.statusPill,
-                      {
-                        backgroundColor: `${statusColor}1A`,
-                        borderColor: `${statusColor}4D`,
-                      },
+                      styles.filterPillText,
+                      statusFilter === s && styles.filterPillTextActive,
                     ]}
                   >
-                    <Text style={[styles.statusText, { color: statusColor }]}>{status}</Text>
+                    {s === 'all' ? 'All' : s === 'active' ? 'Active Deals' : s}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Deals List */}
+        <View style={styles.list}>
+          {filteredDeals.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyEmoji}>🏢</Text>
+              <Text style={styles.emptyTitle}>
+                {deals.length === 0 ? 'No deals yet' : 'No deals match your filters'}
+              </Text>
+              <Text style={styles.emptyText}>
+                {deals.length === 0
+                  ? 'Create your first deal to start tracking it with Kairo.'
+                  : 'Try adjusting your search query or filters.'}
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyAddBtn}
+                onPress={() => navigate('new_deal')}
+              >
+                <Text style={styles.emptyAddBtnText}>+ Create New Deal</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            filteredDeals.map((deal) => {
+              const status = deal.current_status || 'Unknown';
+              const statusColor = getStatusColor(status);
+
+              return (
+                <TouchableOpacity
+                  key={deal.id}
+                  style={styles.dealCard}
+                  onPress={() => navigate('deal_review', { dealId: deal.id })}
+                  activeOpacity={0.7}
+                >
+                  {/* Top row: Deal Name + Value */}
+                  <View style={styles.dealHeader}>
+                    <Text style={styles.dealName} numberOfLines={1}>
+                      {deal.deal_name}
+                    </Text>
+                    <Text style={styles.dealValue}>
+                      {formatDealValue(deal.deal_value)}
+                    </Text>
                   </View>
 
-                  <Text style={styles.arrow}>›</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </View>
-    </ScrollView>
+                  {/* Company Name */}
+                  <Text style={styles.companyName} numberOfLines={1}>
+                    {deal.company_name}
+                  </Text>
+
+                  {/* Badges and Dates row */}
+                  <View style={styles.metaRow}>
+                    <View style={styles.stagePill}>
+                      <Text style={styles.stageText}>{deal.deal_stage}</Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.statusPill,
+                        {
+                          backgroundColor: `${statusColor}1A`,
+                          borderColor: `${statusColor}4D`,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.statusText, { color: statusColor }]}>
+                        {status}
+                      </Text>
+                    </View>
+
+                    <View style={styles.datesContainer}>
+                      {deal.last_contact && (
+                        <Text style={styles.dateText}>
+                          Last: {formatDate(deal.last_contact)}
+                        </Text>
+                      )}
+                      {deal.next_meeting && (
+                        <Text style={[styles.dateText, styles.nextMeetingDate]}>
+                          Next: {formatDate(deal.next_meeting)}
+                        </Text>
+                      )}
+                    </View>
+
+                    <Text style={styles.arrow}>›</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -265,6 +424,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  scroll: {
+    flex: 1,
   },
   content: {
     padding: 16,
@@ -276,94 +438,106 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  header: {
-    marginBottom: 16,
-    marginTop: 4,
+  headerAddBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primaryGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  title: {
+  headerAddBtnText: {
+    color: colors.primary,
     fontSize: 20,
     fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: -2,
   },
   searchRow: {
     flexDirection: 'row',
     gap: 8,
     marginBottom: 12,
   },
-  searchInput: {
+  searchContainer: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surface,
-    borderWidth: 1,
     borderColor: colors.border,
+    borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.textPrimary,
+  },
+  searchIcon: {
+    fontSize: 12,
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 42,
     fontSize: 13,
+    color: colors.textPrimary,
   },
   filterToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: colors.surface,
-    borderWidth: 1,
     borderColor: colors.border,
+    borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 14,
-    justifyContent: 'center',
   },
   filterToggleActive: {
-    backgroundColor: '#7042C51A',
     borderColor: colors.primary,
+    backgroundColor: colors.primaryGlow,
+  },
+  filterIcon: {
+    fontSize: 12,
   },
   filterToggleText: {
     fontSize: 12,
-    color: colors.textSecondary,
     fontWeight: '600',
+    color: colors.textSecondary,
   },
   filterToggleTextActive: {
     color: colors.primary,
+    fontWeight: '700',
   },
   filtersCard: {
     backgroundColor: colors.surface,
-    borderWidth: 1,
     borderColor: colors.border,
+    borderWidth: 1,
     borderRadius: 12,
-    padding: 12,
+    padding: 14,
     marginBottom: 14,
   },
   filterSectionTitle: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '700',
     color: colors.textMuted,
-    letterSpacing: 0.5,
-    marginBottom: 6,
-    marginTop: 4,
+    letterSpacing: 0.8,
+    marginBottom: 8,
   },
-  pillRow: {
+  pillScroll: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 6,
   },
   filterPill: {
-    backgroundColor: colors.surfaceHigh,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceElevated,
     borderColor: colors.border,
+    borderWidth: 1,
+    marginRight: 8,
   },
   filterPillActive: {
-    backgroundColor: '#7042C522',
+    backgroundColor: colors.primaryGlow,
     borderColor: colors.primary,
   },
   filterPillText: {
     fontSize: 11,
-    color: colors.textMuted,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   filterPillTextActive: {
     color: colors.primary,
@@ -374,32 +548,32 @@ const styles = StyleSheet.create({
   },
   dealCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
     borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
     padding: 14,
   },
   dealHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   dealName: {
-    fontSize: 14,
+    flex: 1,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
-    flex: 1,
     marginRight: 8,
   },
   dealValue: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.textPrimary,
   },
   companyName: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     marginBottom: 10,
   },
   metaRow: {
@@ -408,7 +582,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stagePill: {
-    backgroundColor: colors.surfaceHigh,
+    backgroundColor: colors.surfaceElevated,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -416,42 +590,74 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   stageText: {
-    fontSize: 10,
-    color: colors.textSecondary,
+    fontSize: 11,
     fontWeight: '600',
+    color: colors.textSecondary,
   },
   statusPill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 10,
     borderWidth: 1,
   },
   statusText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
+  },
+  datesContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  dateText: {
+    fontSize: 10,
+    color: colors.textMuted,
+  },
+  nextMeetingDate: {
+    color: colors.primary,
+    fontWeight: '600',
   },
   arrow: {
     fontSize: 18,
     color: colors.textMuted,
-    marginLeft: 'auto',
+    marginLeft: 4,
   },
   emptyCard: {
     backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
     borderRadius: 12,
     padding: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
     alignItems: 'center',
+    marginTop: 12,
+  },
+  emptyEmoji: {
+    fontSize: 32,
+    marginBottom: 8,
   },
   emptyTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
     marginBottom: 4,
   },
   emptyText: {
     fontSize: 12,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     textAlign: 'center',
+    lineHeight: 16,
+    marginBottom: 16,
+  },
+  emptyAddBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
