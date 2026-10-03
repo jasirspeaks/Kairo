@@ -39,7 +39,7 @@ export function useMeetingCapture(): UseMeetingCaptureResult {
     };
   }, [clearTimer]);
 
-  const startCapture = useCallback(async (meetingId: string, dealId?: string | null) => {
+  const startCapture = useCallback(async (meetingId: string, dealId?: string | null, captureSource?: import('../types').CaptureSource | null) => {
     setErrorMessage(null);
     setActiveMeetingId(meetingId);
     setActiveDealId(dealId || null);
@@ -50,7 +50,7 @@ export function useMeetingCapture(): UseMeetingCaptureResult {
 
     if (isTauri) {
       try {
-        const state = await startNativeMeetingCapture(meetingId, dealId);
+        const state = await startNativeMeetingCapture(meetingId, dealId, captureSource);
         setCaptureStatus(state.status);
       } catch (err: any) {
         setCaptureStatus('failed');

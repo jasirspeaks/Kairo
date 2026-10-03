@@ -34,7 +34,8 @@ export async function getNativeCaptureCapabilities(): Promise<NativeCaptureCapab
 
 export async function startNativeMeetingCapture(
   meetingId: string,
-  dealId?: string | null
+  dealId?: string | null,
+  captureSource?: import('../types').CaptureSource | null
 ): Promise<NativeCaptureState> {
   if (!isTauriEnvironment()) {
     throw new Error('Native desktop audio capture is only supported in the Kairo desktop application.');
@@ -45,6 +46,7 @@ export async function startNativeMeetingCapture(
     return await invoke<NativeCaptureState>('start_meeting_capture', {
       meetingId,
       dealId: dealId || null,
+      captureSource: captureSource || 'combined',
     });
   } catch (e: any) {
     console.error('[DesktopBridge] Failed to invoke start_meeting_capture:', e);

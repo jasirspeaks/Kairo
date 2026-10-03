@@ -12,9 +12,10 @@ pub fn get_capture_capabilities(
 pub fn start_meeting_capture(
     meeting_id: String,
     deal_id: Option<String>,
+    capture_source: Option<crate::capture::CaptureSource>,
     engine: State<'_, CaptureEngine>,
 ) -> Result<CaptureStateResponse, String> {
-    engine.start_capture(meeting_id, deal_id)
+    engine.start_capture(meeting_id, deal_id, capture_source)
 }
 
 #[tauri::command]

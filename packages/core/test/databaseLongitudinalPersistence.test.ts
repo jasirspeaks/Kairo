@@ -1,307 +1,143 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { PGlite } from '@electric-sql/pglite';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   DealReview,
-  GroundedEvidenceItem,
-  computeRiskFingerprint,
-  reconcileDealRisks,
   normalizeEvidenceList,
-  resolveDealStage,
-  DealRisk,
 } from '../src';
 
 /**
- * Model of PostgreSQL public.persist_deal_review authoritative persistence engine.
- * Reflects the exact SQL logic in migration 20261003000600.
+ * REAL Database Integration Test Suite for Kairo Authoritative Persistence Engine.
+ * Exercises genuine PostgreSQL (PGlite engine) with all actual migrations applied,
+ * invoking public.persist_deal_review() directly in the database.
  */
-interface MockDatabaseState {
-  users: Set<string>;
-  deals: Map<string, { id: string; user_id: string; deal_stage: string; risk_level: string; champion?: string | null }>;
-  deal_state: Map<string, { deal_id: string; user_id: string; current_status: string; deal_health_score: number; highest_priority_risk: string }>;
-  deal_risks: Map<string, DealRisk>;
-  deal_evidence: Array<{ id: string; deal_id: string; conversation_id: string; quote: string; pillar_key?: string | null; grounding_type: string; confidence: number; ai_inference_id?: string | null }>;
-  deal_pillar_history: Array<{ deal_id: string; conversation_id: string; pillar_key: string; status: string; confidence: number }>;
-  deal_state_transitions: Array<{ deal_id: string; conversation_id: string; from_stage: string; to_stage: string; from_status: string; to_status: string; health_score_delta: number }>;
-  lockedDeals: Set<string>;
-}
+describe('TASK 2 — Authoritative PostgreSQL Database Integration Suite', () => {
+  let db: PGlite;
 
-function createMockDatabase(): MockDatabaseState {
-  return {
-    users: new Set(),
-    deals: new Map(),
-    deal_state: new Map(),
-    deal_risks: new Map(),
-    deal_evidence: [],
-    deal_pillar_history: [],
-    deal_state_transitions: [],
-    lockedDeals: new Set(),
-  };
-}
+  const userA = '11111111-1111-4111-8111-111111111111';
+  const userB = '22222222-2222-4222-8222-222222222222';
+  const dealA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const dealB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
-/**
- * Executes the authoritative persistence transaction following migration 20261003000600.
- */
-function executePersistDealReview(
-  db: MockDatabaseState,
-  params: {
-    auth_user: string | null;
-    auth_role: 'authenticated' | 'service_role' | 'anon';
-    p_deal_id: string;
-    p_user_id: string;
-    p_review: DealReview;
-    p_resolved_stage: string;
-    p_conversation_id?: string;
-  }
-) {
-  const { auth_user, auth_role, p_deal_id, p_user_id, p_review, p_resolved_stage, p_conversation_id } = params;
+  beforeAll(async () => {
+    db = new PGlite();
 
-  // 0) Identity & Role Authorization Verification
-  let targetUser: string;
-  if (auth_role !== 'service_role') {
-    if (!auth_user) {
-      throw new Error('Unauthorized: authenticated caller required');
+    // Bootstrap base auth, roles, and publications required by Supabase migrations
+    await db.exec(`
+      CREATE SCHEMA IF NOT EXISTS extensions;
+      CREATE SCHEMA IF NOT EXISTS auth;
+      CREATE SCHEMA IF NOT EXISTS vault;
+
+      CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
+        SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid;
+      $$;
+
+      CREATE OR REPLACE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$
+        SELECT COALESCE(NULLIF(current_setting('request.jwt.claim.role', true), ''), 'authenticated');
+      $$;
+
+      CREATE TABLE IF NOT EXISTS auth.users (
+        id uuid PRIMARY KEY,
+        email text,
+        created_at timestamptz DEFAULT now()
+      );
+
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
+          CREATE ROLE authenticated;
+        END IF;
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
+          CREATE ROLE anon;
+        END IF;
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
+          CREATE ROLE service_role;
+        END IF;
+        IF NOT EXISTS (SELECT FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+          CREATE PUBLICATION supabase_realtime;
+        END IF;
+      END
+      $$;
+    `);
+
+    // Apply all migration files in sorted order
+    const migrationsDir = path.resolve(__dirname, '../../../supabase/migrations');
+    const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+
+    for (const file of files) {
+      let sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+
+      // Stub hosted extensions that are unnecessary for engine semantics
+      sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS "pg_cron"[^;]*;/gi, '-- skipped pg_cron');
+      sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS "pg_net"[^;]*;/gi, '-- skipped pg_net');
+      sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS "supabase_vault"[^;]*;/gi, '-- skipped supabase_vault');
+      sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS "pg_stat_statements"[^;]*;/gi, '-- skipped pg_stat_statements');
+      sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS "uuid-ossp"[^;]*;/gi, '-- skipped uuid-ossp');
+      sql = sql.replace(/CREATE EXTENSION IF NOT EXISTS "pgcrypto"[^;]*;/gi, '-- skipped pgcrypto');
+
+      await db.exec(sql);
     }
-    if (auth_user !== p_user_id) {
-      throw new Error('Unauthorized: user ID mismatch');
-    }
-    targetUser = auth_user;
-  } else {
-    if (!p_user_id) {
-      throw new Error('Unauthorized: user ID required for service_role call');
-    }
-    targetUser = p_user_id;
-  }
+  }, 30000);
 
-  // 1) Pessimistic Concurrency Lock (FOR UPDATE)
-  const deal = db.deals.get(p_deal_id);
-  if (!deal || deal.user_id !== targetUser) {
-    throw new Error(`Deal not found or unauthorized for user ${targetUser}`);
-  }
+  beforeEach(async () => {
+    // Reset database rows for isolated test execution
+    await db.exec(`
+      DELETE FROM public.deal_evidence;
+      DELETE FROM public.deal_pillar_history;
+      DELETE FROM public.deal_state_transitions;
+      DELETE FROM public.deal_risks;
+      DELETE FROM public.stakeholders;
+      DELETE FROM public.deal_state;
+      DELETE FROM public.conversations;
+      DELETE FROM public.deals;
+      DELETE FROM public.subscriptions;
+      DELETE FROM auth.users;
 
-  // Transaction locks the row
-  db.lockedDeals.add(p_deal_id);
+      -- Seed test users
+      INSERT INTO auth.users (id, email) VALUES
+        ('${userA}', 'alice@example.com'),
+        ('${userB}', 'bob@example.com');
 
-  try {
-    const oldStage = deal.deal_stage;
-    const oldState = db.deal_state.get(p_deal_id);
-    const oldStatus = oldState?.current_status || 'Unknown';
-    const currHealth = oldState?.deal_health_score || 0;
+      -- Seed active subscriptions (write access gate)
+      INSERT INTO public.subscriptions (user_id, status, trial_end) VALUES
+        ('${userA}', 'active', now() + interval '30 days'),
+        ('${userB}', 'active', now() + interval '30 days');
 
-    const newStatus = p_review.deal.status;
-    const newHealth = p_review.deal.health_score;
-
-    let riskLevel = 'none';
-    if (newStatus === 'Critical' || newStatus === 'At Risk') riskLevel = 'high';
-    else if (newStatus === 'Stalled' || newStatus === 'Recovering') riskLevel = 'medium';
-    else if (newStatus === 'Healthy' || newStatus === 'Promising') riskLevel = 'low';
-
-    // Update base deal row
-    deal.deal_stage = p_resolved_stage;
-    deal.risk_level = riskLevel;
-
-    // Upsert deal_state
-    db.deal_state.set(p_deal_id, {
-      deal_id: p_deal_id,
-      user_id: targetUser,
-      current_status: newStatus,
-      deal_health_score: newHealth,
-      highest_priority_risk: p_review.deal.highest_priority_risk.risk,
-    });
-
-    // Longitudinal Risks Ledger Persistence
-    const activeRisksForDeal = Array.from(db.deal_risks.values()).filter((r) => r.deal_id === p_deal_id);
-    const candidateRisks: Array<{ title: string; category?: string; why?: string }> = [];
-
-    if (p_review.deal.highest_priority_risk?.risk) {
-      candidateRisks.push({
-        title: p_review.deal.highest_priority_risk.risk,
-        category: p_review.deal.highest_priority_risk.category || 'general_risk',
-        why: p_review.deal.highest_priority_risk.why_it_matters,
-      });
-    }
-
-    if (p_review.what_changed_since_last_call?.persists) {
-      for (const item of p_review.what_changed_since_last_call.persists) {
-        if (typeof item === 'string') {
-          candidateRisks.push({ title: item, category: 'general_risk' });
-        } else if (typeof item === 'object') {
-          candidateRisks.push({ title: item.risk, category: item.category || 'general_risk', why: item.why_it_matters });
-        }
-      }
-    }
-
-    if (p_review.what_changed_since_last_call?.new_risks) {
-      for (const item of p_review.what_changed_since_last_call.new_risks) {
-        if (typeof item === 'string') {
-          candidateRisks.push({ title: item, category: 'general_risk' });
-        } else if (typeof item === 'object') {
-          candidateRisks.push({ title: item.risk, category: item.category || 'general_risk', why: item.why_it_matters });
-        }
-      }
-    }
-
-    const processedFps = new Set<string>();
-
-    for (const cand of candidateRisks) {
-      const fp = `${cand.category || 'general_risk'}:${cand.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
-      if (processedFps.has(fp)) {
-        continue;
-      }
-      processedFps.add(fp);
-
-      const existing = activeRisksForDeal.find((r) => r.fingerprint === fp || r.title.toLowerCase() === cand.title.toLowerCase());
-
-      if (existing) {
-        const nextConsec = existing.consecutive_unresolved_calls + 1;
-        existing.consecutive_unresolved_calls = nextConsec;
-        existing.status = 'recurring';
-        existing.severity = nextConsec >= 3 ? 'critical' : nextConsec >= 2 ? 'high' : 'medium';
-      } else {
-        const newRiskId = `risk_${db.deal_risks.size + 1}`;
-        const newRecord: DealRisk = {
-          id: newRiskId,
-          deal_id: p_deal_id,
-          title: cand.title,
-          why_it_matters: cand.why || null,
-          status: 'active',
-          severity: (riskLevel as any) || 'high',
-          first_identified_call_id: p_conversation_id || null,
-          resolved_call_id: null,
-          consecutive_unresolved_calls: 1,
-          risk_category: cand.category || 'general_risk',
-          fingerprint: fp,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        db.deal_risks.set(newRiskId, newRecord);
-      }
-    }
-
-    // Append Grounded Evidence
-    if (p_conversation_id && p_review.supporting_evidence) {
-      for (const ev of p_review.supporting_evidence) {
-        db.deal_evidence.push({
-          id: `ev_${db.deal_evidence.length + 1}`,
-          deal_id: p_deal_id,
-          conversation_id: p_conversation_id,
-          quote: ev.quote,
-          pillar_key: ev.pillar_key,
-          grounding_type: ev.grounding_type,
-          confidence: ev.confidence,
-          ai_inference_id: ev.ai_inference_id,
-        });
-      }
-    }
-
-    // Record Transition
-    if (oldStage !== p_resolved_stage || oldStatus !== newStatus) {
-      db.deal_state_transitions.push({
-        deal_id: p_deal_id,
-        conversation_id: p_conversation_id || '',
-        from_stage: oldStage,
-        to_stage: p_resolved_stage,
-        from_status: oldStatus,
-        to_status: newStatus,
-        health_score_delta: newHealth - currHealth,
-      });
-    }
-  } finally {
-    db.lockedDeals.delete(p_deal_id);
-  }
-}
-
-describe('BLOCKER 1 & 6 & 9 — Authoritative Database Persistence & IDOR Suite', () => {
-  const userA = 'user-alice-1111';
-  const userB = 'user-bob-2222';
-  const dealA = 'deal-acme-cloud-001';
-  const dealB = 'deal-beta-sec-002';
-
-  it('Enforces IDOR Security Matrix: Rejects unauthorized callers and identity spoofing', () => {
-    const db = createMockDatabase();
-    db.users.add(userA);
-    db.users.add(userB);
-    db.deals.set(dealA, { id: dealA, user_id: userA, deal_stage: 'Discovery', risk_level: 'low' });
-    db.deals.set(dealB, { id: dealB, user_id: userB, deal_stage: 'Discovery', risk_level: 'low' });
-
-    const sampleReview: DealReview = {
-      call: {
-        call_status: 'Needs Attention',
-        verdict: 'EB unconfirmed',
-        reason: 'No EB',
-        highest_priority_risk: { risk: 'Missing EB', why_it_matters: 'Budget', evidence: 'No EB in call', category: 'economic_buyer' },
-        what_youre_missing: [],
-        recommended_next_action: 'Contact EB',
-        key_follow_up_message: 'Hi',
-        manager_note: 'Note',
-      },
-      deal: {
-        status: 'At Risk',
-        confidence: 'Medium',
-        health_score: 40,
-        highest_priority_risk: { risk: 'Missing EB', why_it_matters: 'Budget', evidence: 'No EB in call', category: 'economic_buyer' },
-        what_youre_missing: [],
-        status_reason: 'Missing EB',
-        recommended_next_action: 'Contact EB',
-        manager_note: 'Note',
-      },
-      stakeholder_signals: [],
-      supporting_evidence: [],
-    };
-
-    // USER A tries to modify USER B's deal with p_user_id = userB -> MUST FAIL
-    expect(() =>
-      executePersistDealReview(db, {
-        auth_user: userA,
-        auth_role: 'authenticated',
-        p_deal_id: dealB,
-        p_user_id: userB,
-        p_resolved_stage: 'Discovery',
-        p_review: sampleReview,
-      })
-    ).toThrow('Unauthorized: user ID mismatch');
-
-    // USER A tries to modify USER B's deal with p_user_id = userA -> MUST FAIL
-    expect(() =>
-      executePersistDealReview(db, {
-        auth_user: userA,
-        auth_role: 'authenticated',
-        p_deal_id: dealB,
-        p_user_id: userA,
-        p_resolved_stage: 'Discovery',
-        p_review: sampleReview,
-      })
-    ).toThrow('Deal not found or unauthorized');
-
-    // Anonymous caller -> MUST FAIL
-    expect(() =>
-      executePersistDealReview(db, {
-        auth_user: null,
-        auth_role: 'anon',
-        p_deal_id: dealA,
-        p_user_id: userA,
-        p_resolved_stage: 'Discovery',
-        p_review: sampleReview,
-      })
-    ).toThrow('Unauthorized: authenticated caller required');
-
-    // USER A modifies USER A's deal -> MUST SUCCEED
-    expect(() =>
-      executePersistDealReview(db, {
-        auth_user: userA,
-        auth_role: 'authenticated',
-        p_deal_id: dealA,
-        p_user_id: userA,
-        p_resolved_stage: 'Discovery',
-        p_review: sampleReview,
-      })
-    ).not.toThrow();
+      -- Seed deals
+      INSERT INTO public.deals (id, user_id, deal_name, company_name, deal_stage, risk_level) VALUES
+        ('${dealA}', '${userA}', 'Acme Cloud Integration', 'Acme Corp', 'Discovery', 'low'),
+        ('${dealB}', '${userB}', 'Beta Security Platform', 'Beta Inc', 'Discovery', 'low');
+    `);
   });
 
-  it('Executes 3-Call Longitudinal Evolution Scenario with True Database State Validation', () => {
-    const db = createMockDatabase();
-    db.users.add(userA);
-    db.deals.set(dealA, { id: dealA, user_id: userA, deal_stage: 'Discovery', risk_level: 'low' });
+  async function setSession(userId: string | null, role: 'authenticated' | 'anon' | 'service_role' = 'authenticated') {
+    if (userId) {
+      await db.query(
+        `SELECT set_config('request.jwt.claim.sub', $1, false), set_config('request.jwt.claim.role', $2, false)`,
+        [userId, role]
+      );
+    } else {
+      await db.query(
+        `SELECT set_config('request.jwt.claim.sub', '', false), set_config('request.jwt.claim.role', $1, false)`,
+        [role]
+      );
+    }
+  }
 
-    // --- CALL 1 ---
+  it('Executes 3-Call Longitudinal Evolution Scenario with Real PostgreSQL State Validation', async () => {
+    // Authenticate as User A
+    await setSession(userA, 'authenticated');
+
+    // -------------------------------------------------------------------------
+    // CALL 1: Initial review with unconfirmed Economic Buyer and unresolved Decision Process
+    // -------------------------------------------------------------------------
+    const conv1 = 'c1111111-1111-4111-8111-111111111111';
+    await db.exec(`
+      INSERT INTO public.conversations (id, user_id, deal_id, title, input_type, status)
+      VALUES ('${conv1}', '${userA}', '${dealA}', 'Discovery Call 1', 'audio', 'complete');
+    `);
+
     const call1Review: DealReview = {
       call: {
         call_status: 'Needs Attention',
@@ -315,6 +151,7 @@ describe('BLOCKER 1 & 6 & 9 — Authoritative Database Persistence & IDOR Suite'
         },
         what_youre_missing: [
           { gap: 'Economic Buyer', question_to_answer: 'Who holds budget signoff?' },
+          { gap: 'Decision Process', question_to_answer: 'What is the formal approval timeline?' },
         ],
         recommended_next_action: 'Ask Sarah for introduction to CFO.',
         key_follow_up_message: 'Sarah, can we schedule a brief intro with your finance lead?',
@@ -332,40 +169,78 @@ describe('BLOCKER 1 & 6 & 9 — Authoritative Database Persistence & IDOR Suite'
           evidence: 'Sarah stated lack of authority.',
           category: 'economic_buyer',
         },
-        what_youre_missing: [],
+        what_youre_missing: [
+          { gap: 'Economic Buyer', question_to_answer: 'Who holds budget signoff?' },
+        ],
         recommended_next_action: 'Engage EB.',
         manager_note: 'Early discovery.',
+        pillars: {
+          compelling_event: { status: 'unconfirmed', evidence: 'Not yet validated', confidence: 20 },
+          economic_buyer: { status: 'unconfirmed', evidence: 'No CFO access yet', confidence: 30 },
+          decision_process: { status: 'partial', evidence: 'Process undefined', confidence: 40 },
+          budget: { status: 'unconfirmed', evidence: 'Budget unspecified', confidence: 20 },
+          champion: { status: 'confirmed', evidence: 'Sarah is strong advocate', confidence: 85 },
+        },
       },
       stakeholder_signals: [
         { name: 'Sarah', role: 'Team Lead', sentiment: 'champion', evidence: 'Enthusiastic advocate.' },
       ],
       supporting_evidence: normalizeEvidenceList([
-        { quote: "Sarah: 'I love it, but I don't have budget signing authority.'", speaker: 'Sarah', pillar_key: 'economic_buyer', grounding_type: 'explicit_statement', confidence: 95 },
+        {
+          quote: "Sarah: 'I love it, but I don't have budget signing authority.'",
+          speaker: 'Sarah',
+          pillar_key: 'economic_buyer',
+          grounding_type: 'explicit_statement',
+          confidence: 95,
+        },
       ]),
     };
 
-    executePersistDealReview(db, {
-      auth_user: userA,
-      auth_role: 'authenticated',
-      p_deal_id: dealA,
-      p_user_id: userA,
-      p_review: call1Review,
-      p_resolved_stage: 'Discovery',
-      p_conversation_id: 'conv-001',
-    });
+    // Execute the REAL PostgreSQL persistence path
+    await db.query(
+      `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::uuid)`,
+      [dealA, userA, JSON.stringify(call1Review), 'Discovery', conv1]
+    );
 
-    // Verify DB State after Call 1
-    expect(db.deal_state.get(dealA)?.current_status).toBe('At Risk');
-    expect(db.deal_state.get(dealA)?.deal_health_score).toBe(42);
-    expect(db.deal_risks.size).toBe(1);
-    const risk1 = Array.from(db.deal_risks.values())[0];
-    expect(risk1.title).toBe('Economic Buyer CFO unengaged');
-    expect(risk1.status).toBe('active');
-    expect(risk1.consecutive_unresolved_calls).toBe(1);
-    expect(db.deal_evidence.length).toBe(1);
-    expect(db.deal_evidence[0].quote).toContain("don't have budget signing authority");
+    // Query REAL PostgreSQL tables to verify persisted state
+    const dealRow1 = (await db.query(`SELECT * FROM public.deals WHERE id = $1`, [dealA])).rows[0] as any;
+    expect(dealRow1.deal_stage).toBe('Discovery');
+    expect(dealRow1.risk_level).toBe('high');
+    expect(dealRow1.champion).toBe('Sarah');
 
-    // --- CALL 2 ---
+    const stateRow1 = (await db.query(`SELECT * FROM public.deal_state WHERE deal_id = $1`, [dealA])).rows[0] as any;
+    expect(stateRow1.user_id).toBe(userA);
+    expect(stateRow1.current_status).toBe('At Risk');
+    expect(stateRow1.deal_health_score).toBe(42);
+    expect(stateRow1.highest_priority_risk).toBe('Economic Buyer CFO unengaged');
+
+    const risks1 = (await db.query(`SELECT * FROM public.deal_risks WHERE deal_id = $1`, [dealA])).rows as any[];
+    expect(risks1.length).toBe(1);
+    expect(risks1[0].title).toBe('Economic Buyer CFO unengaged');
+    expect(risks1[0].status).toBe('active');
+    expect(risks1[0].consecutive_unresolved_calls).toBe(1);
+    expect(risks1[0].fingerprint).toBe('economic_buyer:economic_buyer_cfo_unengaged');
+    expect(risks1[0].risk_category).toBe('economic_buyer');
+
+    const evidence1 = (await db.query(`SELECT * FROM public.deal_evidence WHERE deal_id = $1`, [dealA])).rows as any[];
+    expect(evidence1.length).toBe(1);
+    expect(evidence1[0].quote).toContain("don't have budget signing authority");
+    expect(evidence1[0].pillar_key).toBe('economic_buyer');
+
+    const stakeholders1 = (await db.query(`SELECT * FROM public.stakeholders WHERE deal_id = $1`, [dealA])).rows as any[];
+    expect(stakeholders1.length).toBe(1);
+    expect(stakeholders1[0].name).toBe('Sarah');
+    expect(stakeholders1[0].sentiment).toBe('champion');
+
+    // -------------------------------------------------------------------------
+    // CALL 2: Second call on same deal where EB remains uncontacted
+    // -------------------------------------------------------------------------
+    const conv2 = 'c2222222-2222-4222-8222-222222222222';
+    await db.exec(`
+      INSERT INTO public.conversations (id, user_id, deal_id, title, input_type, status)
+      VALUES ('${conv2}', '${userA}', '${dealA}', 'Discovery Call 2', 'audio', 'complete');
+    `);
+
     const call2Review: DealReview = {
       call: {
         call_status: 'Needs Attention',
@@ -407,31 +282,46 @@ describe('BLOCKER 1 & 6 & 9 — Authoritative Database Persistence & IDOR Suite'
       },
       stakeholder_signals: [],
       supporting_evidence: normalizeEvidenceList([
-        { quote: "Sarah: 'Finance has not gotten back to me yet.'", speaker: 'Sarah', pillar_key: 'economic_buyer', grounding_type: 'explicit_statement', confidence: 90 },
+        {
+          quote: "Sarah: 'Finance has not gotten back to me yet.'",
+          speaker: 'Sarah',
+          pillar_key: 'economic_buyer',
+          grounding_type: 'explicit_statement',
+          confidence: 90,
+        },
       ]),
     };
 
-    executePersistDealReview(db, {
-      auth_user: userA,
-      auth_role: 'authenticated',
-      p_deal_id: dealA,
-      p_user_id: userA,
-      p_review: call2Review,
-      p_resolved_stage: 'Discovery',
-      p_conversation_id: 'conv-002',
-    });
+    // Execute the REAL persistence path again
+    await db.query(
+      `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::uuid)`,
+      [dealA, userA, JSON.stringify(call2Review), 'Discovery', conv2]
+    );
 
-    // Verify DB State after Call 2: No duplicate risk, consecutive count = 2, recurring status, new evidence appended
-    expect(db.deal_risks.size).toBe(1);
-    const risk2 = Array.from(db.deal_risks.values())[0];
-    expect(risk2.title).toBe('Economic Buyer CFO unengaged');
-    expect(risk2.status).toBe('recurring');
-    expect(risk2.consecutive_unresolved_calls).toBe(2);
-    expect(risk2.severity).toBe('high');
-    expect(db.deal_evidence.length).toBe(2);
-    expect(db.deal_evidence[1].quote).toContain('Finance has not gotten back to me yet');
+    // Verify DB State after Call 2
+    const risks2 = (await db.query(`SELECT * FROM public.deal_risks WHERE deal_id = $1 ORDER BY created_at ASC`, [dealA])).rows as any[];
+    // Verify duplicate risk was NOT created: exactly 1 risk record exists
+    expect(risks2.length).toBe(1);
+    expect(risks2[0].title).toBe('Economic Buyer CFO unengaged');
+    expect(risks2[0].status).toBe('recurring');
+    expect(risks2[0].consecutive_unresolved_calls).toBe(2);
+    expect(risks2[0].severity).toBe('high');
 
-    // --- CALL 3 ---
+    // Verify evidence accumulated
+    const evidence2 = (await db.query(`SELECT * FROM public.deal_evidence WHERE deal_id = $1 ORDER BY created_at ASC`, [dealA])).rows as any[];
+    expect(evidence2.length).toBe(2);
+    expect(evidence2[0].quote).toContain("don't have budget signing authority");
+    expect(evidence2[1].quote).toContain('Finance has not gotten back to me yet');
+
+    // -------------------------------------------------------------------------
+    // CALL 3: Third call where EB risk persists AND Competitor threat appears
+    // -------------------------------------------------------------------------
+    const conv3 = 'c3333333-3333-4333-8333-333333333333';
+    await db.exec(`
+      INSERT INTO public.conversations (id, user_id, deal_id, title, input_type, status)
+      VALUES ('${conv3}', '${userA}', '${dealA}', 'Discovery Call 3', 'audio', 'complete');
+    `);
+
     const call3Review: DealReview = {
       call: {
         call_status: 'At Risk',
@@ -475,42 +365,161 @@ describe('BLOCKER 1 & 6 & 9 — Authoritative Database Persistence & IDOR Suite'
       },
       stakeholder_signals: [],
       supporting_evidence: normalizeEvidenceList([
-        { quote: "Sarah: 'Microsoft just offered us an E5 bundle with 40% off.'", speaker: 'Sarah', pillar_key: 'budget', grounding_type: 'explicit_statement', confidence: 95 },
+        {
+          quote: "Sarah: 'Microsoft just offered us an E5 bundle with 40% off.'",
+          speaker: 'Sarah',
+          pillar_key: 'budget',
+          grounding_type: 'explicit_statement',
+          confidence: 95,
+        },
       ]),
     };
 
-    executePersistDealReview(db, {
-      auth_user: userA,
-      auth_role: 'authenticated',
-      p_deal_id: dealA,
-      p_user_id: userA,
-      p_review: call3Review,
-      p_resolved_stage: 'Discovery',
-      p_conversation_id: 'conv-003',
-    });
+    // Execute the REAL persistence path
+    await db.query(
+      `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, $5::uuid)`,
+      [dealA, userA, JSON.stringify(call3Review), 'Discovery', conv3]
+    );
 
     // Verify DB State after Call 3:
-    // 1. Both EB risk and competitor risk coexist in deal_risks table (size = 2)
-    // 2. EB risk escalated to consecutive count = 3 (critical severity)
-    // 3. Competitor risk is active with consecutive count = 1
-    // 4. Evidence count = 3
-    // 5. Deal state updated to Critical (health = 20)
-    expect(db.deal_risks.size).toBe(2);
+    // 1. Both EB risk and competitor risk exist simultaneously
+    const risks3 = (await db.query(`SELECT * FROM public.deal_risks WHERE deal_id = $1 ORDER BY created_at ASC`, [dealA])).rows as any[];
+    expect(risks3.length).toBe(2);
 
-    const ebRisk = Array.from(db.deal_risks.values()).find((r) => r.risk_category === 'economic_buyer');
+    const ebRisk = risks3.find((r) => r.risk_category === 'economic_buyer');
     expect(ebRisk).toBeDefined();
-    expect(ebRisk?.status).toBe('recurring');
-    expect(ebRisk?.consecutive_unresolved_calls).toBe(3);
-    expect(ebRisk?.severity).toBe('critical');
+    expect(ebRisk.status).toBe('recurring');
+    expect(ebRisk.consecutive_unresolved_calls).toBe(3);
+    expect(ebRisk.severity).toBe('critical'); // Escalated to critical on call 3
 
-    const compRisk = Array.from(db.deal_risks.values()).find((r) => r.risk_category === 'competitor_threat');
+    const compRisk = risks3.find((r) => r.risk_category === 'competitor_threat');
     expect(compRisk).toBeDefined();
-    expect(compRisk?.status).toBe('active');
-    expect(compRisk?.consecutive_unresolved_calls).toBe(1);
+    expect(compRisk.status).toBe('active');
+    expect(compRisk.consecutive_unresolved_calls).toBe(1);
 
-    expect(db.deal_evidence.length).toBe(3);
-    expect(db.deal_state.get(dealA)?.current_status).toBe('Critical');
-    expect(db.deal_state.get(dealA)?.deal_health_score).toBe(20);
-    expect(db.deal_state_transitions.length).toBeGreaterThanOrEqual(1);
+    // 2. Risk fingerprints are distinct
+    expect(ebRisk.fingerprint).not.toBe(compRisk.fingerprint);
+    expect(ebRisk.fingerprint).toBe('economic_buyer:economic_buyer_cfo_unengaged');
+    expect(compRisk.fingerprint).toBe('competitor_threat:competitor_microsoft_bundling_40');
+
+    // 3. Evidence history intact across all 3 calls
+    const evidence3 = (await db.query(`SELECT * FROM public.deal_evidence WHERE deal_id = $1 ORDER BY created_at ASC`, [dealA])).rows as any[];
+    expect(evidence3.length).toBe(3);
+    expect(evidence3[0].quote).toContain("don't have budget signing authority");
+    expect(evidence3[1].quote).toContain('Finance has not gotten back to me yet');
+    expect(evidence3[2].quote).toContain('Microsoft just offered us an E5 bundle');
+
+    // 4. Deal state updated
+    const state3 = (await db.query(`SELECT * FROM public.deal_state WHERE deal_id = $1`, [dealA])).rows[0] as any;
+    expect(state3.current_status).toBe('Critical');
+    expect(state3.deal_health_score).toBe(20);
+
+    // 5. State transitions tracked in database
+    const transitions = (await db.query(`SELECT * FROM public.deal_state_transitions WHERE deal_id = $1`, [dealA])).rows as any[];
+    expect(transitions.length).toBeGreaterThanOrEqual(1);
+  });
+
+  describe('Security Matrix & IDOR Authorization Verification', () => {
+    const sampleReview: DealReview = {
+      call: {
+        call_status: 'Needs Attention',
+        verdict: 'EB unconfirmed',
+        reason: 'No EB',
+        highest_priority_risk: { risk: 'Missing EB', why_it_matters: 'Budget', evidence: 'No EB in call', category: 'economic_buyer' },
+        what_youre_missing: [],
+        recommended_next_action: 'Contact EB',
+        key_follow_up_message: 'Hi',
+        manager_note: 'Note',
+      },
+      deal: {
+        status: 'At Risk',
+        confidence: 'Medium',
+        health_score: 40,
+        highest_priority_risk: { risk: 'Missing EB', why_it_matters: 'Budget', evidence: 'No EB in call', category: 'economic_buyer' },
+        what_youre_missing: [],
+        status_reason: 'Missing EB',
+        recommended_next_action: 'Contact EB',
+        manager_note: 'Note',
+      },
+      stakeholder_signals: [],
+      supporting_evidence: [],
+    };
+
+    it('A + DEAL A (authorized owner) -> SUCCEEDS', async () => {
+      await setSession(userA, 'authenticated');
+      await expect(
+        db.query(
+          `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, NULL)`,
+          [dealA, userA, JSON.stringify(sampleReview), 'Discovery']
+        )
+      ).resolves.toBeDefined();
+    });
+
+    it('A + DEAL B (target deal owned by B, p_user_id=A) -> FAILS', async () => {
+      await setSession(userA, 'authenticated');
+      await expect(
+        db.query(
+          `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, NULL)`,
+          [dealB, userA, JSON.stringify(sampleReview), 'Discovery']
+        )
+      ).rejects.toThrow(/Deal not found or unauthorized/);
+    });
+
+    it('A + user_id=B + DEAL B (spoofed p_user_id) -> FAILS with identity mismatch', async () => {
+      await setSession(userA, 'authenticated');
+      await expect(
+        db.query(
+          `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, NULL)`,
+          [dealB, userB, JSON.stringify(sampleReview), 'Discovery']
+        )
+      ).rejects.toThrow(/Unauthorized: user ID mismatch/);
+    });
+
+    it('B + DEAL A (User B accessing Deal A) -> FAILS', async () => {
+      await setSession(userB, 'authenticated');
+      await expect(
+        db.query(
+          `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, NULL)`,
+          [dealA, userB, JSON.stringify(sampleReview), 'Discovery']
+        )
+      ).rejects.toThrow(/Deal not found or unauthorized/);
+    });
+
+    it('Anonymous caller -> FAILS with authenticated caller required', async () => {
+      await setSession(null, 'anon');
+      await expect(
+        db.query(
+          `SELECT public.persist_deal_review($1::uuid, $2::uuid, $3::jsonb, $4::text, NULL)`,
+          [dealA, userA, JSON.stringify(sampleReview), 'Discovery']
+        )
+      ).rejects.toThrow(/Unauthorized: authenticated caller required/);
+    });
+  });
+
+  describe('Concurrency & Row Locking (FOR UPDATE) Verification', () => {
+    it('Verifies SQL definition acquires exclusive lock FOR UPDATE on deals row before state-dependent logic', async () => {
+      // Query PostgreSQL system catalogs for the function source code
+      const funcRes = await db.query(`
+        SELECT prosrc
+        FROM pg_proc
+        WHERE proname = 'persist_deal_review';
+      `);
+
+      expect(funcRes.rows.length).toBeGreaterThan(0);
+      const funcBody = (funcRes.rows[0] as any).prosrc;
+
+      // 1. FOR UPDATE row lock must be explicitly performed on public.deals
+      expect(funcBody).toContain('FOR UPDATE');
+      expect(funcBody).toMatch(/FROM public\.deals[\s\S]*?FOR UPDATE;/i);
+
+      // 2. Strict auth.uid() check must precede any state mutations
+      const authIdx = funcBody.indexOf('auth.uid()');
+      const lockIdx = funcBody.indexOf('FOR UPDATE');
+      const insertIdx = funcBody.indexOf('INSERT INTO public.deal_state');
+
+      expect(authIdx).toBeGreaterThan(-1);
+      expect(lockIdx).toBeGreaterThan(authIdx);
+      expect(insertIdx).toBeGreaterThan(lockIdx);
+    });
   });
 });

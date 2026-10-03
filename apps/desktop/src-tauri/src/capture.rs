@@ -11,7 +11,11 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub const TARGET_SAMPLE_RATE: u32 = 16000;
+pub const TARGET_CHANNELS: u16 = 1;
+pub const MIXER_CHUNK_SAMPLES: usize = 320; // 20ms at 16000Hz
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeCaptureStatus {
     Idle,
@@ -73,7 +77,7 @@ pub struct ActiveSession {
     pub is_paused: Arc<AtomicBool>,
     pub pause_start: Option<Instant>,
     pub is_running: Arc<AtomicBool>,
-    pub mic_stream: cpal::Stream,
+    pub mic_stream: Option<cpal::Stream>,
     pub sys_stream: Option<cpal::Stream>,
     pub mic_queue: Arc<Mutex<VecDeque<f32>>>,
     pub sys_queue: Arc<Mutex<VecDeque<f32>>>,
@@ -88,15 +92,78 @@ pub struct CaptureEngine {
     last_error: Mutex<Option<String>>,
 }
 
-const TARGET_SAMPLE_RATE: u32 = 16000;
-const TARGET_CHANNELS: u16 = 1;
-const MIXER_CHUNK_SAMPLES: usize = 320; // 20ms at 16000Hz
+/// Helper function to mix two normalized audio samples (-1.0 to 1.0)
+/// applying soft limiting/clamping to prevent digital clipping.
+pub fn mix_samples(mic: f32, sys: f32) -> f32 {
+    let combined = mic + sys;
+    if combined > 1.0 {
+        1.0 - (1.0 / (1.0 + (combined - 1.0)))
+    } else if combined < -1.0 {
+        -1.0 + (1.0 / (1.0 + (-combined - 1.0)))
+    } else {
+        combined
+    }
+}
 
-fn is_system_audio_supported(host: &cpal::Host) -> bool {
+/// Downmixes multi-channel interleaved float samples to mono.
+pub fn downmix_interleaved_to_mono(data: &[f32], channels: usize) -> Vec<f32> {
+    if channels == 0 || data.is_empty() {
+        return Vec::new();
+    }
+    if channels == 1 {
+        return data.to_vec();
+    }
+    let mut mono = Vec::with_capacity(data.len() / channels);
+    for chunk in data.chunks_exact(channels) {
+        let sum: f32 = chunk.iter().sum();
+        mono.push(sum / channels as f32);
+    }
+    mono
+}
+
+/// Resamples mono audio from source sample rate to target rate with phase tracking.
+pub fn resample_linear(
+    input: &[f32],
+    source_rate: u32,
+    target_rate: u32,
+    phase: &mut f64,
+) -> Vec<f32> {
+    if input.is_empty() {
+        return Vec::new();
+    }
+    if source_rate == target_rate {
+        return input.to_vec();
+    }
+
+    let step = source_rate as f64 / target_rate as f64;
+    let mut output = Vec::with_capacity((input.len() as f64 / step).ceil() as usize + 2);
+
+    while (*phase as usize) < input.len() {
+        let idx = *phase as usize;
+        let frac = *phase - idx as f64;
+        let s0 = input[idx];
+        let s1 = if idx + 1 < input.len() { input[idx + 1] } else { s0 };
+        let interp = s0 + (s1 - s0) * (frac as f32);
+        output.push(interp.clamp(-1.0, 1.0));
+        *phase += step;
+    }
+
+    *phase -= input.len() as f64;
+    if *phase < 0.0 {
+        *phase = 0.0;
+    }
+
+    output
+}
+
+/// Checks whether real system playback audio loopback is supported on the current platform/host.
+/// On Windows, WASAPI loopback is natively supported when a valid default output endpoint is accessible.
+pub fn is_system_audio_supported(host: &cpal::Host) -> bool {
     #[cfg(target_os = "windows")]
     {
         if let Some(device) = host.default_output_device() {
-            return device.default_output_config().is_ok();
+            return device.default_output_config().is_ok()
+                || device.supported_output_configs().map(|mut i| i.next().is_some()).unwrap_or(false);
         }
         false
     }
@@ -116,7 +183,6 @@ fn build_resampling_input_stream(
 ) -> Result<cpal::Stream, String> {
     let source_sample_rate = config.sample_rate().0;
     let source_channels = config.channels() as usize;
-    let step = source_sample_rate as f64 / TARGET_SAMPLE_RATE as f64;
 
     let err_fn = |err| {
         eprintln!("[KairoAudioCapture] Stream error: {}", err);
@@ -137,27 +203,11 @@ fn build_resampling_input_stream(
                         return;
                     }
 
-                    let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
-                    for chunk in data.chunks_exact(source_channels) {
-                        let sum: f32 = chunk.iter().sum();
-                        mono_frames.push(sum / source_channels as f32);
-                    }
-
-                    let mut resampled = Vec::new();
-                    while (resample_phase as usize) < mono_frames.len() {
-                        let idx = resample_phase as usize;
-                        let s = mono_frames[idx].clamp(-1.0, 1.0);
-                        resampled.push(s);
-                        resample_phase += step;
-                    }
-                    resample_phase -= mono_frames.len() as f64;
-                    if resample_phase < 0.0 {
-                        resample_phase = 0.0;
-                    }
+                    let mono_frames = downmix_interleaved_to_mono(data, source_channels);
+                    let resampled = resample_linear(&mono_frames, source_sample_rate, TARGET_SAMPLE_RATE, &mut resample_phase);
 
                     if !resampled.is_empty() {
                         let mut q = sample_queue.lock();
-                        // Bound queue to 5 seconds of audio to prevent unbounded memory growth
                         if q.len() < 80000 {
                             q.extend(resampled);
                         }
@@ -179,23 +229,9 @@ fn build_resampling_input_stream(
                         return;
                     }
 
-                    let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
-                    for chunk in data.chunks_exact(source_channels) {
-                        let sum: f32 = chunk.iter().map(|&s| s as f32 / 32768.0).sum();
-                        mono_frames.push(sum / source_channels as f32);
-                    }
-
-                    let mut resampled = Vec::new();
-                    while (resample_phase as usize) < mono_frames.len() {
-                        let idx = resample_phase as usize;
-                        let s = mono_frames[idx].clamp(-1.0, 1.0);
-                        resampled.push(s);
-                        resample_phase += step;
-                    }
-                    resample_phase -= mono_frames.len() as f64;
-                    if resample_phase < 0.0 {
-                        resample_phase = 0.0;
-                    }
+                    let float_frames: Vec<f32> = data.iter().map(|&s| s as f32 / 32768.0).collect();
+                    let mono_frames = downmix_interleaved_to_mono(&float_frames, source_channels);
+                    let resampled = resample_linear(&mono_frames, source_sample_rate, TARGET_SAMPLE_RATE, &mut resample_phase);
 
                     if !resampled.is_empty() {
                         let mut q = sample_queue.lock();
@@ -220,23 +256,9 @@ fn build_resampling_input_stream(
                         return;
                     }
 
-                    let mut mono_frames: Vec<f32> = Vec::with_capacity(data.len() / source_channels);
-                    for chunk in data.chunks_exact(source_channels) {
-                        let sum: f32 = chunk.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).sum();
-                        mono_frames.push(sum / source_channels as f32);
-                    }
-
-                    let mut resampled = Vec::new();
-                    while (resample_phase as usize) < mono_frames.len() {
-                        let idx = resample_phase as usize;
-                        let s = mono_frames[idx].clamp(-1.0, 1.0);
-                        resampled.push(s);
-                        resample_phase += step;
-                    }
-                    resample_phase -= mono_frames.len() as f64;
-                    if resample_phase < 0.0 {
-                        resample_phase = 0.0;
-                    }
+                    let float_frames: Vec<f32> = data.iter().map(|&s| (s as f32 - 32768.0) / 32768.0).collect();
+                    let mono_frames = downmix_interleaved_to_mono(&float_frames, source_channels);
+                    let resampled = resample_linear(&mono_frames, source_sample_rate, TARGET_SAMPLE_RATE, &mut resample_phase);
 
                     if !resampled.is_empty() {
                         let mut q = sample_queue.lock();
@@ -287,7 +309,7 @@ impl CaptureEngine {
         let system_audio_supported = is_system_audio_supported(&host);
 
         CaptureCapabilitiesResponse {
-            microphone_supported: !available_devices.is_empty(),
+            microphone_supported: !available_devices.is_empty() || default_device_name.is_some(),
             system_audio_supported,
             available_devices,
             default_device_name,
@@ -296,20 +318,19 @@ impl CaptureEngine {
         }
     }
 
-    pub fn start_capture(&self, meeting_id: String, deal_id: Option<String>) -> Result<CaptureStateResponse, String> {
+    pub fn start_capture(
+        &self,
+        meeting_id: String,
+        deal_id: Option<String>,
+        requested_source: Option<CaptureSource>,
+    ) -> Result<CaptureStateResponse, String> {
         let mut session_guard = self.session.lock();
         if session_guard.is_some() {
             return Err("A capture session is already in progress".to_string());
         }
 
+        let source = requested_source.unwrap_or(CaptureSource::Combined);
         let host = cpal::default_host();
-        let mic_device = host
-            .default_input_device()
-            .ok_or_else(|| "No default audio input device (microphone) found on this system".to_string())?;
-
-        let mic_config = mic_device
-            .default_input_config()
-            .map_err(|e| format!("Failed to get default input audio config: {}", e))?;
 
         let temp_dir = std::env::temp_dir().join("kairo_captures");
         std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create capture directory: {}", e))?;
@@ -335,43 +356,79 @@ impl CaptureEngine {
         let mic_queue = Arc::new(Mutex::new(VecDeque::with_capacity(16000)));
         let sys_queue = Arc::new(Mutex::new(VecDeque::with_capacity(16000)));
 
-        let mic_stream = build_resampling_input_stream(
-            &mic_device,
-            &mic_config,
-            mic_queue.clone(),
-            is_running.clone(),
-            is_paused.clone(),
-        )?;
+        // 1. Microphone capture setup (if source is Microphone or Combined)
+        let mut mic_stream_opt: Option<cpal::Stream> = None;
+        if source == CaptureSource::Microphone || source == CaptureSource::Combined {
+            let mic_device = host
+                .default_input_device()
+                .ok_or_else(|| "No default audio input device (microphone) found on this system".to_string())?;
 
-        mic_stream
-            .play()
-            .map_err(|e| format!("Failed to start microphone stream: {}", e))?;
+            let mic_config = mic_device
+                .default_input_config()
+                .map_err(|e| format!("Failed to get default input audio config: {}", e))?;
 
-        // System audio loopback (Windows WASAPI loopback support)
+            let mic_stream = build_resampling_input_stream(
+                &mic_device,
+                &mic_config,
+                mic_queue.clone(),
+                is_running.clone(),
+                is_paused.clone(),
+            )?;
+
+            mic_stream
+                .play()
+                .map_err(|e| format!("Failed to start microphone stream: {}", e))?;
+
+            mic_stream_opt = Some(mic_stream);
+        }
+
+        // 2. Windows WASAPI system audio loopback setup (if source is SystemAudio or Combined)
         let mut sys_stream_opt: Option<cpal::Stream> = None;
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(sys_device) = host.default_output_device() {
-                if let Ok(sys_config) = sys_device.default_output_config() {
-                    match build_resampling_input_stream(
-                        &sys_device,
-                        &sys_config,
-                        sys_queue.clone(),
-                        is_running.clone(),
-                        is_paused.clone(),
-                    ) {
-                        Ok(sys_stream) => {
-                            if sys_stream.play().is_ok() {
-                                sys_stream_opt = Some(sys_stream);
+        if source == CaptureSource::SystemAudio || source == CaptureSource::Combined {
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(sys_device) = host.default_output_device() {
+                    if let Ok(sys_config) = sys_device.default_output_config() {
+                        match build_resampling_input_stream(
+                            &sys_device,
+                            &sys_config,
+                            sys_queue.clone(),
+                            is_running.clone(),
+                            is_paused.clone(),
+                        ) {
+                            Ok(sys_stream) => {
+                                if sys_stream.play().is_ok() {
+                                    sys_stream_opt = Some(sys_stream);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[KairoAudioCapture] System loopback stream setup warning: {}", e);
+                                if source == CaptureSource::SystemAudio {
+                                    return Err(format!("Failed to initialize Windows system audio loopback: {}", e));
+                                }
                             }
                         }
-                        Err(e) => {
-                            eprintln!("[KairoAudioCapture] System loopback stream setup note: {}", e);
-                        }
                     }
+                } else if source == CaptureSource::SystemAudio {
+                    return Err("No default output audio device found for loopback capture".to_string());
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                if source == CaptureSource::SystemAudio {
+                    return Err("System audio loopback is currently only supported on Windows".to_string());
                 }
             }
         }
+
+        let effective_capture_source = match (mic_stream_opt.is_some(), sys_stream_opt.is_some()) {
+            (true, true) => CaptureSource::Combined,
+            (true, false) => CaptureSource::Microphone,
+            (false, true) => CaptureSource::SystemAudio,
+            (false, false) => {
+                return Err("No active audio streams could be initialized".to_string());
+            }
+        };
 
         let samples_written_counter = Arc::new(Mutex::new(0u64));
 
@@ -439,8 +496,8 @@ impl CaptureEngine {
                     if let Some(ref mut w) = *w_guard {
                         let mut count = 0u64;
                         for i in 0..frames_to_write {
-                            let mixed = (mic_buf[i] + sys_buf[i]).clamp(-1.0, 1.0);
-                            let sample_i16 = (mixed * 32767.0) as i16;
+                            let mixed = mix_samples(mic_buf[i], sys_buf[i]);
+                            let sample_i16 = (mixed * 32767.0).clamp(-32768.0, 32767.0) as i16;
                             if w.write_sample(sample_i16).is_ok() {
                                 count += 1;
                             }
@@ -459,8 +516,8 @@ impl CaptureEngine {
                 while !mq.is_empty() || !sq.is_empty() {
                     let m = mq.pop_front().unwrap_or(0.0);
                     let s = sq.pop_front().unwrap_or(0.0);
-                    let mixed = (m + s).clamp(-1.0, 1.0);
-                    let sample_i16 = (mixed * 32767.0) as i16;
+                    let mixed = mix_samples(m, s);
+                    let sample_i16 = (mixed * 32767.0).clamp(-32768.0, 32767.0) as i16;
                     if w.write_sample(sample_i16).is_ok() {
                         count += 1;
                     }
@@ -469,23 +526,17 @@ impl CaptureEngine {
             }
         });
 
-        let capture_source = if sys_stream_opt.is_some() {
-            CaptureSource::Combined
-        } else {
-            CaptureSource::Microphone
-        };
-
         let session = ActiveSession {
             meeting_id: meeting_id.clone(),
             deal_id: deal_id.clone(),
             file_path: file_path.clone(),
-            capture_source,
+            capture_source: effective_capture_source,
             start_time: Instant::now(),
             paused_duration_secs: 0,
             is_paused,
             pause_start: None,
             is_running,
-            mic_stream,
+            mic_stream: mic_stream_opt,
             sys_stream: sys_stream_opt,
             mic_queue,
             sys_queue,
@@ -505,7 +556,7 @@ impl CaptureEngine {
             elapsed_seconds: 0,
             file_path: Some(file_path.to_string_lossy().to_string()),
             error_message: None,
-            capture_source: Some(capture_source),
+            capture_source: Some(effective_capture_source),
         })
     }
 
@@ -546,12 +597,12 @@ impl CaptureEngine {
 
         session.is_running.store(false, Ordering::SeqCst);
 
-        // Wait for mixer thread to finish flush
+        // Wait for mixer thread to finish flushing buffers
         if let Some(handle) = session.mixer_handle.take() {
             let _ = handle.join();
         }
 
-        // Finalize WAV writer to flush headers and audio frames
+        // Finalize WAV writer to flush RIFF headers and samples
         {
             let mut writer_guard = session.writer.lock();
             if let Some(w) = writer_guard.take() {
@@ -645,5 +696,54 @@ impl CaptureEngine {
                 capture_source: None,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_downmix_stereo_to_mono() {
+        let stereo = vec![0.5, 0.5, -0.5, 0.5, 1.0, 0.0];
+        let mono = downmix_interleaved_to_mono(&stereo, 2);
+        assert_eq!(mono.len(), 3);
+        assert_eq!(mono[0], 0.5);
+        assert_eq!(mono[1], 0.0);
+        assert_eq!(mono[2], 0.5);
+    }
+
+    #[test]
+    fn test_linear_resample_48k_to_16k() {
+        let input: Vec<f32> = (0..480).map(|i| (i as f32 / 480.0)).collect();
+        let mut phase = 0.0;
+        let output = resample_linear(&input, 48000, 16000, &mut phase);
+        assert_eq!(output.len(), 160);
+        assert!((output[0] - 0.0).abs() < 1e-4);
+        assert!((output[159] - 0.99375).abs() < 1e-2);
+    }
+
+    #[test]
+    fn test_mix_samples_soft_clamping() {
+        // Normal addition without clipping
+        assert!((mix_samples(0.2, 0.3) - 0.5).abs() < 1e-5);
+        // Over unity soft limiting
+        let clamped_high = mix_samples(0.8, 0.8);
+        assert!(clamped_high <= 1.0);
+        assert!(clamped_high > 0.8);
+        // Under negative unity soft limiting
+        let clamped_low = mix_samples(-0.8, -0.8);
+        assert!(clamped_low >= -1.0);
+        assert!(clamped_low < -0.8);
+    }
+
+    #[test]
+    fn test_capture_source_serialization() {
+        let src = CaptureSource::Combined;
+        let json = serde_json::to_string(&src).unwrap();
+        assert_eq!(json, "\"combined\"");
+
+        let deserialized: CaptureSource = serde_json::from_str("\"system_audio\"").unwrap();
+        assert_eq!(deserialized, CaptureSource::SystemAudio);
     }
 }

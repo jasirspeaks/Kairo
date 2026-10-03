@@ -77,7 +77,7 @@ export interface UseMeetingCaptureResult {
   activeDealId: string | null;
   levels: number[];
   errorMessage: string | null;
-  startCapture: (meetingId: string, dealId?: string | null) => Promise<void>;
+  startCapture: (meetingId: string, dealId?: string | null, captureSource?: CaptureSource | null) => Promise<void>;
   pauseCapture: () => Promise<void>;
   resumeCapture: () => Promise<void>;
   stopCapture: () => Promise<{ blob?: Blob; filePath?: string; mimeType: string; durationSeconds: number } | null>;
