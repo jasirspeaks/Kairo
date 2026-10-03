@@ -61,6 +61,7 @@ describe('Canonical Scheduling Architecture Verification', () => {
         deal_name: 'Stark Industries Enterprise Contract',
         company_name: 'Stark Industries',
         deal_stage: 'Discovery',
+        champion: null,
         deal_value: 250000,
         status: 'active',
         risk_level: 'none',
