@@ -23,6 +23,7 @@ export async function createCheckoutSession(
 
   const { supabaseUrl, supabaseAnonKey } = getClientConfig();
   const endpoint = `${supabaseUrl}/functions/v1/create-checkout-session`;
+  const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://kairo.internal';
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -33,7 +34,7 @@ export async function createCheckoutSession(
     },
     body: JSON.stringify({
       price_id: options.priceId,
-      return_url: options.returnUrl || window.location.origin,
+      return_url: options.returnUrl || fallbackOrigin,
     }),
   });
 
@@ -59,6 +60,7 @@ export async function createCustomerPortalSession(
 
   const { supabaseUrl, supabaseAnonKey } = getClientConfig();
   const endpoint = `${supabaseUrl}/functions/v1/create-portal-session`;
+  const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://kairo.internal';
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -68,7 +70,7 @@ export async function createCustomerPortalSession(
       Authorization: `Bearer ${session.access_token}`,
     },
     body: JSON.stringify({
-      return_url: options.returnUrl || `${window.location.origin}/app/settings`,
+      return_url: options.returnUrl || `${fallbackOrigin}/app/settings`,
     }),
   });
 

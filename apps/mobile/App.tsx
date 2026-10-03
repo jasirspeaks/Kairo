@@ -1,31 +1,37 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   SafeAreaView,
   StatusBar,
   StyleSheet,
   View,
-  Text,
-  TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '@kairo/api';
+import { colors } from './src/theme/colors';
+import { NavigationProvider, useNavigation } from './src/navigation/NavigationContext';
+import { BottomNav } from './src/components/layout/BottomNav';
+
+// Screens
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { DealsScreen } from './src/screens/DealsScreen';
-import { RecordScreen } from './src/screens/RecordScreen';
+import { DealReviewScreen } from './src/screens/DealReviewScreen';
+import { CallReviewScreen } from './src/screens/CallReviewScreen';
+import { NewDealScreen } from './src/screens/NewDealScreen';
 import { InboxScreen } from './src/screens/InboxScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { RecordScreen } from './src/screens/RecordScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { OnboardingScreen } from './src/screens/OnboardingScreen';
 
-type Tab = 'dashboard' | 'deals' | 'record' | 'inbox' | 'settings';
-
-export default function App() {
-  const { user, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+function AppShell() {
+  const { user, profile, loading } = useAuth();
+  const { currentScreen, routeParams, navigate } = useNavigation();
 
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator color="#7042C5" size="large" />
+        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        <ActivityIndicator color={colors.primary} size="large" />
       </SafeAreaView>
     );
   }
@@ -33,142 +39,81 @@ export default function App() {
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0D0715" />
+        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
         <AuthScreen />
       </SafeAreaView>
     );
   }
 
+  if (profile && profile.onboarding_complete === false) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        <OnboardingScreen onCompleted={() => navigate('dashboard')} />
+      </SafeAreaView>
+    );
+  }
+
+  // Render active screen
+  const renderScreen = () => {
+    switch (currentScreen) {
+      case 'dashboard':
+        return <DashboardScreen />;
+      case 'deals':
+        return <DealsScreen />;
+      case 'deal_review':
+        return <DealReviewScreen dealId={routeParams.dealId} />;
+      case 'call_review':
+        return <CallReviewScreen dealId={routeParams.dealId} callId={routeParams.callId} />;
+      case 'new_deal':
+        return <NewDealScreen />;
+      case 'inbox':
+        return <InboxScreen />;
+      case 'settings':
+        return <SettingsScreen />;
+      case 'record':
+        return <RecordScreen dealId={routeParams.dealId} />;
+      default:
+        return <DashboardScreen />;
+    }
+  };
+
+  // Show bottom nav on top tabs and primary workflows
+  const showBottomNav =
+    currentScreen === 'dashboard' ||
+    currentScreen === 'deals' ||
+    currentScreen === 'inbox' ||
+    currentScreen === 'settings';
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0D0715" />
-
-      {/* Main Content Area */}
-      <View style={styles.content}>
-        {activeTab === 'dashboard' && (
-          <DashboardScreen
-            onRecordPress={() => setActiveTab('record')}
-            onDealPress={() => setActiveTab('deals')}
-          />
-        )}
-        {activeTab === 'deals' && <DealsScreen />}
-        {activeTab === 'record' && <RecordScreen />}
-        {activeTab === 'inbox' && <InboxScreen />}
-        {activeTab === 'settings' && <SettingsScreen />}
-      </View>
-
-      {/* Bottom Navigation Bar */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('dashboard')}
-        >
-          <Text
-            style={[
-              styles.navText,
-              activeTab === 'dashboard' && styles.navTextActive,
-            ]}
-          >
-            Dashboard
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('deals')}
-        >
-          <Text
-            style={[
-              styles.navText,
-              activeTab === 'deals' && styles.navTextActive,
-            ]}
-          >
-            Deals
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('record')}
-        >
-          <Text
-            style={[
-              styles.navText,
-              activeTab === 'record' && styles.navTextActive,
-            ]}
-          >
-            Record
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('inbox')}
-        >
-          <Text
-            style={[
-              styles.navText,
-              activeTab === 'inbox' && styles.navTextActive,
-            ]}
-          >
-            Inbox
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('settings')}
-        >
-          <Text
-            style={[
-              styles.navText,
-              activeTab === 'settings' && styles.navTextActive,
-            ]}
-          >
-            Settings
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <View style={styles.content}>{renderScreen()}</View>
+      {showBottomNav && <BottomNav />}
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <NavigationProvider>
+      <AppShell />
+    </NavigationProvider>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D0715',
+    backgroundColor: colors.bg,
   },
   center: {
     flex: 1,
-    backgroundColor: '#0D0715',
+    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   content: {
     flex: 1,
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    height: 58,
-    backgroundColor: '#160D21',
-    borderTopWidth: 1,
-    borderTopColor: '#302044',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 8,
-  },
-  navItem: {
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-  navText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#796B8A',
-  },
-  navTextActive: {
-    color: '#7042C5',
-    fontWeight: '700',
   },
 });

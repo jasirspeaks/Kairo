@@ -10,12 +10,17 @@ import {
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { useAuth, getDeals, submitRecording } from '@kairo/api';
-import { Deal } from '@kairo/core';
+import { type Deal } from '@kairo/core';
+import { colors } from '../theme/colors';
+import { useNavigation } from '../navigation/NavigationContext';
+import { TopBar } from '../components/layout/TopBar';
 
-export function RecordScreen() {
+export function RecordScreen({ dealId: initialDealId }: { dealId?: string }) {
   const { user } = useAuth();
+  const { navigate, goBack } = useNavigation();
+
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [selectedDealId, setSelectedDealId] = useState<string>('');
+  const [selectedDealId, setSelectedDealId] = useState<string>(initialDealId || '');
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -34,7 +39,6 @@ export function RecordScreen() {
     });
   }, [user]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (recordingRef.current) {
@@ -63,14 +67,14 @@ export function RecordScreen() {
       setErrorMessage(null);
       setStatusMessage(null);
 
-      // 1. Request microphone permissions explicitly
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
-        setErrorMessage('Microphone access is required to record conversations. Please enable permissions in device settings.');
+        setErrorMessage(
+          'Microphone access is required to record conversations. Please enable permissions in device settings.'
+        );
         return;
       }
 
-      // 2. Configure audio mode for high-fidelity recording
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
@@ -79,7 +83,6 @@ export function RecordScreen() {
         playThroughEarpieceAndroid: false,
       });
 
-      // 3. Instantiate and prepare real audio recording
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       await recording.startAsync();
@@ -135,7 +138,6 @@ export function RecordScreen() {
     let recordedUri: string | null = null;
 
     try {
-      // 1. Stop and unload hardware recording
       await recording.stopAndUnloadAsync();
       recordedUri = recording.getURI();
       recordingRef.current = null;
@@ -144,7 +146,6 @@ export function RecordScreen() {
         throw new Error('Recording ended without producing a valid audio file URI.');
       }
 
-      // 2. Validate file existence and non-zero size
       const fileInfo = await FileSystem.getInfoAsync(recordedUri);
       if (!fileInfo.exists) {
         throw new Error('Recorded audio file could not be found on device storage.');
@@ -154,12 +155,11 @@ export function RecordScreen() {
         throw new Error('Recorded audio file is empty (0 bytes). Please check microphone input.');
       }
 
-      // 3. Fetch real audio blob from local filesystem URI with fallback
       let audioBlob: Blob;
       try {
         const response = await fetch(recordedUri);
         audioBlob = await response.blob();
-      } catch (fetchErr) {
+      } catch {
         const b64 = await FileSystem.readAsStringAsync(recordedUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
@@ -176,14 +176,18 @@ export function RecordScreen() {
         throw new Error('Audio payload contains 0 bytes. Recording discarded.');
       }
 
-      setStatusMessage(`Uploading real recording (${(audioBlob.size / 1024).toFixed(1)} KB) and generating 5-pillar deal intelligence...`);
+      setStatusMessage(
+        `Uploading recording (${(audioBlob.size / 1024).toFixed(1)} KB) and generating 5-pillar deal intelligence...`
+      );
 
-      // 4. Submit genuine audio payload through pipeline
-      await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
+      const review = await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
       setStatusMessage('Audio recorded & 5-pillar deal intelligence generated successfully!');
 
-      // 5. Clean up temporary recording file from filesystem
       await FileSystem.deleteAsync(recordedUri, { idempotent: true }).catch(() => {});
+
+      if (review && selectedDealId) {
+        navigate('deal_review', { dealId: selectedDealId });
+      }
     } catch (err: any) {
       console.error('[MobileRecorder] Submission failed:', err);
       setErrorMessage(err?.message || 'Failed to process mobile audio recording.');
@@ -211,172 +215,153 @@ export function RecordScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Record Conversation</Text>
-        <Text style={styles.subtitle}>Real mobile microphone capture for instant deal intelligence</Text>
-      </View>
+    <View style={styles.container}>
+      <TopBar title="Capture Live Call" showBack onBackPress={goBack} />
 
-      {/* Target Deal Selector */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>ASSOCIATED DEAL</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dealPills}>
-          {deals.map((d) => (
-            <TouchableOpacity
-              key={d.id}
-              style={[
-                styles.dealPill,
-                selectedDealId === d.id && styles.dealPillActive,
-              ]}
-              onPress={() => setSelectedDealId(d.id)}
-            >
-              <Text
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        {/* Target Deal Selector */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>ASSOCIATED DEAL</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dealPills}>
+            {deals.map((d) => (
+              <TouchableOpacity
+                key={d.id}
                 style={[
-                  styles.dealPillText,
-                  selectedDealId === d.id && styles.dealPillTextActive,
+                  styles.dealPill,
+                  selectedDealId === d.id && styles.dealPillActive,
                 ]}
+                onPress={() => setSelectedDealId(d.id)}
               >
-                {d.company_name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+                <Text
+                  style={[
+                    styles.dealPillText,
+                    selectedDealId === d.id && styles.dealPillTextActive,
+                  ]}
+                >
+                  {d.company_name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
-      {/* Recorder Center */}
-      <View style={styles.recordCenter}>
-        <TouchableOpacity
-          disabled={isSubmitting}
-          style={[
-            styles.recordCircle,
-            isRecording && styles.recordCircleActive,
-            isSubmitting && styles.recordCircleDisabled,
-          ]}
-          onPress={toggleRecording}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator size="large" color="#FFFFFF" />
-          ) : (
-            <View
-              style={[
-                styles.innerCircle,
-                isRecording && styles.innerCircleActive,
-              ]}
-            />
-          )}
-        </TouchableOpacity>
-
-        <Text style={styles.timerText}>{formatSeconds(duration)}</Text>
-        <Text style={styles.hintText}>
-          {isSubmitting
-            ? 'Processing and transcribing audio...'
-            : isRecording
-            ? 'Recording audio... Tap red square to finish & analyze'
-            : 'Tap microphone button to start recording'}
-        </Text>
-
-        {isRecording && (
+        {/* Recorder Center */}
+        <View style={styles.recordCenter}>
           <TouchableOpacity
-            style={styles.discardButton}
-            onPress={discardRecording}
             disabled={isSubmitting}
+            style={[
+              styles.recordCircle,
+              isRecording && styles.recordCircleActive,
+              isSubmitting && styles.recordCircleDisabled,
+            ]}
+            onPress={toggleRecording}
           >
-            <Text style={styles.discardButtonText}>Discard Recording</Text>
+            {isSubmitting ? (
+              <ActivityIndicator size="large" color={colors.white} />
+            ) : (
+              <View
+                style={[
+                  styles.innerCircle,
+                  isRecording && styles.innerCircleActive,
+                ]}
+              />
+            )}
           </TouchableOpacity>
+
+          <Text style={styles.timerText}>{formatSeconds(duration)}</Text>
+          <Text style={styles.hintText}>
+            {isSubmitting
+              ? 'Processing and generating deal intelligence...'
+              : isRecording
+              ? 'Recording audio... Tap red square to finish & analyze'
+              : 'Tap microphone button to start recording'}
+          </Text>
+
+          {isRecording && (
+            <TouchableOpacity
+              style={styles.discardButton}
+              onPress={discardRecording}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.discardButtonText}>Discard Recording</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Status Message */}
+        {statusMessage && (
+          <View style={styles.statusBox}>
+            <Text style={styles.statusText}>{statusMessage}</Text>
+          </View>
         )}
-      </View>
 
-      {/* Status Message */}
-      {statusMessage && (
-        <View style={styles.statusBox}>
-          <Text style={styles.statusText}>{statusMessage}</Text>
-        </View>
-      )}
-
-      {/* Error Message */}
-      {errorMessage && (
-        <View style={[styles.statusBox, styles.errorBox]}>
-          <Text style={[styles.statusText, styles.errorText]}>{errorMessage}</Text>
-        </View>
-      )}
-    </ScrollView>
+        {/* Error Message */}
+        {errorMessage && (
+          <View style={[styles.statusBox, styles.errorBox]}>
+            <Text style={[styles.statusText, styles.errorText]}>{errorMessage}</Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  errorBox: {
-    backgroundColor: '#FF667A1A',
-    borderColor: '#FF667A33',
-  },
-  errorText: {
-    color: '#FF667A',
-  },
   container: {
     flex: 1,
-    backgroundColor: '#0D0715',
+    backgroundColor: colors.bg,
+  },
+  scroll: {
+    flex: 1,
   },
   content: {
     padding: 16,
     paddingBottom: 40,
   },
-  header: {
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F7F2FC',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#796B8A',
-    marginTop: 2,
-  },
   card: {
-    backgroundColor: '#160D21',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#302044',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 14,
     marginBottom: 20,
   },
   cardTitle: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#796B8A',
-    letterSpacing: 0.5,
+    color: colors.text.tertiary,
+    letterSpacing: 0.8,
     marginBottom: 10,
   },
   dealPills: {
     flexDirection: 'row',
   },
   dealPill: {
-    backgroundColor: '#201330',
+    backgroundColor: colors.surfaceElevated,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 8,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#302044',
+    borderColor: colors.border,
   },
   dealPillActive: {
-    backgroundColor: '#7042C5',
-    borderColor: '#7042C5',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   dealPillText: {
-    color: '#796B8A',
+    color: colors.text.secondary,
     fontSize: 12,
     fontWeight: '600',
   },
   dealPillTextActive: {
-    color: '#FFFFFF',
+    color: colors.white,
+    fontWeight: '700',
   },
   recordCenter: {
-    backgroundColor: '#160D21',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#302044',
+    borderColor: colors.border,
     borderRadius: 16,
     padding: 32,
     alignItems: 'center',
@@ -386,16 +371,16 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: '#201330',
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 3,
-    borderColor: '#7042C5',
+    borderColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   recordCircleActive: {
-    borderColor: '#FF667A',
-    backgroundColor: '#30131E',
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerBg,
   },
   recordCircleDisabled: {
     opacity: 0.7,
@@ -404,24 +389,24 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#7042C5',
+    backgroundColor: colors.primary,
   },
   innerCircleActive: {
     width: 30,
     height: 30,
     borderRadius: 4,
-    backgroundColor: '#FF667A',
+    backgroundColor: colors.danger,
   },
   timerText: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '700',
-    color: '#F7F2FC',
+    color: colors.text.primary,
     fontFamily: 'monospace',
     marginBottom: 8,
   },
   hintText: {
-    color: '#796B8A',
-    fontSize: 12,
+    color: colors.text.secondary,
+    fontSize: 13,
     textAlign: 'center',
   },
   discardButton: {
@@ -429,27 +414,34 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
-    backgroundColor: '#FF667A1A',
+    backgroundColor: colors.dangerBg,
     borderWidth: 1,
-    borderColor: '#FF667A33',
+    borderColor: colors.dangerBorder,
   },
   discardButtonText: {
-    color: '#FF667A',
+    color: colors.dangerText,
     fontSize: 12,
     fontWeight: '600',
   },
   statusBox: {
-    backgroundColor: '#3DD68C1A',
-    borderColor: '#3DD68C33',
+    backgroundColor: colors.successBg,
+    borderColor: colors.successBorder,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 14,
     marginTop: 16,
   },
   statusText: {
-    color: '#3DD68C',
+    color: colors.successText,
     fontSize: 12,
     textAlign: 'center',
     fontWeight: '600',
+  },
+  errorBox: {
+    backgroundColor: colors.dangerBg,
+    borderColor: colors.dangerBorder,
+  },
+  errorText: {
+    color: colors.dangerText,
   },
 });

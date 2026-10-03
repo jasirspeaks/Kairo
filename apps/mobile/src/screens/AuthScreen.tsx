@@ -8,101 +8,153 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { signInWithPassword, signUp } from '@kairo/api';
+import { signInWithPassword, signUp, resetPasswordForEmail } from '@kairo/api';
+import { colors } from '../theme/colors';
+
+type AuthMode = 'signin' | 'signup' | 'forgot';
 
 export function AuthScreen() {
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!email || !password) {
-      setError('Please fill in both email and password');
+    if (!email.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
+
+    if (mode !== 'forgot' && !password) {
+      setError('Please enter your password.');
       return;
     }
 
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
-      if (isSignUp) {
-        const { error: signUpError } = await signUp({ email, password });
+      if (mode === 'signup') {
+        const { error: signUpError } = await signUp({ email: email.trim(), password });
         if (signUpError) throw signUpError;
-      } else {
-        const { error: signInError } = await signInWithPassword({ email, password });
+        setSuccessMessage('Account created! Please check your email or sign in.');
+      } else if (mode === 'signin') {
+        const { error: signInError } = await signInWithPassword({ email: email.trim(), password });
         if (signInError) throw signInError;
+      } else if (mode === 'forgot') {
+        const { error: resetError } = await resetPasswordForEmail(email.trim());
+        if (resetError) throw resetError;
+        setSuccessMessage('Password reset link sent! Check your inbox.');
       }
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed');
+      setError(err?.message || 'Authentication failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.header}>
         <Text style={styles.logo}>KAIRO</Text>
         <Text style={styles.title}>
-          {isSignUp ? 'Create your account' : 'Sign in to Kairo'}
+          {mode === 'signup'
+            ? 'Create your account'
+            : mode === 'forgot'
+            ? 'Reset your password'
+            : 'Sign in to Kairo'}
         </Text>
-        <Text style={styles.subtitle}>Unified deal intelligence across all surfaces</Text>
+        <Text style={styles.subtitle}>
+          {mode === 'forgot'
+            ? 'We will send you a password reset link'
+            : 'Unified deal intelligence across all surfaces'}
+        </Text>
       </View>
 
-      {error && (
+      {error ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
-      )}
+      ) : null}
+
+      {successMessage ? (
+        <View style={styles.successBox}>
+          <Text style={styles.successText}>{successMessage}</Text>
+        </View>
+      ) : null}
 
       <View style={styles.form}>
-        <Text style={styles.label}>EMAIL</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="you@company.com"
-          placeholderTextColor="#796B8A"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
-        />
+        <View style={styles.field}>
+          <Text style={styles.label}>Email Address</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="you@company.com"
+            placeholderTextColor={colors.text.tertiary}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+        </View>
 
-        <Text style={styles.label}>PASSWORD</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="••••••••"
-          placeholderTextColor="#796B8A"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+        {mode !== 'forgot' && (
+          <View style={styles.field}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Password</Text>
+              {mode === 'signin' && (
+                <TouchableOpacity onPress={() => { setMode('forgot'); setError(null); setSuccessMessage(null); }}>
+                  <Text style={styles.forgotLink}>Forgot password?</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="••••••••"
+              placeholderTextColor={colors.text.tertiary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+          </View>
+        )}
 
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.primaryButton, loading && styles.buttonDisabled]}
           onPress={handleSubmit}
           disabled={loading}
+          activeOpacity={0.8}
         >
           {loading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
+            <ActivityIndicator color={colors.white} size="small" />
           ) : (
-            <Text style={styles.buttonText}>
-              {isSignUp ? 'Create Account' : 'Sign In'}
+            <Text style={styles.primaryButtonText}>
+              {mode === 'signup'
+                ? 'Create Account'
+                : mode === 'forgot'
+                ? 'Send Reset Link'
+                : 'Sign In'}
             </Text>
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.switchButton}
-          onPress={() => setIsSignUp(!isSignUp)}
-        >
-          <Text style={styles.switchText}>
-            {isSignUp
-              ? 'Already have an account? Sign in'
-              : "Don't have an account? Sign up"}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.footer}>
+          {mode === 'signin' ? (
+            <TouchableOpacity onPress={() => { setMode('signup'); setError(null); setSuccessMessage(null); }}>
+              <Text style={styles.footerText}>
+                Don't have an account? <Text style={styles.footerLink}>Sign up</Text>
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => { setMode('signin'); setError(null); setSuccessMessage(null); }}>
+              <Text style={styles.footerText}>
+                Already have an account? <Text style={styles.footerLink}>Sign in</Text>
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </ScrollView>
   );
@@ -111,7 +163,7 @@ export function AuthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D0715',
+    backgroundColor: colors.bg,
   },
   content: {
     padding: 24,
@@ -123,80 +175,103 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   logo: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#7042C5',
-    letterSpacing: 2,
-    marginBottom: 12,
+    color: colors.primary,
+    letterSpacing: 3,
+    marginBottom: 16,
   },
   title: {
     fontSize: 22,
-    fontWeight: '700',
-    color: '#F7F2FC',
-    marginBottom: 4,
+    fontWeight: '800',
+    color: colors.text.primary,
+    marginBottom: 6,
   },
   subtitle: {
     fontSize: 13,
-    color: '#796B8A',
+    color: colors.text.secondary,
     textAlign: 'center',
   },
   errorBox: {
-    backgroundColor: '#FF667A1A',
-    borderColor: '#FF667A33',
+    backgroundColor: colors.dangerBg,
+    borderColor: colors.dangerBorder,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 8,
     padding: 12,
     marginBottom: 16,
   },
   errorText: {
-    color: '#FF667A',
-    fontSize: 12,
-    textAlign: 'center',
+    color: colors.dangerText,
+    fontSize: 13,
   },
-  form: {
-    backgroundColor: '#160D21',
+  successBox: {
+    backgroundColor: colors.successBg,
+    borderColor: colors.successBorder,
     borderWidth: 1,
-    borderColor: '#302044',
-    borderRadius: 16,
-    padding: 20,
-  },
-  label: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#796B8A',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#201330',
-    borderWidth: 1,
-    borderColor: '#302044',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#F7F2FC',
-    fontSize: 14,
+    borderRadius: 8,
+    padding: 12,
     marginBottom: 16,
   },
-  button: {
-    backgroundColor: '#7042C5',
-    borderRadius: 10,
+  successText: {
+    color: colors.successText,
+    fontSize: 13,
+  },
+  form: {
+    gap: 16,
+  },
+  field: {
+    gap: 6,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  forgotLink: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: colors.text.primary,
+  },
+  primaryButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 8,
   },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  primaryButtonText: {
+    color: colors.white,
+    fontSize: 15,
     fontWeight: '700',
   },
-  switchButton: {
+  footer: {
     alignItems: 'center',
     marginTop: 16,
-    paddingVertical: 6,
   },
-  switchText: {
-    color: '#796B8A',
-    fontSize: 12,
+  footerText: {
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
+  footerLink: {
+    color: colors.primary,
+    fontWeight: '700',
   },
 });

@@ -84,3 +84,11 @@ export function getKairoClient(): KairoClient {
 export function setKairoClient(client: KairoClient): void {
   activeClient = client;
 }
+
+export const getSupabase = getKairoClient;
+
+export const supabase: KairoClient = new Proxy({} as KairoClient, {
+  get(_target, prop) {
+    return (getKairoClient() as any)[prop];
+  },
+});

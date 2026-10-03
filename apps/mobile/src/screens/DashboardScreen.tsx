@@ -6,123 +6,247 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { useAuth, getDashboardDeals, type DealWithState } from '@kairo/api';
-import { formatDealValue, getHealthScoreColor } from '@kairo/core';
+import { useAuth, getDashboardDeals, getMeetings, syncGoogleCalendar, type DealWithState } from '@kairo/api';
+import {
+  formatDealValue,
+  getStatusColor,
+  type DealStatus,
+  type MeetingWithDeal,
+} from '@kairo/core';
+import { colors } from '../theme/colors';
+import { useNavigation } from '../navigation/NavigationContext';
 
-interface DashboardScreenProps {
-  onRecordPress?: () => void;
-  onDealPress?: (dealId: string) => void;
-}
-
-export function DashboardScreen({ onRecordPress, onDealPress }: DashboardScreenProps) {
+export function DashboardScreen() {
   const { user, profile } = useAuth();
+  const { navigate, switchTab } = useNavigation();
   const [deals, setDeals] = useState<DealWithState[]>([]);
+  const [meetings, setMeetings] = useState<MeetingWithDeal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
+  const fetchData = async () => {
     if (!user) {
       setLoading(false);
       return;
     }
-    fetchData();
-  }, [user]);
-
-  async function fetchData() {
-    setLoading(true);
     try {
-      const activeDeals = await getDashboardDeals(user!.id);
-      setDeals(activeDeals);
-    } catch {
-      setDeals([]);
+      const [dealsData, meetingsData] = await Promise.all([
+        getDashboardDeals(user.id),
+        getMeetings(user.id, { upcomingOnly: true, limit: 8 }),
+      ]);
+      setDeals(dealsData);
+      setMeetings(meetingsData);
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }
+  };
 
-  const totalValue = deals.reduce((acc, d) => acc + (d.deal_value || 0), 0);
-  const highRiskCount = deals.filter((d) => d.risk_level === 'high').length;
+  useEffect(() => {
+    syncGoogleCalendar().finally(fetchData);
+  }, [user]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    syncGoogleCalendar().finally(fetchData);
+  };
+
+  const greeting =
+    new Date().getHours() < 12
+      ? 'Good morning'
+      : new Date().getHours() < 17
+      ? 'Good afternoon'
+      : 'Good evening';
+
+  const atRisk = deals.filter(
+    (d) =>
+      d.deal_state?.current_status &&
+      ['At Risk', 'Critical', 'Stalled'].includes(d.deal_state.current_status)
+  );
+
+  const pipelineValue = deals.reduce((sum, d) => sum + (d.deal_value || 0), 0);
+  const pipelineAtRisk = atRisk.reduce((sum, d) => sum + (d.deal_value || 0), 0);
+
+  const ATTENTION_ORDER: DealStatus[] = ['Critical', 'At Risk', 'Stalled', 'Unknown'];
+  const priorityRanked = ATTENTION_ORDER.flatMap((status) =>
+    deals.filter((d) => (d.deal_state?.current_status || 'Unknown') === status)
+  ).slice(0, 10);
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color="#7042C5" size="large" />
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.primary}
+        />
+      }
+    >
+      {/* Greeting Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Kairo Intelligence</Text>
-        <Text style={styles.subtitle}>
-          {profile?.name ? `Welcome back, ${profile.name}` : 'Active Opportunities'}
+        <Text style={styles.greeting}>
+          {greeting}, {profile?.name?.split(' ')[0] || 'there'}
+        </Text>
+        <Text style={styles.subGreeting}>
+          {deals.length === 0
+            ? 'No active deals yet. Tap + to add your first.'
+            : "Here's how your pipeline's looking."}
         </Text>
       </View>
 
-      {/* Metrics Row */}
-      <View style={styles.metricsRow}>
-        <View style={styles.metricCard}>
-          <Text style={styles.metricLabel}>PIPELINE</Text>
-          <Text style={styles.metricValue}>{formatDealValue(totalValue)}</Text>
-        </View>
-        <View style={styles.metricCard}>
-          <Text style={styles.metricLabel}>ACTIVE</Text>
-          <Text style={styles.metricValue}>{deals.length}</Text>
-        </View>
-        <View style={styles.metricCard}>
-          <Text style={styles.metricLabel}>HIGH RISK</Text>
-          <Text style={[styles.metricValue, { color: '#FF667A' }]}>{highRiskCount}</Text>
-        </View>
+      {/* Upcoming Meetings Carousel */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>UPCOMING MEETINGS</Text>
+        {meetings.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.carousel}>
+            {meetings.map((m) => (
+              <View key={m.id} style={styles.meetingCard}>
+                <Text style={styles.meetingTime}>
+                  {m.start_time
+                    ? new Date(m.start_time).toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })
+                    : 'Scheduled'}
+                </Text>
+                <Text style={styles.meetingTitle} numberOfLines={1}>
+                  {m.title || m.deal_name || 'Sales Call'}
+                </Text>
+                {m.deal_name && (
+                  <Text style={styles.meetingDeal} numberOfLines={1}>
+                    {m.deal_name}
+                  </Text>
+                )}
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.emptyMeetings}>
+            <Text style={styles.emptyMeetingsText}>No Upcoming Meetings</Text>
+          </View>
+        )}
       </View>
 
-      {/* Quick Record CTA */}
-      <TouchableOpacity style={styles.recordButton} onPress={onRecordPress}>
-        <Text style={styles.recordButtonText}>+ Record Call</Text>
-      </TouchableOpacity>
+      {/* 2x2 Metric Stats Grid */}
+      <View style={styles.statsGrid}>
+        <TouchableOpacity
+          style={styles.statCard}
+          onPress={() => switchTab('deals')}
+        >
+          <Text style={styles.statLabel}>ACTIVE DEALS</Text>
+          <Text style={styles.statValue}>{deals.length}</Text>
+        </TouchableOpacity>
 
-      {/* Active Deals List */}
+        <TouchableOpacity
+          style={[styles.statCard, atRisk.length > 0 && styles.statCardDanger]}
+          onPress={() => switchTab('deals')}
+        >
+          <Text style={[styles.statLabel, atRisk.length > 0 && styles.statLabelDanger]}>
+            DEALS AT RISK
+          </Text>
+          <Text style={[styles.statValue, atRisk.length > 0 && styles.statValueDanger]}>
+            {atRisk.length}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.statCard}
+          onPress={() => switchTab('deals')}
+        >
+          <Text style={styles.statLabel}>PIPELINE VALUE</Text>
+          <Text style={styles.statValue}>{formatDealValue(pipelineValue)}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.statCard, pipelineAtRisk > 0 && styles.statCardDanger]}
+          onPress={() => switchTab('deals')}
+        >
+          <Text style={[styles.statLabel, pipelineAtRisk > 0 && styles.statLabelDanger]}>
+            PIPELINE AT RISK
+          </Text>
+          <Text style={[styles.statValue, pipelineAtRisk > 0 && styles.statValueDanger]}>
+            {formatDealValue(pipelineAtRisk)}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Deals Requiring Attention List */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>ACTIVE PIPELINE ({deals.length})</Text>
-        </View>
+        <Text style={styles.sectionLabel}>DEALS REQUIRING ATTENTION</Text>
 
-        {deals.length === 0 ? (
+        {priorityRanked.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>No active deals in qualification cycle.</Text>
+            <Text style={styles.emptyTitle}>No active deals</Text>
+            <Text style={styles.emptyText}>
+              Tap the + button below to add your first deal and review calls.
+            </Text>
           </View>
         ) : (
-          deals.map((deal) => {
-            const score = deal.deal_state?.deal_health_score ?? 50;
-            const healthColor = getHealthScoreColor(score);
+          priorityRanked.map((deal) => {
+            const currentStatus = deal.deal_state?.current_status || 'Unknown';
+            const statusColor = getStatusColor(currentStatus);
 
             return (
               <TouchableOpacity
                 key={deal.id}
-                style={styles.dealCard}
-                onPress={() => onDealPress?.(deal.id)}
+                style={styles.dealRow}
+                onPress={() => navigate('deal_review', { dealId: deal.id })}
               >
-                <View style={[styles.scoreBadge, { borderColor: healthColor }]}>
-                  <Text style={[styles.scoreText, { color: healthColor }]}>{score}</Text>
-                </View>
+                {/* Risk color indicator strip */}
+                <View
+                  style={[
+                    styles.riskDot,
+                    {
+                      backgroundColor:
+                        deal.risk_level === 'high'
+                          ? colors.red
+                          : deal.risk_level === 'medium'
+                          ? colors.amber
+                          : deal.risk_level === 'low'
+                          ? colors.emerald
+                          : colors.border,
+                    },
+                  ]}
+                />
 
-                <View style={styles.dealInfo}>
-                  <View style={styles.dealTopRow}>
-                    <Text style={styles.companyName}>{deal.company_name}</Text>
-                    <Text style={styles.dealValue}>{formatDealValue(deal.deal_value)}</Text>
-                  </View>
-
-                  <Text style={styles.dealMeta}>
-                    {deal.deal_name} • {deal.deal_stage}
+                <View style={styles.dealRowContent}>
+                  <Text style={styles.dealName} numberOfLines={1}>
+                    {deal.deal_name}
                   </Text>
-
-                  {deal.deal_state?.highest_priority_risk && (
-                    <Text style={styles.riskText} numberOfLines={2}>
-                      Risk: {deal.deal_state.highest_priority_risk}
-                    </Text>
-                  )}
+                  <Text style={styles.dealPreview} numberOfLines={1}>
+                    {deal.deal_state?.highest_priority_risk || deal.company_name}
+                  </Text>
                 </View>
+
+                <View
+                  style={[
+                    styles.statusBadge,
+                    {
+                      backgroundColor: `${statusColor}1A`,
+                      borderColor: `${statusColor}4D`,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                    {currentStatus}
+                  </Text>
+                </View>
+
+                <Text style={styles.arrowIcon}>›</Text>
               </TouchableOpacity>
             );
           })
@@ -135,7 +259,7 @@ export function DashboardScreen({ onRecordPress, onDealPress }: DashboardScreenP
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D0715',
+    backgroundColor: colors.bg,
   },
   content: {
     padding: 16,
@@ -143,139 +267,173 @@ const styles = StyleSheet.create({
   },
   center: {
     flex: 1,
-    backgroundColor: '#0D0715',
-    justifyContent: 'center',
+    backgroundColor: colors.bg,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F7F2FC',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#796B8A',
-    marginTop: 2,
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  metricCard: {
-    flex: 1,
-    backgroundColor: '#160D21',
-    borderWidth: 1,
-    borderColor: '#302044',
-    borderRadius: 12,
-    padding: 12,
-  },
-  metricLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#796B8A',
-    letterSpacing: 0.5,
-  },
-  metricValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#F7F2FC',
+    marginBottom: 20,
     marginTop: 4,
   },
-  recordButton: {
-    backgroundColor: '#7042C5',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 20,
+  greeting: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
-  recordButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+  subGreeting: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   section: {
-    marginTop: 4,
+    marginBottom: 20,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
+  sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#796B8A',
-    letterSpacing: 1,
-  },
-  emptyCard: {
-    backgroundColor: '#160D21',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#302044',
-  },
-  emptyText: {
-    color: '#796B8A',
-    fontSize: 13,
-  },
-  dealCard: {
-    backgroundColor: '#160D21',
-    borderRadius: 12,
-    padding: 14,
+    color: colors.textMuted,
+    letterSpacing: 0.5,
     marginBottom: 10,
+  },
+  carousel: {
+    flexDirection: 'row',
+  },
+  meetingCard: {
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#302044',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 12,
+    width: 170,
+    marginRight: 10,
   },
-  scoreBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    backgroundColor: '#201330',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scoreText: {
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-  },
-  dealInfo: {
-    flex: 1,
-  },
-  dealTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  companyName: {
-    color: '#F7F2FC',
-    fontSize: 14,
+  meetingTime: {
+    fontSize: 11,
     fontWeight: '600',
+    color: colors.primary,
+    marginBottom: 4,
   },
-  dealValue: {
-    color: '#F7F2FC',
+  meetingTitle: {
     fontSize: 13,
     fontWeight: '600',
+    color: colors.textPrimary,
   },
-  dealMeta: {
-    color: '#796B8A',
-    fontSize: 12,
+  meetingDeal: {
+    fontSize: 11,
+    color: colors.textMuted,
     marginTop: 2,
   },
-  riskText: {
-    color: '#FF667A',
+  emptyMeetings: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  emptyMeetingsText: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  statCard: {
+    width: '48%',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+  },
+  statCardDanger: {
+    borderColor: '#FF667A33',
+    backgroundColor: '#FF667A0A',
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textMuted,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  statLabelDanger: {
+    color: colors.red,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  statValueDanger: {
+    color: colors.red,
+  },
+  dealRow: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    overflow: 'hidden',
+  },
+  riskDot: {
+    width: 4,
+    height: '100%',
+    borderRadius: 2,
+    alignSelf: 'stretch',
+  },
+  dealRowContent: {
+    flex: 1,
+  },
+  dealName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  dealPreview: {
     fontSize: 11,
-    marginTop: 4,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  arrowIcon: {
+    fontSize: 18,
+    color: colors.textMuted,
+    marginLeft: 2,
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  emptyText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });
