@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/ui/Button';
@@ -16,24 +16,76 @@ const WHO_OPTIONS = [
 
 export function Onboarding() {
   const navigate = useNavigate();
-  const { user, refetchProfile } = useAuth();
+  const { user, profile, refetchProfile } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
-  const [whatYouSell, setWhatYouSell] = useState('');
-  const [whoYouAre, setWhoYouAre] = useState('');
+  const [whatYouSell, setWhatYouSell] = useState(profile?.what_you_sell ?? '');
+  const [whoYouAre, setWhoYouAre] = useState(profile?.who_you_are ?? '');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (profile) {
+      if (profile.who_you_are && !whoYouAre) {
+        setWhoYouAre(profile.who_you_are);
+      }
+      if (profile.what_you_sell && !whatYouSell) {
+        setWhatYouSell(profile.what_you_sell);
+      }
+    }
+  }, [profile]);
+
+  async function handleStep1Continue() {
+    if (!whoYouAre) return;
+    setError('');
+    if (user) {
+      try {
+        await supabase.from('profiles').update({
+          who_you_are: whoYouAre,
+        }).eq('id', user.id);
+      } catch {
+        // Non-blocking partial save
+      }
+    }
+    setStep(2);
+  }
 
   async function handleFinish() {
-    if (!user || !whoYouAre) return;
+    setError('');
+    if (!user) {
+      setError('You must be signed in to complete onboarding.');
+      return;
+    }
+    if (!whoYouAre || !whoYouAre.trim()) {
+      setError('Please select who you are in Step 1.');
+      setStep(1);
+      return;
+    }
+    if (!whatYouSell || !whatYouSell.trim()) {
+      setError('Please describe what you are selling.');
+      return;
+    }
+
     setLoading(true);
 
-    await supabase.from('profiles').update({
-      what_you_sell: whatYouSell.trim(),
-      who_you_are: whoYouAre,
-      onboarding_complete: true,
-    }).eq('id', user.id);
+    try {
+      const { error: updateError } = await supabase.from('profiles').update({
+        what_you_sell: whatYouSell.trim(),
+        who_you_are: whoYouAre.trim(),
+        onboarding_complete: true,
+      }).eq('id', user.id);
 
-    await refetchProfile();
-    navigate('/app/dashboard', { replace: true });
+      if (updateError) {
+        setError('Failed to save onboarding information. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      await refetchProfile();
+      navigate('/app/dashboard', { replace: true });
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+      setLoading(false);
+    }
   }
 
   return (
@@ -50,6 +102,12 @@ export function Onboarding() {
           <span className="font-display font-bold text-xl text-textPrimary">Kairo</span>
         </div>
 
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-4">
+            <p className="text-red-400 text-footnote">{error}</p>
+          </div>
+        )}
+
         {step === 1 && (
           <div className="animate-fade-in">
             <div className="text-center mb-8">
@@ -61,7 +119,11 @@ export function Onboarding() {
               {WHO_OPTIONS.map(option => (
                 <button
                   key={option.value}
-                  onClick={() => setWhoYouAre(option.value)}
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setWhoYouAre(option.value);
+                  }}
                   className={cn(
                     'w-full text-left card p-4 border-2 transition-all duration-200',
                     whoYouAre === option.value
@@ -87,7 +149,7 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
-            <Button onClick={() => setStep(2)} size="lg" className="w-full" disabled={!whoYouAre}>
+            <Button onClick={handleStep1Continue} size="lg" className="w-full" disabled={!whoYouAre}>
               Continue
               <ArrowRight className="w-4 h-4" />
             </Button>
@@ -96,6 +158,18 @@ export function Onboarding() {
 
         {step === 2 && (
           <div className="animate-fade-in">
+            <button
+              type="button"
+              onClick={() => {
+                setError('');
+                setStep(1);
+              }}
+              className="flex items-center gap-1.5 text-textMuted hover:text-textSecondary text-footnote mb-4 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back
+            </button>
+
             <div className="text-center mb-8">
               <p className="text-xs text-primary font-medium mb-3 uppercase tracking-widest">Step 2 of 2</p>
               <h1 className="text-2xl font-display font-bold text-textPrimary mb-2">What are you selling?</h1>
@@ -104,7 +178,10 @@ export function Onboarding() {
             <div className="card p-6 mb-4">
               <textarea
                 value={whatYouSell}
-                onChange={e => setWhatYouSell(e.target.value)}
+                onChange={e => {
+                  setError('');
+                  setWhatYouSell(e.target.value);
+                }}
                 placeholder="e.g. SaaS product for HR teams, marketing agency services, B2B consulting for fintech companies..."
                 className="input-field min-h-28 resize-none"
                 autoFocus
@@ -121,12 +198,6 @@ export function Onboarding() {
               Go to Dashboard
               <ArrowRight className="w-4 h-4" />
             </Button>
-            <button
-              onClick={handleFinish}
-              className="w-full text-center text-xs text-textMuted hover:text-textSecondary mt-3 transition-colors"
-            >
-              Skip for now
-            </button>
           </div>
         )}
       </div>

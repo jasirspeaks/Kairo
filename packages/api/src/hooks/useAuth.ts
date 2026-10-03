@@ -10,7 +10,7 @@ export interface UseAuthReturn {
   profile: Profile | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  refetchProfile: () => Promise<void>;
+  refetchProfile: () => Promise<Profile | null>;
 }
 
 export function useAuth(): UseAuthReturn {
@@ -18,25 +18,31 @@ export function useAuth(): UseAuthReturn {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfileData = useCallback(async (userId: string) => {
+  const fetchProfileData = useCallback(async (userId: string): Promise<Profile | null> => {
     try {
       const data = await getProfile(userId);
       setProfile(data);
+      return data;
     } catch {
       setProfile(null);
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     const client = getKairoClient();
 
     client.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfileData(session.user.id);
+      if (!isMounted) return;
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchProfileData(currentUser.id);
       } else {
+        setProfile(null);
         setLoading(false);
       }
     });
@@ -44,26 +50,36 @@ export function useAuth(): UseAuthReturn {
     const {
       data: { subscription },
     } = client.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfileData(session.user.id);
+      if (!isMounted) return;
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        setLoading(true);
+        fetchProfileData(currentUser.id);
       } else {
         setProfile(null);
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [fetchProfileData]);
 
   const signOut = useCallback(async () => {
     await authSignOut();
   }, []);
 
-  const refetchProfile = useCallback(async () => {
-    if (user) {
-      await fetchProfileData(user.id);
+  const refetchProfile = useCallback(async (): Promise<Profile | null> => {
+    const client = getKairoClient();
+    const currentUser = user ?? (await client.auth.getUser()).data.user;
+    if (currentUser) {
+      setLoading(true);
+      return await fetchProfileData(currentUser.id);
     }
+    return null;
   }, [user, fetchProfileData]);
 
   return {

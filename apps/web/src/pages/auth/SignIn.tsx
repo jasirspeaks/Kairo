@@ -32,7 +32,7 @@ export function SignIn() {
       setError(getAuthErrorMessage(error));
       setLoading(false);
     } else {
-      navigate('/app/dashboard');
+      navigate('/');
     }
   }
 
@@ -40,7 +40,7 @@ export function SignIn() {
     setGoogleLoading(true);
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/app/dashboard` }
+      options: { redirectTo: `${window.location.origin}/` }
     });
   }
 

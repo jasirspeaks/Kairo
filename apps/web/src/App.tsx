@@ -18,36 +18,47 @@ import { Settings } from './pages/app/Settings';
 import { AppLayout } from './components/layout/AppLayout';
 import { Inbox } from './pages/app/Inbox';
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-
-  if (loading) return (
+function LoadingScreen() {
+  return (
     <div className="min-h-screen bg-bg flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
     </div>
   );
+}
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+
+  if (loading) return <LoadingScreen />;
 
   if (!user) return <Navigate to="/signin" replace />;
+
+  if (!profile?.onboarding_complete) return <Navigate to="/onboarding" replace />;
+
   return <ErrorBoundary>{children}</ErrorBoundary>;
 }
 
 function OnboardingRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
-  if (loading) return null;
+
+  if (loading) return <LoadingScreen />;
+
   if (!user) return <Navigate to="/signin" replace />;
+
   if (profile?.onboarding_complete) return <Navigate to="/app/dashboard" replace />;
-  return <>{children}</>;
+
+  return <ErrorBoundary>{children}</ErrorBoundary>;
 }
 
 function RootRoute() {
   const { user, profile, loading } = useAuth();
-  if (loading) return (
-    <div className="min-h-screen bg-bg flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
-    </div>
-  );
+
+  if (loading) return <LoadingScreen />;
+
   if (!user) return <Navigate to="/signin" replace />;
+
   if (!profile?.onboarding_complete) return <Navigate to="/onboarding" replace />;
+
   return <Navigate to="/app/dashboard" replace />;
 }
 
@@ -55,31 +66,47 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public */}
+        {/* Root / State Gate */}
         <Route path="/" element={<RootRoute />} />
+
+        {/* Public Auth */}
         <Route path="/signin" element={<SignIn />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/onboarding" element={<OnboardingRoute><Onboarding /></OnboardingRoute>} />
 
-        {/* App */}
-        <Route path="/app/*" element={
-          <ProtectedRoute>
-            <AppLayout>
-              <Routes>
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="inbox" element={<Inbox />} />
-                <Route path="new" element={<NewDeal />} />
-                <Route path="deals" element={<Deals />} />
-                <Route path="deals/:dealId" element={<DealReview />} />
-                <Route path="deals/:dealId/calls/:callId" element={<Review />} />
-                <Route path="settings" element={<Settings />} />
-              </Routes>
-            </AppLayout>
-          </ProtectedRoute>
-        } />
+        {/* Mandatory Onboarding */}
+        <Route
+          path="/onboarding"
+          element={
+            <OnboardingRoute>
+              <Onboarding />
+            </OnboardingRoute>
+          }
+        />
 
+        {/* Authenticated Product Pages */}
+        <Route
+          path="/app/*"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Routes>
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="inbox" element={<Inbox />} />
+                  <Route path="new" element={<NewDeal />} />
+                  <Route path="deals" element={<Deals />} />
+                  <Route path="deals/:dealId" element={<DealReview />} />
+                  <Route path="deals/:dealId/calls/:callId" element={<Review />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+                </Routes>
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

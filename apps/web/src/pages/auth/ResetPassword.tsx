@@ -92,7 +92,7 @@ export function ResetPassword() {
       setError(getAuthErrorMessage(error));
     } else {
       setSuccess(true);
-      setTimeout(() => navigate('/app/dashboard'), 2000);
+      setTimeout(() => navigate('/'), 2000);
     }
   }
 
