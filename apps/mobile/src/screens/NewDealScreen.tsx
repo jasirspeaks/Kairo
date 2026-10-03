@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Linking,
   Alert,
 } from 'react-native';
 import {
@@ -16,7 +15,6 @@ import {
   saveDealState,
   checkCalendarConnected,
   getDealLongitudinalHistory,
-  GOOGLE_CALENDAR_URL,
   useAuth,
   useSubscription,
 } from '@kairo/api';
@@ -24,6 +22,7 @@ import { INITIAL_DEAL_STAGE, resolveDealStage } from '@kairo/core';
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
+import { ScheduleMeetingSheet } from '../components/ui/ScheduleMeetingSheet';
 
 type Step = 'deal' | 'transcript';
 
@@ -40,8 +39,10 @@ export function NewDealScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
   const [creatingDeal, setCreatingDeal] = useState(false);
+  const [showScheduleSheet, setShowScheduleSheet] = useState(false);
 
   const scheduledDealIdRef = useRef<string | null>(null);
+  const meetingScheduledRef = useRef(false);
   const callSucceeded = useRef(false);
   const dealIsPreexisting = useRef(false);
 
@@ -68,11 +69,11 @@ export function NewDealScreen() {
     }
   }, [routeParams?.existingDealId]);
 
-  // Orphan deal cleanup: if created deal row but user navigated away before call submission
+  // Orphan deal cleanup: if created deal row but user navigated away before call submission or meeting schedule
   useEffect(() => {
     return () => {
       const dealIdToDelete = scheduledDealIdRef.current;
-      if (dealIdToDelete && !callSucceeded.current && !dealIsPreexisting.current) {
+      if (dealIdToDelete && !callSucceeded.current && !meetingScheduledRef.current && !dealIsPreexisting.current) {
         supabase.from('deals').delete().eq('id', dealIdToDelete);
       }
     };
@@ -105,6 +106,10 @@ export function NewDealScreen() {
   }
 
   async function handleScheduleFirstMeeting() {
+    if (!dealName.trim() || !companyName.trim()) {
+      setError('Please provide both Deal Name and Company Name.');
+      return;
+    }
     if (!canWrite) {
       Alert.alert(
         'Upgrade Required',
@@ -124,18 +129,29 @@ export function NewDealScreen() {
         return;
       }
 
-      const dealId = scheduledDealIdRef.current || (await createDealRow());
-      if (!dealId) {
-        setCreatingDeal(false);
-        return;
+      let dealId = scheduledDealIdRef.current;
+      if (dealId) {
+        const parsedValue = dealValue.trim() ? Number(dealValue.replace(/[,$]/g, '')) : null;
+        await supabase
+          .from('deals')
+          .update({
+            deal_name: dealName.trim(),
+            company_name: companyName.trim(),
+            deal_value: parsedValue,
+          })
+          .eq('id', dealId);
+      } else {
+        dealId = await createDealRow();
+        if (!dealId) {
+          setCreatingDeal(false);
+          return;
+        }
       }
 
-      await supabase.from('pending_schedule_intents').insert({ user_id: user.id, deal_id: dealId });
       setCreatingDeal(false);
-      await Linking.openURL(GOOGLE_CALENDAR_URL);
-      navigate('dashboard');
+      setShowScheduleSheet(true);
     } catch (err: any) {
-      setError(err?.message || 'Failed to open calendar');
+      setError(err?.message || 'Failed to prepare scheduling.');
       setCreatingDeal(false);
     }
   }
@@ -449,6 +465,24 @@ export function NewDealScreen() {
           </View>
         )}
       </ScrollView>
+
+      {scheduledDealIdRef.current ? (
+        <ScheduleMeetingSheet
+          open={showScheduleSheet}
+          onClose={() => {
+            setShowScheduleSheet(false);
+            if (meetingScheduledRef.current) {
+              navigate('dashboard');
+            }
+          }}
+          dealId={scheduledDealIdRef.current}
+          dealName={dealName}
+          companyName={companyName}
+          onMeetingScheduled={() => {
+            meetingScheduledRef.current = true;
+          }}
+        />
+      ) : null}
     </View>
   );
 }

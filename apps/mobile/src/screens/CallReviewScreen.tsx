@@ -6,10 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Linking,
   Alert,
 } from 'react-native';
-import { getDeal, getConversations, GOOGLE_CALENDAR_URL } from '@kairo/api';
+import {
+  getDeal,
+  getConversations,
+  useAuth,
+  useSubscription,
+  checkCalendarConnected,
+} from '@kairo/api';
 import {
   getCallStatusColor,
   type Deal,
@@ -18,6 +23,7 @@ import {
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
+import { ScheduleMeetingSheet } from '../components/ui/ScheduleMeetingSheet';
 
 export function CallReviewScreen({
   dealId,
@@ -27,11 +33,34 @@ export function CallReviewScreen({
   callId?: string;
 }) {
   const { goBack, navigate } = useNavigation();
+  const { user } = useAuth();
+  const { canWrite } = useSubscription(user?.id);
   const [deal, setDeal] = useState<Deal | null>(null);
   const [conv, setConv] = useState<Conversation | null>(null);
   const [allCalls, setAllCalls] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [showScheduleSheet, setShowScheduleSheet] = useState(false);
+
+  async function handleOpenScheduleSheet() {
+    if (!canWrite) {
+      Alert.alert(
+        'Upgrade Required',
+        'Your trial has ended. Please upgrade your subscription in Settings to schedule meetings.'
+      );
+      return;
+    }
+    if (!user) return;
+    const isConn = await checkCalendarConnected(user.id);
+    if (!isConn) {
+      Alert.alert(
+        'Calendar Not Connected',
+        'Please connect Google Calendar in Settings to schedule meetings.'
+      );
+      return;
+    }
+    setShowScheduleSheet(true);
+  }
 
   useEffect(() => {
     if (!dealId) return;
@@ -197,7 +226,7 @@ export function CallReviewScreen({
           <View style={styles.actionsBar}>
             <TouchableOpacity
               style={styles.actionBtnSecondary}
-              onPress={() => Linking.openURL(GOOGLE_CALENDAR_URL)}
+              onPress={handleOpenScheduleSheet}
             >
               <Text style={styles.actionBtnSecondaryText}>📅 Schedule Meeting</Text>
             </TouchableOpacity>
@@ -218,6 +247,17 @@ export function CallReviewScreen({
           </View>
         )}
       </ScrollView>
+
+      {deal ? (
+        <ScheduleMeetingSheet
+          open={showScheduleSheet}
+          onClose={() => setShowScheduleSheet(false)}
+          dealId={deal.id}
+          dealName={deal.deal_name}
+          companyName={deal.company_name}
+          onMeetingScheduled={loadCallData}
+        />
+      ) : null}
     </View>
   );
 }

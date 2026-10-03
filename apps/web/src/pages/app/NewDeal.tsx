@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, resolveDealStage, checkCalendarConnected, syncGoogleCalendar, getDealLongitudinalHistory, GOOGLE_CALENDAR_URL } from '../../lib/kairo';
+import { reviewCall, saveDealState, resolveDealStage, checkCalendarConnected, getDealLongitudinalHistory } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from '../../components/ui/Button';
@@ -10,21 +10,11 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { TopBar } from '../../components/layout/TopBar';
 import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { UpgradeModal } from '../../components/ui/UpgradeModal';
+import { ScheduleMeetingModal } from '../../components/ui/ScheduleMeetingModal';
 import { INITIAL_DEAL_STAGE } from '../../types';
 import { cn } from '../../lib/utils';
 
-type Step = 'deal' | 'transcript' | 'record' | 'awaiting-meeting' | 'scheduled';
-
-// Tailwind's `md` breakpoint -- used once, at click time, to decide whether
-// "Schedule First Meeting" waits for a success screen (desktop) or just
-// sends the user to Dashboard on return (mobile). See handleScheduleFirstMeeting.
-const DESKTOP_MEDIA_QUERY = '(min-width: 768px)';
-
-// How long we let a "Schedule First Meeting" click wait for the event to
-// show up as assigned before giving up quietly. Desktop-only -- see
-// handleScheduleFirstMeeting for why mobile doesn't use this at all.
-const AWAIT_MEETING_TIMEOUT_MS = 20_000;
-const AWAIT_MEETING_POLL_MS = 1500;
+type Step = 'deal' | 'transcript' | 'record' | 'scheduled';
 
 export function NewDeal() {
   const navigate = useNavigate();
@@ -32,6 +22,7 @@ export function NewDeal() {
   const { user, profile } = useAuth();
   const { canWrite } = useSubscription(user?.id);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [step, setStep] = useState<Step>('deal');
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -51,16 +42,10 @@ export function NewDeal() {
   const [calendarConnected, setCalendarConnected] = useState<boolean | null>(null);
   const [showConnectPrompt, setShowConnectPrompt] = useState(false);
   const [creatingDeal, setCreatingDeal] = useState(false);
-  const awaitingReturn = useRef(false);
-  // Mobile takes a different path on return than desktop (straight to
-  // Dashboard, no success screen) -- see handleScheduleFirstMeeting.
-  const awaitingReturnIsMobile = useRef(false);
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Tracks whether a call was successfully submitted so the unmount cleanup
-  // knows NOT to delete the deal. Starts false; set to true only in the
-  // success paths of handleSubmit and handleRecordingComplete.
+  // Tracks whether a meeting or call was successfully submitted so the unmount cleanup
+  // knows NOT to delete the deal. Starts false.
+  const meetingScheduledRef = useRef(false);
   const callSucceeded = useRef(false);
 
   // True when the deal row was created by a pre-existing deal (navigated
@@ -97,105 +82,19 @@ export function NewDeal() {
     checkCalendarConnected(user.id).then(setCalendarConnected);
   }, [user]);
 
-  useEffect(() => {
-    return () => {
-      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, []);
-
   // Orphan-deal cleanup: if we created a deal row but the user navigates
-  // away before a call was successfully submitted, delete the empty deal
-  // so it doesn't clutter the dashboard. Skip if the deal was pre-existing
-  // (navigated here from DealReview) -- we don't own that row.
+  // away before a meeting is scheduled or a call was successfully submitted,
+  // delete the empty deal so it doesn't clutter the dashboard. Skip if the deal was
+  // pre-existing (navigated here from DealReview) -- we don't own that row.
   useEffect(() => {
     return () => {
       const dealIdToDelete = scheduledDealIdRef.current;
-      if (dealIdToDelete && !callSucceeded.current && !dealIsPreexisting.current) {
+      if (dealIdToDelete && !callSucceeded.current && !meetingScheduledRef.current && !dealIsPreexisting.current) {
         // Best-effort fire-and-forget -- no UI to report errors to at this point.
         supabase.from('deals').delete().eq('id', dealIdToDelete);
       }
     };
   }, []);
-
-
-  function clearPolling() {
-    if (pollTimeoutRef.current) { clearTimeout(pollTimeoutRef.current); pollTimeoutRef.current = null; }
-    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-  }
-
-  // The only reliable signal that a meeting actually got scheduled: a
-  // scheduled_meetings row assigned to this deal. syncGoogleCalendar()
-  // itself returns void, so after triggering a sync we poll the table
-  // directly rather than trusting that the fetch alone means success.
-  async function checkForAssignedMeeting(dealId: string): Promise<boolean> {
-    const { data } = await supabase
-      .from('meetings')
-      .select('id')
-      .eq('deal_id', dealId)
-      .eq('status', 'assigned')
-      .limit(1)
-      .maybeSingle();
-    return !!data;
-  }
-
-  // Desktop only. Shows the "waiting on your meeting" screen, then the
-  // success screen once the scheduled_meetings row shows up assigned, or
-  // quietly falls back to the deal step if nothing turns up in time.
-  function beginAwaitingMeeting(dealId: string) {
-    setStep('awaiting-meeting');
-
-    pollIntervalRef.current = setInterval(async () => {
-      const found = await checkForAssignedMeeting(dealId);
-      if (found) {
-        clearPolling();
-        setStep('scheduled');
-      }
-    }, AWAIT_MEETING_POLL_MS);
-
-    pollTimeoutRef.current = setTimeout(() => {
-      clearPolling();
-      // No assigned meeting turned up in time -- the user either didn't
-      // finish scheduling or made an event with no video link. Return
-      // quietly to deal info; the deal itself is already saved.
-      setStep('deal');
-    }, AWAIT_MEETING_TIMEOUT_MS);
-  }
-
-  // Fires when the user comes back to this tab after Google Calendar opened.
-  // Desktop: sync, check for the assigned meeting, show success or fall
-  // back to deal info (the existing, working desktop behavior -- unchanged).
-  // Mobile: skip all of that entirely and just go to Dashboard. Mobile
-  // browsers don't reliably fire `focus` the same way desktop tabs do, so
-  // rather than chase that detection, mobile doesn't wait for a signal at
-  // all here -- it goes straight to Dashboard as soon as the user is back.
-  useEffect(() => {
-    async function handleFocus() {
-      if (!awaitingReturn.current) return;
-      const isMobile = awaitingReturnIsMobile.current;
-      awaitingReturn.current = false;
-      awaitingReturnIsMobile.current = false;
-
-      if (isMobile) {
-        navigate('/app/dashboard');
-        return;
-      }
-
-      await syncGoogleCalendar();
-      const currentDealId = scheduledDealIdRef.current ?? scheduledDealId;
-      if (currentDealId) {
-        const found = await checkForAssignedMeeting(currentDealId);
-        if (found) {
-          clearPolling();
-          setStep('scheduled');
-        }
-        // If not found yet, the background poll (already running) keeps
-        // checking until AWAIT_MEETING_TIMEOUT_MS.
-      }
-    }
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [scheduledDealId, navigate]);
 
   async function createDealRow(): Promise<string | null> {
     if (!user) return null;
@@ -222,17 +121,9 @@ export function NewDeal() {
     return deal.id;
   }
 
-  // "Schedule First Meeting" -- only does anything if calendar is connected.
-  // If it's not, this is a no-op other than surfacing the connect prompt;
-  // no deal gets created and nothing opens.
-  //
-  // Desktop and mobile diverge after the deal is created: desktop shows an
-  // "awaiting meeting" screen and then a success screen once the meeting
-  // shows up assigned (see beginAwaitingMeeting / the focus handler above).
-  // Mobile skips all of that -- no waiting screen, no success screen, no
-  // detection of whether the meeting was actually created -- it just sends
-  // the user straight to Dashboard as soon as they're back in Kairo.
+  // "Schedule First Meeting" -- opens canonical ScheduleMeetingModal
   async function handleScheduleFirstMeeting() {
+    if (!dealName.trim() || !companyName.trim()) return;
     if (!canWrite) { setShowUpgradeModal(true); return; }
     if (!calendarConnected) {
       setShowConnectPrompt(true);
@@ -243,34 +134,30 @@ export function NewDeal() {
     setError('');
     setCreatingDeal(true);
 
-    const dealId = scheduledDealIdRef.current ?? scheduledDealId ?? await createDealRow();
-
-    if (!dealId) {
-      setCreatingDeal(false);
-      return;
+    let dealId = scheduledDealIdRef.current ?? scheduledDealId;
+    if (dealId) {
+      // Update existing deal in case user changed deal basics
+      const parsedValue = dealValue.trim() ? Number(dealValue.replace(/[,$]/g, '')) : null;
+      await supabase
+        .from('deals')
+        .update({
+          deal_name: dealName.trim(),
+          company_name: companyName.trim(),
+          deal_value: parsedValue,
+        })
+        .eq('id', dealId);
+    } else {
+      dealId = await createDealRow();
+      if (!dealId) {
+        setCreatingDeal(false);
+        return;
+      }
+      setScheduledDealId(dealId);
+      scheduledDealIdRef.current = dealId;
     }
-    setScheduledDealId(dealId);
-    scheduledDealIdRef.current = dealId;
-
-    // Best-effort -- if this write fails the user still reaches Google
-    // Calendar, they'd just need to assign the meeting manually afterward.
-    await supabase.from('pending_schedule_intents').insert({ user_id: user.id, deal_id: dealId });
-
-    const isMobile = typeof window.matchMedia === 'function'
-      ? !window.matchMedia(DESKTOP_MEDIA_QUERY).matches
-      : true;
-
-    awaitingReturn.current = true;
-    awaitingReturnIsMobile.current = isMobile;
 
     setCreatingDeal(false);
-    window.open(GOOGLE_CALENDAR_URL, '_blank', 'noopener,noreferrer');
-
-    if (!isMobile) {
-      beginAwaitingMeeting(dealId);
-    }
-    // Mobile: nothing else to do here. The focus handler above takes it
-    // from here and navigates to Dashboard as soon as the user returns.
+    setShowScheduleModal(true);
   }
 
   function handleUploadFirstCall(e: React.FormEvent) {
@@ -414,31 +301,6 @@ export function NewDeal() {
         onComplete={handleRecordingComplete}
         onClose={() => setStep('deal')}
       />
-    );
-  }
-
-  if (step === 'awaiting-meeting') {
-    return (
-      <div className="animate-fade-in">
-        <div className="-mx-4 md:hidden">
-          <TopBar title="Scheduling" />
-        </div>
-        <div className="min-h-[calc(100vh-64px)] md:min-h-[calc(100vh-160px)] flex items-center justify-center px-4">
-          <div className="flex flex-col items-center text-center max-w-xs">
-            <div className="relative mb-8">
-              <div className="w-14 h-14 rounded-full border-2 border-border flex items-center justify-center">
-                <div className="w-10 h-10 rounded-full border-2 border-t-primary border-r-transparent border-b-transparent border-l-transparent animate-spin" />
-              </div>
-            </div>
-            <p className="text-textPrimary font-semibold font-display text-lg mb-2">
-              Waiting for your meeting
-            </p>
-            <p className="text-textSecondary text-sm">
-              Finish scheduling in Google Calendar, then come back here. Kairo will pick it up automatically.
-            </p>
-          </div>
-        </div>
-      </div>
     );
   }
 
@@ -705,6 +567,24 @@ export function NewDeal() {
       )}
 
       <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+
+      {scheduledDealId && (
+        <ScheduleMeetingModal
+          open={showScheduleModal}
+          onClose={() => {
+            setShowScheduleModal(false);
+            if (meetingScheduledRef.current) {
+              setStep('scheduled');
+            }
+          }}
+          dealId={scheduledDealId}
+          dealName={dealName}
+          companyName={companyName}
+          onMeetingScheduled={() => {
+            meetingScheduledRef.current = true;
+          }}
+        />
+      )}
     </div>
   );
 }

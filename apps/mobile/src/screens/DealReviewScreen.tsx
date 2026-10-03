@@ -6,9 +6,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Linking,
+  Alert,
 } from 'react-native';
-import { getDealLongitudinalHistory, GOOGLE_CALENDAR_URL } from '@kairo/api';
+import {
+  getDealLongitudinalHistory,
+  useAuth,
+  useSubscription,
+  checkCalendarConnected,
+} from '@kairo/api';
 import {
   getStatusColor,
   getHealthScoreColor,
@@ -30,6 +35,7 @@ import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
 import { EvidenceInspectorSheet } from '../components/evidence/EvidenceInspectorSheet';
+import { ScheduleMeetingSheet } from '../components/ui/ScheduleMeetingSheet';
 
 type DealReviewTab = 'action_plan' | 'evolution' | 'stakeholders';
 
@@ -82,6 +88,8 @@ function buildEvolution(calls: Conversation[]): EvolutionEntry[] {
 
 export function DealReviewScreen({ dealId }: { dealId?: string }) {
   const { goBack, navigate } = useNavigation();
+  const { user } = useAuth();
+  const { canWrite } = useSubscription(user?.id);
   const [deal, setDeal] = useState<Deal | null>(null);
   const [dealState, setDealState] = useState<DealState | null>(null);
   const [calls, setCalls] = useState<Conversation[]>([]);
@@ -90,12 +98,33 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
   const [nextMeetingTime, setNextMeetingTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<DealReviewTab>('action_plan');
+  const [showScheduleSheet, setShowScheduleSheet] = useState(false);
 
   // Evidence Inspector state
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectPillar, setInspectPillar] = useState<PillarKey | null>(null);
   const [inspectRisk, setInspectRisk] = useState<DealRisk | null>(null);
   const [inspectTitle, setInspectTitle] = useState<string | undefined>(undefined);
+
+  async function handleOpenScheduleSheet() {
+    if (!canWrite) {
+      Alert.alert(
+        'Upgrade Required',
+        'Your trial has ended. Please upgrade your subscription in Settings to schedule meetings.'
+      );
+      return;
+    }
+    if (!user) return;
+    const isConn = await checkCalendarConnected(user.id);
+    if (!isConn) {
+      Alert.alert(
+        'Calendar Not Connected',
+        'Please connect Google Calendar in Settings to schedule meetings.'
+      );
+      return;
+    }
+    setShowScheduleSheet(true);
+  }
 
   useEffect(() => {
     if (!dealId) return;
@@ -216,7 +245,7 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
           <View style={styles.identityActions}>
             <TouchableOpacity
               style={styles.scheduleBtn}
-              onPress={() => Linking.openURL(GOOGLE_CALENDAR_URL)}
+              onPress={handleOpenScheduleSheet}
               activeOpacity={0.7}
             >
               <Text style={styles.scheduleBtnText}>📅 Schedule</Text>
@@ -691,6 +720,17 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
         risk={inspectRisk}
         evidence={history?.evidence || []}
       />
+
+      {deal ? (
+        <ScheduleMeetingSheet
+          open={showScheduleSheet}
+          onClose={() => setShowScheduleSheet(false)}
+          dealId={deal.id}
+          dealName={deal.deal_name}
+          companyName={deal.company_name}
+          onMeetingScheduled={loadHistory}
+        />
+      ) : null}
     </View>
   );
 }
