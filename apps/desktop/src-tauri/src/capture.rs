@@ -67,6 +67,10 @@ pub struct CaptureResultResponse {
     pub capture_source: Option<CaptureSource>,
 }
 
+pub struct StreamHandle(pub cpal::Stream);
+unsafe impl Send for StreamHandle {}
+unsafe impl Sync for StreamHandle {}
+
 pub struct ActiveSession {
     pub meeting_id: String,
     pub deal_id: Option<String>,
@@ -77,8 +81,8 @@ pub struct ActiveSession {
     pub is_paused: Arc<AtomicBool>,
     pub pause_start: Option<Instant>,
     pub is_running: Arc<AtomicBool>,
-    pub mic_stream: Option<cpal::Stream>,
-    pub sys_stream: Option<cpal::Stream>,
+    pub mic_stream: Option<StreamHandle>,
+    pub sys_stream: Option<StreamHandle>,
     pub mic_queue: Arc<Mutex<VecDeque<f32>>>,
     pub sys_queue: Arc<Mutex<VecDeque<f32>>>,
     pub writer: Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>,
@@ -357,7 +361,7 @@ impl CaptureEngine {
         let sys_queue = Arc::new(Mutex::new(VecDeque::with_capacity(16000)));
 
         // 1. Microphone capture setup (if source is Microphone or Combined)
-        let mut mic_stream_opt: Option<cpal::Stream> = None;
+        let mut mic_stream_opt: Option<StreamHandle> = None;
         if source == CaptureSource::Microphone || source == CaptureSource::Combined {
             let mic_device = host
                 .default_input_device()
@@ -379,11 +383,11 @@ impl CaptureEngine {
                 .play()
                 .map_err(|e| format!("Failed to start microphone stream: {}", e))?;
 
-            mic_stream_opt = Some(mic_stream);
+            mic_stream_opt = Some(StreamHandle(mic_stream));
         }
 
         // 2. Windows WASAPI system audio loopback setup (if source is SystemAudio or Combined)
-        let mut sys_stream_opt: Option<cpal::Stream> = None;
+        let mut sys_stream_opt: Option<StreamHandle> = None;
         if source == CaptureSource::SystemAudio || source == CaptureSource::Combined {
             #[cfg(target_os = "windows")]
             {
@@ -398,7 +402,7 @@ impl CaptureEngine {
                         ) {
                             Ok(sys_stream) => {
                                 if sys_stream.play().is_ok() {
-                                    sys_stream_opt = Some(sys_stream);
+                                    sys_stream_opt = Some(StreamHandle(sys_stream));
                                 }
                             }
                             Err(e) => {
@@ -715,7 +719,7 @@ mod tests {
 
     #[test]
     fn test_linear_resample_48k_to_16k() {
-        let input: Vec<f32> = (0..480).map(|i| (i as f32 / 480.0)).collect();
+        let input: Vec<f32> = (0..480).map(|i| i as f32 / 480.0).collect();
         let mut phase = 0.0;
         let output = resample_linear(&input, 48000, 16000, &mut phase);
         assert_eq!(output.len(), 160);
