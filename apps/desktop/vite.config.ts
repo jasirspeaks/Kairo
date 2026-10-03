@@ -9,11 +9,14 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
+      '@web': path.resolve(import.meta.dirname, '../web/src'),
       '@kairo/core': path.resolve(import.meta.dirname, '../../packages/core/src'),
       '@kairo/api': path.resolve(import.meta.dirname, '../../packages/api/src'),
       '@kairo/platform': path.resolve(import.meta.dirname, '../../packages/platform/src'),
     },
   },
+  publicDir: path.resolve(import.meta.dirname, '../web/public'),
+  envDir: path.resolve(import.meta.dirname, '../../'),
   clearScreen: false,
   server: {
     port: 1420,

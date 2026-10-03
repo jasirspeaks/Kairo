@@ -32,7 +32,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-screen bg-bg" style={{ paddingTop: 'var(--titlebar-h, 0px)' }}>
       {/* Desktop sidebar only */}
       <div className="hidden md:block">
         <Sidebar />

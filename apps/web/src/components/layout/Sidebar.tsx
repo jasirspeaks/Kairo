@@ -43,8 +43,9 @@ export function Sidebar() {
 
   return (
     <aside
+      style={{ top: 'var(--titlebar-h, 0px)', height: 'calc(100vh - var(--titlebar-h, 0px))' }}
       className={cn(
-        'h-screen bg-surface border-r border-border flex flex-col fixed left-0 top-0 z-40 transition-all duration-200',
+        'bg-surface border-r border-border flex flex-col fixed left-0 z-40 transition-all duration-200',
         collapsed ? 'w-[76px]' : 'w-64'
       )}
     >

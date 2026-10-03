@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --titlebar-h: 36px;
+}
+
 * {
   box-sizing: border-box;
 }

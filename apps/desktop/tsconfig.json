@@ -9,6 +9,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@web/*": ["../web/src/*"],
       "@kairo/core": ["../../packages/core/src/index.ts"],
       "@kairo/core/*": ["../../packages/core/src/*"],
       "@kairo/api": ["../../packages/api/src/index.ts"],
@@ -17,6 +18,6 @@
       "@kairo/platform/*": ["../../packages/platform/src/*"]
     }
   },
-  "include": ["src", "vite.config.ts"],
+  "include": ["src", "vite.config.ts", "../web/src"],
   "exclude": ["node_modules", "build", "dist", "src-tauri"]
 }

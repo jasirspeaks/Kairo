@@ -1,41 +1,83 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from '@kairo/api';
-import { RefreshCw } from 'lucide-react';
+import { useAuth } from '@web/hooks/useAuth';
+import { ErrorBoundary } from '@web/components/ui/ErrorBoundary';
+
+// Canonical Web Pages
+import { SignIn } from '@web/pages/auth/SignIn';
+import { SignUp } from '@web/pages/auth/SignUp';
+import { ForgotPassword } from '@web/pages/auth/ForgotPassword';
+import { ResetPassword } from '@web/pages/auth/ResetPassword';
+import { Onboarding } from '@web/pages/onboarding/Onboarding';
+import { Dashboard } from '@web/pages/app/Dashboard';
+import { NewDeal } from '@web/pages/app/NewDeal';
+import { Review } from '@web/pages/app/Review';
+import { Deals } from '@web/pages/app/Deals';
+import { DealReview } from '@web/pages/app/DealReview';
+import { Settings } from '@web/pages/app/Settings';
+import { AppLayout } from '@web/components/layout/AppLayout';
+import { Inbox } from '@web/pages/app/Inbox';
+
+// Desktop-specific capabilities
 import { TitleBar } from './components/TitleBar';
-import { Sidebar } from './components/Sidebar';
 import { ActiveMeetingBar } from './components/ActiveMeetingBar';
 import { useMeetingWatcher } from './hooks/useMeetingWatcher';
-import { DashboardView } from './views/DashboardView';
-import { DealsView } from './views/DealsView';
-import { RecordReviewView } from './views/RecordReviewView';
-import { InboxView } from './views/InboxView';
-import { SettingsView } from './views/SettingsView';
-import { AuthView } from './views/AuthView';
 
-function AppContent() {
-  const { user, loading } = useAuth();
-  const [showAuthModal, setShowAuthModal] = useState(false);
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-bg flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
+    </div>
+  );
+}
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+
+  if (!user) return <Navigate to="/signin" replace />;
+
+  if (!profile?.onboarding_complete) return <Navigate to="/onboarding" replace />;
+
+  return <ErrorBoundary>{children}</ErrorBoundary>;
+}
+
+function OnboardingRoute({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+
+  if (!user) return <Navigate to="/signin" replace />;
+
+  if (profile?.onboarding_complete) return <Navigate to="/app/dashboard" replace />;
+
+  return <ErrorBoundary>{children}</ErrorBoundary>;
+}
+
+function RootRoute() {
+  const { user, profile, loading } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+
+  if (!user) return <Navigate to="/signin" replace />;
+
+  if (!profile?.onboarding_complete) return <Navigate to="/onboarding" replace />;
+
+  return <Navigate to="/app/dashboard" replace />;
+}
+
+function DesktopShell() {
+  const { user } = useAuth();
 
   const watcher = useMeetingWatcher({
     userId: user?.id,
     autoCaptureEnabled: true,
   });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-bg flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <RefreshCw className="w-6 h-6 text-primary animate-spin" />
-          <p className="text-textMuted text-xs font-mono">Connecting to Kairo...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-screen w-screen bg-bg text-textPrimary flex flex-col antialiased overflow-hidden select-none">
-      {/* Tauri Native Titlebar */}
+    <div className="min-h-screen bg-bg text-textPrimary flex flex-col antialiased select-none">
+      {/* Native Desktop TitleBar */}
       <TitleBar isConnected={!!user} />
 
       {/* Floating Active Meeting Intelligence Bar */}
@@ -53,28 +95,53 @@ function AppContent() {
         onDiscard={watcher.discardCapture}
       />
 
-      {/* Desktop Main Workspace Area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <Sidebar onOpenAuthModal={() => setShowAuthModal(true)} />
+      {/* Main Routed Area */}
+      <div className="flex-1">
+        <Routes>
+          {/* Root / State Gate */}
+          <Route path="/" element={<RootRoute />} />
 
-        {/* Routed Views */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-bg">
-          <Routes>
-            <Route path="/" element={<DashboardView />} />
-            <Route path="/deals" element={<DealsView />} />
-            <Route path="/review" element={<RecordReviewView />} />
-            <Route path="/inbox" element={<InboxView />} />
-            <Route path="/settings" element={<SettingsView />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+          {/* Public Auth */}
+          <Route path="/signin" element={<SignIn />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+
+          {/* Mandatory Onboarding */}
+          <Route
+            path="/onboarding"
+            element={
+              <OnboardingRoute>
+                <Onboarding />
+              </OnboardingRoute>
+            }
+          />
+
+          {/* Authenticated Product Pages */}
+          <Route
+            path="/app/*"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Routes>
+                    <Route path="dashboard" element={<Dashboard />} />
+                    <Route path="inbox" element={<Inbox />} />
+                    <Route path="new" element={<NewDeal />} />
+                    <Route path="deals" element={<Deals />} />
+                    <Route path="deals/:dealId" element={<DealReview />} />
+                    <Route path="deals/:dealId/calls/:callId" element={<Review />} />
+                    <Route path="settings" element={<Settings />} />
+                    <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+                  </Routes>
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </div>
-
-      {/* Sign In / Sign Up Modal */}
-      {(showAuthModal || !user) && (
-        <AuthView onClose={() => setShowAuthModal(false)} />
-      )}
     </div>
   );
 }
@@ -82,7 +149,7 @@ function AppContent() {
 export function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <DesktopShell />
     </BrowserRouter>
   );
 }
