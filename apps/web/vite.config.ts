@@ -12,7 +12,8 @@ export default defineConfig({
       '@kairo/platform': path.resolve(import.meta.dirname, '../../packages/platform/src'),
     },
   },
-  envPrefix: ['VITE_', 'REACT_APP_'],
+  envDir: path.resolve(import.meta.dirname, '../../'),
+  envPrefix: ['VITE_', 'REACT_APP_', 'EXPO_PUBLIC_'],
   server: {
     port: 3000,
   },

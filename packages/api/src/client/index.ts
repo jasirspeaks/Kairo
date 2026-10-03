@@ -1,8 +1,8 @@
 import {
   createClient,
-  SupabaseClient,
-  SupportedStorage,
-  SupabaseClientOptions,
+  type SupabaseClient,
+  type SupportedStorage,
+  type SupabaseClientOptions,
 } from '@supabase/supabase-js';
 
 export type KairoClient = SupabaseClient;
@@ -25,9 +25,10 @@ function getEnv(key: string): string {
     return process.env[key]!;
   }
   try {
-    const fn = new Function('return typeof import.meta !== "undefined" ? import.meta.env : undefined');
-    const env = fn();
-    if (env && env[key]) return env[key];
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+      const val = (import.meta as any).env[key];
+      if (typeof val === 'string') return val;
+    }
   } catch {
     // Ignore
   }
@@ -39,13 +40,54 @@ export function getClientConfig(): { supabaseUrl: string; supabaseAnonKey: strin
     return { supabaseUrl: activeUrl, supabaseAnonKey: activeAnonKey };
   }
 
+  // Check static access on import.meta.env first so Vite can inline variables during build
+  let metaUrl = '';
+  let metaKey = '';
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+      const env = (import.meta as any).env;
+      metaUrl =
+        env.EXPO_PUBLIC_SUPABASE_URL ||
+        env.VITE_SUPABASE_URL ||
+        env.REACT_APP_SUPABASE_URL ||
+        '';
+      metaKey =
+        env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+        env.VITE_SUPABASE_ANON_KEY ||
+        env.REACT_APP_SUPABASE_ANON_KEY ||
+        '';
+    }
+  } catch {
+    // Ignore
+  }
+
+  // Check static access on process.env for Expo/Metro and Node.js
+  let procUrl = '';
+  let procKey = '';
+  if (typeof process !== 'undefined' && process.env) {
+    procUrl =
+      process.env.EXPO_PUBLIC_SUPABASE_URL ||
+      process.env.VITE_SUPABASE_URL ||
+      process.env.REACT_APP_SUPABASE_URL ||
+      '';
+    procKey =
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      process.env.REACT_APP_SUPABASE_ANON_KEY ||
+      '';
+  }
+
   const url =
+    metaUrl ||
+    procUrl ||
     getEnv('EXPO_PUBLIC_SUPABASE_URL') ||
     getEnv('VITE_SUPABASE_URL') ||
     getEnv('REACT_APP_SUPABASE_URL') ||
     '';
 
   const key =
+    metaKey ||
+    procKey ||
     getEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY') ||
     getEnv('VITE_SUPABASE_ANON_KEY') ||
     getEnv('REACT_APP_SUPABASE_ANON_KEY') ||

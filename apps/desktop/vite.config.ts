@@ -33,7 +33,7 @@ export default defineConfig({
       ignored: ['**/src-tauri/**'],
     },
   },
-  envPrefix: ['VITE_', 'TAURI_ENV_*', 'REACT_APP_'],
+  envPrefix: ['VITE_', 'TAURI_ENV_', 'TAURI_ENV_*', 'REACT_APP_', 'EXPO_PUBLIC_'],
   build: {
     outDir: 'dist',
     sourcemap: true,
