@@ -23,44 +23,39 @@ On non-Windows platforms, or if Windows Core Audio is unavailable, `system_audio
 
 ---
 
-## 12-Step Manual Verification Procedure
+## 10-Step Manual Verification Procedure
 
 Follow these exact steps on Windows:
 
-1. **Run Kairo Desktop on Windows**:
-   Start the application in dev mode:
-   ```bash
-   npm run dev --workspace=@kairo/desktop
-   ```
-   Verify that the header badge reports:
-   - `Mic: Active` (`microphone_supported: true`)
-   - `System Audio: Active` (`system_audio_supported: true`)
+1. **Windows Machine**:
+   Boot on a physical or virtualized Windows 10/11 environment.
 
-2. **Connect Headphones**:
-   Plug in standard 3.5mm wired headphones, USB headset, or connect Bluetooth headphones/AirPods.
+2. **Connect Audio Output Device**:
+   Connect headphones (3.5mm wired, USB headset, or Bluetooth) or speakers.
 
-3. **Make Headphones the Windows Default Playback Device**:
+3. **Set as Windows Default Playback Device**:
    - Open Windows Settings > System > Sound.
-   - Under **Choose where to play sound**, select your connected headphones.
-   - Confirm system sounds and test chimes are heard exclusively inside the headphones.
+   - Under **Choose where to play sound**, ensure your connected headphones/speakers are selected as the Default Output Device.
+   - Verify that test chimes or system sounds play through this device.
 
-4. **Start Remote Audio Source**:
-   - Open a live Google Meet, Zoom, or Microsoft Teams call with a colleague, OR open a browser tab playing dialogue/speech (e.g., YouTube interview or podcast).
+4. **Start a Real Audio Playback Source**:
+   Start an active playback stream producing dialogue/speech:
+   - Live Google Meet call
+   - Zoom meeting
+   - Microsoft Teams call
+   - Browser tab playing video or podcast (e.g. YouTube interview)
 
-5. **Ensure Audio is Actively Playing**:
-   Confirm you clearly hear speech inside your headphones.
+5. **Start Kairo Recording**:
+   - In Kairo Desktop, navigate to a deal or meeting and click **Start Meeting Capture** (or press the record hotkey).
+   - Ensure the capture status changes to `recording`.
 
-6. **Start Kairo Recording**:
-   - In Kairo Desktop, select a deal or meeting and click **Start Meeting Capture** (or press the record hotkey).
-   - Observe status transitions to `recording` and elapsed time starts incrementing.
+6. **Speak into the Microphone**:
+   - Speak clearly into the local microphone (e.g., *"This is the account executive reviewing pricing."*).
 
-7. **Speak into the Microphone**:
-   - Speak a clear test sentence (e.g., *"This is the account executive reviewing pricing."*).
+7. **Play/Receive Clearly Distinguishable Audio Through Playback Device**:
+   - Ensure the remote source or browser tab plays clearly audible speech through the Windows default playback device (e.g., *"We require SOC2 compliance by next quarter."*).
 
-8. **Receive Speech Through the Windows Playback Device**:
-   - Ensure the remote participant speaks concurrently (e.g., *"We require SOC2 compliance by next quarter."*).
-
-9. **Stop Kairo Recording**:
+8. **Stop Recording**:
    - Click **Stop Recording**.
    - Verify that `stop_meeting_capture` returns:
      - `duration_seconds > 0`
@@ -69,24 +64,20 @@ Follow these exact steps on Windows:
      - `channels: 1`
      - `capture_source: "combined"`
 
-10. **Inspect Resulting Audio File**:
-    - Locate the generated WAV file in `%TEMP%\kairo_captures\kairo_meeting_<id>_<timestamp>.wav`.
-    - Open the file in an audio editor/player (Audacity, VLC, or Windows Media Player).
+9. **Inspect the Resulting Recording**:
+   - Locate the recorded `.wav` file in `%TEMP%\kairo_captures\kairo_meeting_<id>_<timestamp>.wav`.
+   - Open the audio file in an audio editor or media player (Audacity, VLC, Windows Media Player).
 
-11. **Confirm Presence of Both Speakers**:
-    - **Local AE Voice**: Confirm clear, crisp microphone speech is present.
-    - **Remote Participant Voice**: Confirm the remote audio playing through the headphones is present at full digital fidelity.
-    - Confirm both audio tracks are balanced without clipping, distortion, or silence gaps.
-
-12. **Run Normal Kairo Upload & Transcription Path**:
-    - In Kairo Desktop, submit the completed recording to the review/transcription pipeline.
-    - Confirm the generated transcript contains speech segments and speaker labels for both the local AE and the remote prospect.
+10. **Confirm BOTH Audio Streams Are Present**:
+    - **Microphone Audio**: The AE's local voice is clearly audible.
+    - **System Playback Audio**: The remote participant/browser audio is clearly audible at full digital fidelity.
+    - Confirm both audio tracks are mixed without clipping, dropouts, or phase cancellation.
 
 ---
 
 ## Proving Loopback Capture vs. Microphone Bleed
 
-To definitively prove that the remote audio is captured directly from the Windows WASAPI loopback stream rather than leaking acoustically into the microphone:
+To definitively prove that system playback audio is captured directly from the Windows WASAPI loopback stream (`AUDCLNT_STREAMFLAGS_LOOPBACK`) rather than leaking acoustically into the microphone:
 
 ### Proof Test A: Hardware Microphone Mute / Silence
 1. Set capture source to `system_audio` (or mute your physical microphone).
@@ -102,9 +93,9 @@ To definitively prove that the remote audio is captured directly from the Window
 
 ---
 
-## Automated Verification Suite
+## Automated Verification Binary (`test_audio`)
 
-Run the automated verification suite to validate all Core Audio and WASAPI loopback components:
+Run the automated verification suite to validate all Core Audio and WASAPI loopback components, buffer handling, and live capture assertions:
 
 ```powershell
 cargo run --bin test_audio
@@ -128,9 +119,10 @@ Expected output:
 [TEST 13/14] Mixer queue drain and WAV output: PASS
 [TEST 14/14] Testing real Windows WASAPI loopback capture lifecycle...
 [KairoWASAPI] Loopback capture successfully initialized: 48000Hz, 2 channels, Float32 (32-bit)
-  -> Stream started successfully via IAudioClient with AUDCLNT_STREAMFLAGS_LOOPBACK!
-  -> Stream stopped and cleaned up cleanly!
-[TEST 14/14] Real Windows WASAPI loopback capture lifecycle: PASS
+  -> Stream initialized and started via IAudioClient with AUDCLNT_STREAMFLAGS_LOOPBACK
+  -> Stream stopped and cleaned up cleanly
+  -> Captured queue frames: 8000
+[TEST 14/14] Real Windows WASAPI loopback capture lifecycle: PASS (verified 8000 captured frames)
 
 ALL 14 TESTS COMPLETED SUCCESSFULLY!
 ```

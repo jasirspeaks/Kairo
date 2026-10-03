@@ -394,46 +394,56 @@ unsafe fn run_wasapi_loopback_thread(
             let mut num_frames_read = 0u32;
             let mut flags = 0u32;
 
-            let hr =
+            let res =
                 capture_client.GetBuffer(&mut p_data, &mut num_frames_read, &mut flags, None, None);
 
-            if hr.is_err() || num_frames_read == 0 || p_data.is_null() {
+            if res.is_err() {
+                // If GetBuffer fails, no buffer was acquired so ReleaseBuffer must NOT be called.
+                thread::sleep(Duration::from_millis(5));
                 break;
             }
 
+            // Every successful GetBuffer MUST have a corresponding ReleaseBuffer call.
             let is_silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0;
 
-            decode_raw_audio_packet(
-                p_data,
-                num_frames_read as usize,
-                channels,
-                format,
-                is_silent,
-                &mut decoded_f32_buffer,
-            );
-
-            let _ = capture_client.ReleaseBuffer(num_frames_read);
-
-            // Process audio frames: downmix to mono, resample to 16kHz, queue
-            if !decoded_f32_buffer.is_empty() {
-                let mono_frames = downmix_interleaved_to_mono(&decoded_f32_buffer, channels);
-                let resampled = resample_linear(
-                    &mono_frames,
-                    sample_rate,
-                    TARGET_SAMPLE_RATE,
-                    &mut resample_phase,
+            if num_frames_read > 0 {
+                // Decode packet: if silent or null p_data, generates zero-samples safely without dereferencing p_data
+                decode_raw_audio_packet(
+                    p_data,
+                    num_frames_read as usize,
+                    channels,
+                    format,
+                    is_silent,
+                    &mut decoded_f32_buffer,
                 );
 
-                if !resampled.is_empty() {
-                    let mut q = sample_queue.lock();
-                    // Capacity safeguard to avoid unbounded memory growth
-                    if q.len() < 80000 {
-                        q.extend(resampled);
+                // Release captured buffer immediately after decoding
+                let _ = capture_client.ReleaseBuffer(num_frames_read);
+
+                // Process audio frames: downmix to mono, resample to 16kHz, queue
+                if !decoded_f32_buffer.is_empty() {
+                    let mono_frames = downmix_interleaved_to_mono(&decoded_f32_buffer, channels);
+                    let resampled = resample_linear(
+                        &mono_frames,
+                        sample_rate,
+                        TARGET_SAMPLE_RATE,
+                        &mut resample_phase,
+                    );
+
+                    if !resampled.is_empty() {
+                        let mut q = sample_queue.lock();
+                        // Capacity safeguard to avoid unbounded memory growth
+                        if q.len() < 80000 {
+                            q.extend(resampled);
+                        }
                     }
                 }
+            } else {
+                // Zero-frame packet with successful GetBuffer: release 0 frames cleanly
+                let _ = capture_client.ReleaseBuffer(0);
             }
 
-            // Check if another packet is already waiting
+            // Inspect next packet boundary
             match capture_client.GetNextPacketSize() {
                 Ok(next_size) => packet_size = next_size,
                 Err(_) => break,
@@ -600,6 +610,33 @@ mod tests {
         println!(
             "WASAPI Loopback supported on this test runner: {}",
             supported
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_wasapi_loopback_captures_real_frames() {
+        if !is_wasapi_loopback_supported() {
+            println!("Skipping real WASAPI loopback test: host has no active render endpoint.");
+            return;
+        }
+
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let is_running = Arc::new(AtomicBool::new(true));
+        let is_paused = Arc::new(AtomicBool::new(false));
+
+        let mut capture =
+            SystemLoopbackCapture::start(queue.clone(), is_running.clone(), is_paused.clone())
+                .expect("WASAPI loopback failed to start on supported host");
+
+        std::thread::sleep(Duration::from_millis(400));
+        capture.stop();
+
+        let count = queue.lock().len();
+        assert!(
+            count > 0,
+            "WASAPI loopback initialized but captured 0 frames! Pipeline must capture real frames (got {}).",
+            count
         );
     }
 }

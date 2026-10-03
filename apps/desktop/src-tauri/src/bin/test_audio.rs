@@ -174,27 +174,45 @@ fn main() {
 
     // 14. Real Windows WASAPI Loopback stream initialization, capture, and shutdown
     println!("[TEST 14/14] Testing real Windows WASAPI loopback capture lifecycle...");
-    let queue = std::sync::Arc::new(parking_lot::Mutex::new(VecDeque::new()));
-    let is_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let is_paused = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    #[cfg(target_os = "windows")]
+    {
+        if is_wasapi_loopback_supported() {
+            let queue = std::sync::Arc::new(parking_lot::Mutex::new(VecDeque::new()));
+            let is_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+            let is_paused = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    match kairo_desktop_lib::windows_loopback::SystemLoopbackCapture::start(
-        queue.clone(),
-        is_running.clone(),
-        is_paused.clone(),
-    ) {
-        Ok(mut cap) => {
-            println!("  -> Stream started successfully via IAudioClient with AUDCLNT_STREAMFLAGS_LOOPBACK!");
-            std::thread::sleep(std::time::Duration::from_millis(400));
+            let mut cap = kairo_desktop_lib::windows_loopback::SystemLoopbackCapture::start(
+                queue.clone(),
+                is_running.clone(),
+                is_paused.clone(),
+            )
+            .expect("WASAPI loopback reported supported but failed to start");
+
+            println!("  -> Stream initialized and started via IAudioClient with AUDCLNT_STREAMFLAGS_LOOPBACK");
+            // Allow the capture thread to capture real WASAPI loopback frames
+            std::thread::sleep(std::time::Duration::from_millis(500));
             cap.stop();
-            println!("  -> Stream stopped and cleaned up cleanly!");
-            let q_len = queue.lock().len();
-            println!("  -> Captured queue frames: {}", q_len);
-            println!("[TEST 14/14] Real Windows WASAPI loopback capture lifecycle: PASS");
+            println!("  -> Stream stopped and cleaned up cleanly");
+
+            let captured_frames = queue.lock().len();
+            println!("  -> Captured queue frames: {}", captured_frames);
+            assert!(
+                captured_frames > 0,
+                "WASAPI loopback stream initialized successfully but delivered ZERO captured audio frames! Captured frames must be > 0."
+            );
+            println!(
+                "[TEST 14/14] Real Windows WASAPI loopback capture lifecycle: PASS (verified {} captured frames)",
+                captured_frames
+            );
+        } else {
+            println!(
+                "[TEST 14/14] Real Windows WASAPI loopback capture lifecycle: SKIPPED (no active Windows render endpoint on this host)"
+            );
         }
-        Err(e) => {
-            println!("  -> Loopback start note: {}", e);
-        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        println!("[TEST 14/14] Real Windows WASAPI loopback capture lifecycle: SKIPPED (non-Windows platform)");
     }
 
     println!("\nALL 14 TESTS COMPLETED SUCCESSFULLY!");
