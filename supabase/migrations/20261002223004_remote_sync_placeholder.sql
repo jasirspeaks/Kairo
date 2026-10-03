@@ -1,0 +1,2 @@
+-- 20261002223004_remote_sync_placeholder.sql
+-- Satisfies remote Supabase schema migration history

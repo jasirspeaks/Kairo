@@ -1,2 +1,0 @@
--- 00000000000000_remote_schema.sql
--- Baseline migration marker to satisfy Supabase remote migration tracking history
