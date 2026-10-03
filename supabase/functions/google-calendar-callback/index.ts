@@ -17,8 +17,16 @@ const APP_URL = Deno.env.get('APP_URL');
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
 function redirectToSettings(
-  status: 'connected' | 'error'
+  status: 'connected' | 'error',
+  platform: 'web' | 'mobile' = 'web'
 ): Response {
+  if (platform === 'mobile') {
+    return Response.redirect(
+      `kairo://calendar/callback?calendar=${status}`,
+      302
+    );
+  }
+
   if (!APP_URL) {
     console.error(
       'google-calendar-callback: APP_URL is not configured.'
@@ -38,22 +46,33 @@ function redirectToSettings(
 
 async function verifyState(
   state: string
-): Promise<string | null> {
+): Promise<{ userId: string; platform: 'web' | 'mobile' } | null> {
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return null;
   }
 
   const parts = state.split('.');
 
-  if (parts.length !== 3) {
+  let userId: string;
+  let issuedAtStr: string;
+  let platform: 'web' | 'mobile' = 'web';
+  let sigHex: string;
+  let payload: string;
+
+  if (parts.length === 3) {
+    [userId, issuedAtStr, sigHex] = parts;
+    payload = `${userId}.${issuedAtStr}`;
+  } else if (parts.length === 4) {
+    let platformPart: string;
+    [userId, issuedAtStr, platformPart, sigHex] = parts;
+    if (platformPart !== 'mobile') {
+      return null;
+    }
+    platform = 'mobile';
+    payload = `${userId}.${issuedAtStr}.${platformPart}`;
+  } else {
     return null;
   }
-
-  const [
-    userId,
-    issuedAtStr,
-    sigHex,
-  ] = parts;
 
   const issuedAt = Number(
     issuedAtStr
@@ -91,8 +110,6 @@ async function verifyState(
       false,
       ['sign']
     );
-
-  const payload = `${userId}.${issuedAtStr}`;
 
   const mac =
     await crypto.subtle.sign(
@@ -135,7 +152,7 @@ async function verifyState(
     return null;
   }
 
-  return userId;
+  return { userId, platform };
 }
 
 serve(async (req) => {
@@ -146,8 +163,29 @@ serve(async (req) => {
     );
   }
 
-  // APP_URL is needed even for error redirects.
-  if (!APP_URL) {
+  const url = new URL(req.url);
+
+  const code =
+    url.searchParams.get('code');
+
+  const state =
+    url.searchParams.get('state');
+
+  const oauthError =
+    url.searchParams.get('error');
+
+  // Verify state early to determine target platform (web vs mobile)
+  const verifiedState =
+    state ? await verifyState(state) : null;
+
+  const targetPlatform: 'web' | 'mobile' =
+    verifiedState?.platform ||
+    (state && state.split('.').length === 4 && state.split('.')[2] === 'mobile'
+      ? 'mobile'
+      : 'web');
+
+  // APP_URL is needed for web redirects.
+  if (!APP_URL && targetPlatform === 'web') {
     console.error(
       'google-calendar-callback: APP_URL is not set.'
     );
@@ -190,48 +228,29 @@ serve(async (req) => {
     );
 
     return redirectToSettings(
-      'error'
+      'error',
+      targetPlatform
     );
   }
-
-  const url = new URL(req.url);
-
-  const code =
-    url.searchParams.get('code');
-
-  const state =
-    url.searchParams.get('state');
-
-  const oauthError =
-    url.searchParams.get('error');
 
   if (
     oauthError ||
     !code ||
-    !state
+    !state ||
+    !verifiedState
   ) {
     console.error(
-      'google-calendar-callback: OAuth returned an error or missing code/state.',
-      oauthError || 'missing parameters'
+      'google-calendar-callback: OAuth returned an error, missing parameters, or invalid state.',
+      oauthError || 'missing or invalid parameters'
     );
 
     return redirectToSettings(
-      'error'
+      'error',
+      targetPlatform
     );
   }
 
-  const userId =
-    await verifyState(state);
-
-  if (!userId) {
-    console.error(
-      'google-calendar-callback: state verification failed.'
-    );
-
-    return redirectToSettings(
-      'error'
-    );
-  }
+  const { userId } = verifiedState;
 
   try {
     const tokenRes =
@@ -280,7 +299,8 @@ serve(async (req) => {
       );
 
       return redirectToSettings(
-        'error'
+        'error',
+        targetPlatform
       );
     }
 
@@ -293,7 +313,8 @@ serve(async (req) => {
       );
 
       return redirectToSettings(
-        'error'
+        'error',
+        targetPlatform
       );
     }
 
@@ -358,12 +379,14 @@ serve(async (req) => {
       );
 
       return redirectToSettings(
-        'error'
+        'error',
+        targetPlatform
       );
     }
 
     return redirectToSettings(
-      'connected'
+      'connected',
+      targetPlatform
     );
   } catch (err) {
     console.error(
@@ -374,7 +397,8 @@ serve(async (req) => {
     );
 
     return redirectToSettings(
-      'error'
+      'error',
+      targetPlatform
     );
   }
 });

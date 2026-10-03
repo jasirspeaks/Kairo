@@ -21,6 +21,7 @@ import {
 } from '@kairo/api';
 import { colors } from '../theme/colors';
 import { TopBar } from '../components/layout/TopBar';
+import { useNavigation } from '../navigation/NavigationContext';
 
 const ROLE_OPTIONS = [
   { value: 'founder', label: 'Founder', desc: 'Running sales at an early stage company' },
@@ -38,6 +39,7 @@ function formatDate(dateString: string | null | undefined): string {
 
 export function SettingsScreen() {
   const { user, profile, refetchProfile } = useAuth();
+  const { routeParams } = useNavigation();
   const {
     subscription,
     loading: subscriptionLoading,
@@ -91,6 +93,17 @@ export function SettingsScreen() {
     checkCalendar();
   }, [user]);
 
+  useEffect(() => {
+    if (routeParams?.calendar) {
+      checkCalendar();
+      if (routeParams.calendar === 'connected') {
+        Alert.alert('Calendar Connected', 'Your Google Calendar has been successfully connected.');
+      } else if (routeParams.calendar === 'error') {
+        Alert.alert('Calendar Error', 'Failed to connect Google Calendar. Please try again.');
+      }
+    }
+  }, [routeParams?.calendar]);
+
   const isDirty =
     name !== initialValues.name ||
     whatYouSell !== initialValues.whatYouSell ||
@@ -136,9 +149,12 @@ export function SettingsScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Session expired. Please sign in again.');
 
-      const { data, error } = await supabase.functions.invoke('google-calendar-connect', {
+      const { data, error } = await supabase.functions.invoke('google-calendar-connect?platform=mobile', {
         method: 'GET',
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'x-kairo-platform': 'mobile',
+        },
       });
       if (error || !data?.auth_url) throw error || new Error(data?.error || 'No auth URL returned');
       await Linking.openURL(data.auth_url);

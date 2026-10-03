@@ -19,13 +19,14 @@ const SUPABASE_SERVICE_ROLE_KEY =
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
+    'authorization, x-client-info, apikey, content-type, x-kairo-platform',
   'Access-Control-Allow-Methods':
     'GET, POST, DELETE, OPTIONS',
 };
 
 async function signState(
-  userId: string
+  userId: string,
+  platform?: string
 ): Promise<string> {
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error(
@@ -50,8 +51,9 @@ async function signState(
   const issuedAt =
     Date.now().toString();
 
-  const payload =
-    `${userId}.${issuedAt}`;
+  const payload = platform
+    ? `${userId}.${issuedAt}.${platform}`
+    : `${userId}.${issuedAt}`;
 
   const mac =
     await crypto.subtle.sign(
@@ -330,8 +332,17 @@ serve(async (req) => {
     // CONNECT
     // ------------------------------------------------------------
 
+    const url = new URL(req.url);
+    const platformParam =
+      url.searchParams.get('platform') ||
+      req.headers.get('x-kairo-platform');
+    const platform =
+      platformParam === 'mobile'
+        ? 'mobile'
+        : undefined;
+
     const state =
-      await signState(user.id);
+      await signState(user.id, platform);
 
     const params =
       new URLSearchParams({

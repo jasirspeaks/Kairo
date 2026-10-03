@@ -88,7 +88,7 @@ function AppShell() {
           // Handled by auth state listener
         }
       } else if (url.includes('calendar/callback')) {
-        navigate('settings');
+        navigate('settings', { calendar: params.calendar || 'connected' });
       }
     }
 
@@ -146,7 +146,7 @@ function AppShell() {
     );
   }
 
-  if (profile && profile.onboarding_complete === false) {
+  if (!profile?.onboarding_complete) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
