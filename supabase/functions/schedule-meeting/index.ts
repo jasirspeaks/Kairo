@@ -110,13 +110,21 @@ serve(async (req: Request) => {
       return json({ error: 'Unauthorized' }, 401);
     }
 
-    // Verify user has write access
-    const { data: hasWriteAccess, error: accessError } = await supabase.rpc(
-      'has_write_access',
-      { p_user_id: user.id }
-    );
+    // Verify user has write access (active subscription or valid trial)
+    const { data: subscription, error: subError } = await supabase
+      .from('subscriptions')
+      .select('status, trial_end')
+      .eq('user_id', user.id)
+      .maybeSingle();
 
-    if (accessError || !hasWriteAccess) {
+    const hasWriteAccess =
+      !subError &&
+      subscription &&
+      (subscription.status === 'active' ||
+        (subscription.status === 'trialing' &&
+          new Date(subscription.trial_end).getTime() > Date.now()));
+
+    if (!hasWriteAccess) {
       return json(
         {
           error: 'ACCESS_RESTRICTED',
