@@ -1,6 +1,7 @@
 [package]
 name = "kairo-desktop"
 version = "0.1.0"
+default-run = "kairo-desktop"
 description = "Kairo Deal Intelligence Co-pilot Desktop App"
 authors = ["Kairo Team"]
 edition = "2021"
