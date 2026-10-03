@@ -34,9 +34,14 @@ export async function signInWithOAuth(
   redirectTo?: string,
   client: KairoClient = getKairoClient()
 ): Promise<OAuthResponse> {
+  const isReactNative =
+    typeof navigator !== 'undefined' && (navigator as any).product === 'ReactNative';
   return client.auth.signInWithOAuth({
     provider,
-    options: redirectTo ? { redirectTo } : undefined,
+    options: {
+      redirectTo: redirectTo || (isReactNative ? 'kairo://auth/callback' : undefined),
+      skipBrowserRedirect: isReactNative || typeof window === 'undefined',
+    },
   });
 }
 
@@ -63,8 +68,18 @@ export async function resetPasswordForEmail(
   redirectTo?: string,
   client: KairoClient = getKairoClient()
 ): Promise<{ error: Error | null }> {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
-  const targetRedirect = redirectTo || `${origin}/auth/reset-password`;
+  const isReactNative =
+    typeof navigator !== 'undefined' && (navigator as any).product === 'ReactNative';
+  let targetRedirect = redirectTo;
+  if (!targetRedirect) {
+    if (isReactNative || typeof window === 'undefined') {
+      targetRedirect = 'kairo://auth/reset-password';
+    } else if (typeof window !== 'undefined' && window.location?.origin) {
+      targetRedirect = `${window.location.origin}/reset-password`;
+    } else {
+      targetRedirect = 'kairo://auth/reset-password';
+    }
+  }
   const { error } = await client.auth.resetPasswordForEmail(email, {
     redirectTo: targetRedirect,
   });

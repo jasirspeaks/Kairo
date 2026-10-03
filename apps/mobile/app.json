@@ -4,14 +4,12 @@
     "slug": "kairo",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "scheme": "kairo",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0D0715"
-    },
     "ios": {
       "bundleIdentifier": "com.kairo.mobile",
       "supportsTablet": true,
@@ -21,10 +19,6 @@
     },
     "android": {
       "package": "com.kairo.mobile",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0D0715"
-      },
       "permissions": [
         "RECORD_AUDIO"
       ]

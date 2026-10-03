@@ -7,15 +7,31 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
-  Alert,
 } from 'react-native';
-import { signInWithPassword, signUp, resetPasswordForEmail, supabase } from '@kairo/api';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import {
+  signInWithPassword,
+  signUp,
+  resetPasswordForEmail,
+  supabase,
+} from '@kairo/api';
+import { parseDeepLinkUrl } from '@kairo/platform';
 import { colors } from '../theme/colors';
+import { ResetPasswordScreen } from './ResetPasswordScreen';
 
-type AuthMode = 'signin' | 'signup' | 'forgot';
+WebBrowser.maybeCompleteAuthSession();
 
-export function AuthScreen() {
-  const [mode, setMode] = useState<AuthMode>('signin');
+type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset';
+
+export function AuthScreen({
+  initialMode = 'signin',
+  onAuthSuccess,
+}: {
+  initialMode?: AuthMode;
+  onAuthSuccess?: () => void;
+}) {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,12 +44,48 @@ export function AuthScreen() {
     setGoogleLoading(true);
     setError(null);
     try {
+      const redirectUrl = Linking.createURL('auth/callback');
+
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
       });
+
       if (oauthError) throw oauthError;
+      if (!data?.url) throw new Error('No authentication URL returned from Google.');
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+      if (result.type === 'success' && result.url) {
+        const params = parseDeepLinkUrl(result.url);
+
+        if (params.error || params.error_description) {
+          throw new Error(
+            decodeURIComponent(params.error_description || params.error || 'Authentication failed.').replace(/\+/g, ' ')
+          );
+        }
+
+        if (params.code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code);
+          if (exchangeError) throw exchangeError;
+        } else if (params.access_token && params.refresh_token) {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: params.access_token,
+            refresh_token: params.refresh_token,
+          });
+          if (sessionError) throw sessionError;
+        }
+
+        if (onAuthSuccess) {
+          onAuthSuccess();
+        }
+      }
+      // If user cancelled/dismissed, we simply do nothing
     } catch (err: any) {
-      setError(err?.message || 'Google sign in could not be initiated.');
+      setError(err?.message || 'Google sign in could not be completed.');
     } finally {
       setGoogleLoading(false);
     }
@@ -56,16 +108,23 @@ export function AuthScreen() {
 
     try {
       if (mode === 'signup') {
-        const { error: signUpError } = await signUp({ email: email.trim(), password });
+        const { data, error: signUpError } = await signUp({ email: email.trim(), password });
         if (signUpError) throw signUpError;
-        setSuccessMessage('Account created! Please check your email or sign in.');
+
+        if (data.session) {
+          if (onAuthSuccess) onAuthSuccess();
+        } else {
+          setSuccessMessage('Account created! Please check your email to verify your account or sign in.');
+        }
       } else if (mode === 'signin') {
         const { error: signInError } = await signInWithPassword({ email: email.trim(), password });
         if (signInError) throw signInError;
+        if (onAuthSuccess) onAuthSuccess();
       } else if (mode === 'forgot') {
-        const { error: resetError } = await resetPasswordForEmail(email.trim());
+        const redirectUrl = Linking.createURL('auth/reset-password');
+        const { error: resetError } = await resetPasswordForEmail(email.trim(), redirectUrl);
         if (resetError) throw resetError;
-        setSuccessMessage('Password reset link sent! Please check your inbox.');
+        setSuccessMessage("If an account exists, we've sent a link to reset your password. Open it on this device to set a new password.");
       }
     } catch (err: any) {
       setError(err?.message || 'Authentication failed. Please verify your credentials.');
@@ -73,6 +132,21 @@ export function AuthScreen() {
       setLoading(false);
     }
   };
+
+  if (mode === 'reset') {
+    return (
+      <ResetPasswordScreen
+        onSuccess={() => {
+          setMode('signin');
+          if (onAuthSuccess) onAuthSuccess();
+        }}
+        onCancel={() => {
+          setMode('signin');
+          setError(null);
+        }}
+      />
+    );
+  }
 
   return (
     <ScrollView

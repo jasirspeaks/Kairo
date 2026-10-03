@@ -20,25 +20,35 @@ let activeClient: KairoClient | null = null;
 let activeUrl: string = '';
 let activeAnonKey: string = '';
 
+function getEnv(key: string): string {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key]!;
+  }
+  try {
+    const fn = new Function('return typeof import.meta !== "undefined" ? import.meta.env : undefined');
+    const env = fn();
+    if (env && env[key]) return env[key];
+  } catch {
+    // Ignore
+  }
+  return '';
+}
+
 export function getClientConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
   if (activeUrl && activeAnonKey) {
     return { supabaseUrl: activeUrl, supabaseAnonKey: activeAnonKey };
   }
 
-  const metaEnv = typeof import.meta !== 'undefined'
-    ? (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    : undefined;
-
-  const url: string =
-    metaEnv?.VITE_SUPABASE_URL ||
-    metaEnv?.REACT_APP_SUPABASE_URL ||
-    (typeof process !== 'undefined' && process.env?.REACT_APP_SUPABASE_URL) ||
+  const url =
+    getEnv('EXPO_PUBLIC_SUPABASE_URL') ||
+    getEnv('VITE_SUPABASE_URL') ||
+    getEnv('REACT_APP_SUPABASE_URL') ||
     '';
 
-  const key: string =
-    metaEnv?.VITE_SUPABASE_ANON_KEY ||
-    metaEnv?.REACT_APP_SUPABASE_ANON_KEY ||
-    (typeof process !== 'undefined' && process.env?.REACT_APP_SUPABASE_ANON_KEY) ||
+  const key =
+    getEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY') ||
+    getEnv('VITE_SUPABASE_ANON_KEY') ||
+    getEnv('REACT_APP_SUPABASE_ANON_KEY') ||
     '';
 
   return { supabaseUrl: url, supabaseAnonKey: key };

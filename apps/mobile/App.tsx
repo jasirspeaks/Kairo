@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   StatusBar,
   StyleSheet,
   View,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { useAuth } from '@kairo/api';
+import * as Linking from 'expo-linking';
+import { useAuth, supabase } from '@kairo/api';
+import { parseDeepLinkUrl } from '@kairo/platform';
 import { colors } from './src/theme/colors';
 import { NavigationProvider, useNavigation } from './src/navigation/NavigationContext';
 import { BottomNav } from './src/components/layout/BottomNav';
@@ -21,17 +24,115 @@ import { InboxScreen } from './src/screens/InboxScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { RecordScreen } from './src/screens/RecordScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 
 function AppShell() {
   const { user, profile, loading } = useAuth();
   const { currentScreen, routeParams, navigate } = useNavigation();
+  const [resetFlowActive, setResetFlowActive] = useState(false);
+
+  useEffect(() => {
+    async function processUrl(url: string) {
+      if (!url) return;
+
+      const params = parseDeepLinkUrl(url);
+
+      if (url.includes('reset-password') || params.type === 'recovery') {
+        if (params.error || params.error_description) {
+          Alert.alert(
+            'Password Reset Link Invalid',
+            decodeURIComponent(params.error_description || params.error || 'The reset link is expired or invalid. Please request a new one.').replace(/\+/g, ' ')
+          );
+          return;
+        }
+
+        try {
+          if (params.code) {
+            const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(params.code);
+            if (exchangeError) throw exchangeError;
+          } else if (params.access_token && params.refresh_token) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: params.access_token,
+              refresh_token: params.refresh_token,
+            });
+            if (sessionError) throw sessionError;
+          }
+          setResetFlowActive(true);
+          navigate('reset_password');
+        } catch (err: any) {
+          Alert.alert(
+            'Reset Error',
+            err?.message || 'Unable to establish password reset session. Please request a new link.'
+          );
+        }
+      } else if (url.includes('auth/callback')) {
+        if (params.error || params.error_description) {
+          Alert.alert(
+            'Authentication Error',
+            decodeURIComponent(params.error_description || params.error || 'Authentication failed.').replace(/\+/g, ' ')
+          );
+          return;
+        }
+
+        try {
+          if (params.code) {
+            await supabase.auth.exchangeCodeForSession(params.code);
+          } else if (params.access_token && params.refresh_token) {
+            await supabase.auth.setSession({
+              access_token: params.access_token,
+              refresh_token: params.refresh_token,
+            });
+          }
+        } catch {
+          // Handled by auth state listener
+        }
+      } else if (url.includes('calendar/callback')) {
+        navigate('settings');
+      }
+    }
+
+    // Cold launch deep link
+    Linking.getInitialURL().then((initialUrl) => {
+      if (initialUrl) {
+        processUrl(initialUrl);
+      }
+    });
+
+    // Warm listener
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      processUrl(url);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [navigate]);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
         <ActivityIndicator color={colors.primary} size="large" />
+      </SafeAreaView>
+    );
+  }
+
+  // Active password reset flow takes priority
+  if (resetFlowActive || currentScreen === 'reset_password') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+        <ResetPasswordScreen
+          onSuccess={() => {
+            setResetFlowActive(false);
+            navigate('dashboard');
+          }}
+          onCancel={() => {
+            setResetFlowActive(false);
+            navigate('dashboard');
+          }}
+        />
       </SafeAreaView>
     );
   }

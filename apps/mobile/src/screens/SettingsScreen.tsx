@@ -133,11 +133,15 @@ export function SettingsScreen() {
     if (!user) return;
     setConnectingCalendar(true);
     try {
-      const { data, error } = await supabase.functions.invoke('google-calendar-auth', {
-        body: { return_url: 'https://kairo.internal/settings' },
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Session expired. Please sign in again.');
+
+      const { data, error } = await supabase.functions.invoke('google-calendar-connect', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      if (error || !data?.url) throw error || new Error('No auth URL returned');
-      await Linking.openURL(data.url);
+      if (error || !data?.auth_url) throw error || new Error(data?.error || 'No auth URL returned');
+      await Linking.openURL(data.auth_url);
     } catch (err: any) {
       Alert.alert('Calendar Error', err?.message || 'Failed to initiate Google Calendar connection.');
     } finally {
@@ -150,7 +154,7 @@ export function SettingsScreen() {
     setDisconnectingCalendar(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Session expired');
+      if (!session) throw new Error('Session expired. Please sign in again.');
 
       const { data, error } = await supabase.functions.invoke('google-calendar-connect', {
         method: 'DELETE',
@@ -210,6 +214,7 @@ export function SettingsScreen() {
   }
 
   async function handleDeleteAccount() {
+    if (!user || !user.email) return;
     Alert.alert(
       'Delete Account',
       'This will permanently delete your Kairo account, active deals, transcripts, and intelligence history. This cannot be undone.',
@@ -219,9 +224,16 @@ export function SettingsScreen() {
           text: 'Delete Permanently',
           style: 'destructive',
           onPress: async () => {
-            if (!user) return;
             try {
-              await supabase.from('profiles').delete().eq('id', user.id);
+              const { data: { session } } = await supabase.auth.getSession();
+              if (!session) throw new Error('Session expired. Please sign in again.');
+
+              const { data, error } = await supabase.functions.invoke('delete-account', {
+                body: { confirm_email: user.email },
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              });
+              if (error || data?.error) throw error || new Error(data?.error);
+
               await signOut();
             } catch (err: any) {
               Alert.alert('Error', err?.message || 'Failed to delete account.');

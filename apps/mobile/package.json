@@ -14,18 +14,31 @@
     "@kairo/api": "*",
     "@kairo/core": "*",
     "@kairo/platform": "*",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "@supabase/supabase-js": "^2.106.2",
     "clsx": "^2.1.1",
     "expo": "~52.0.0",
     "expo-av": "~15.0.2",
     "expo-file-system": "~18.0.7",
-    "react": "^19.2.6",
-    "react-native": "^0.78.0",
+    "expo-linking": "~7.0.5",
+    "expo-web-browser": "~14.0.2",
+    "react": "18.3.1",
+    "react-native": "0.76.9",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@types/react": "^19.2.15",
-    "@types/react-native": "^0.72.8",
+    "@types/react": "~18.3.12",
     "typescript": "^5.9.3"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false,
+        "exclude": [
+          "clsx",
+          "expo-av"
+        ]
+      }
+    }
   }
 }

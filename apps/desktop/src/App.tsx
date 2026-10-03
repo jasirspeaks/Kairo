@@ -106,6 +106,8 @@ function DesktopShell() {
           <Route path="/signup" element={<SignUp />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/auth/callback" element={<Navigate to="/" replace />} />
+          <Route path="/auth/reset-password" element={<ResetPassword />} />
 
           {/* Mandatory Onboarding */}
           <Route

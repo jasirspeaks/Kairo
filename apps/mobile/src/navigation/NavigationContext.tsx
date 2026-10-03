@@ -12,6 +12,7 @@ export type ScreenName =
   | 'signin'
   | 'signup'
   | 'forgot_password'
+  | 'reset_password'
   | 'onboarding';
 
 export interface Route {

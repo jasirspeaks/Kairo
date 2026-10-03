@@ -23,7 +23,7 @@ export function getAuthRedirectUrl(platform: PlatformType = 'web', origin?: stri
     default:
       if (origin) return `${origin}/auth/callback`;
       if (typeof window !== 'undefined') return `${window.location.origin}/auth/callback`;
-      return 'http://localhost:3000/auth/callback';
+      return `${DEFAULT_DEEP_LINK_SCHEME}://auth/callback`;
   }
 }
 
@@ -43,7 +43,7 @@ export function getCalendarRedirectUrl(platform: PlatformType = 'web', origin?: 
     default:
       if (origin) return `${origin}/app/settings?calendar=connected`;
       if (typeof window !== 'undefined') return `${window.location.origin}/app/settings?calendar=connected`;
-      return 'http://localhost:3000/app/settings?calendar=connected';
+      return `${DEFAULT_DEEP_LINK_SCHEME}://calendar/callback`;
   }
 }
 
@@ -57,13 +57,13 @@ export function getResetPasswordRedirectUrl(platform: PlatformType = 'web', orig
       return `${DEFAULT_DEEP_LINK_SCHEME}://auth/reset-password`;
     case 'desktop':
       return typeof window !== 'undefined' && window.location.origin.includes('localhost')
-        ? 'http://localhost:1420/auth/reset-password'
-        : 'tauri://localhost/auth/reset-password';
+        ? 'http://localhost:1420/reset-password'
+        : 'tauri://localhost/reset-password';
     case 'web':
     default:
-      if (origin) return `${origin}/auth/reset-password`;
-      if (typeof window !== 'undefined') return `${window.location.origin}/auth/reset-password`;
-      return 'http://localhost:3000/auth/reset-password';
+      if (origin) return `${origin}/reset-password`;
+      if (typeof window !== 'undefined') return `${window.location.origin}/reset-password`;
+      return `${DEFAULT_DEEP_LINK_SCHEME}://auth/reset-password`;
   }
 }
 
@@ -72,25 +72,48 @@ export function getResetPasswordRedirectUrl(platform: PlatformType = 'web', orig
  */
 export function parseDeepLinkUrl(urlString: string): Record<string, string> {
   const result: Record<string, string> = {};
+  if (!urlString) return result;
 
   try {
-    const parsed = new URL(urlString);
+    const queryIndex = urlString.indexOf('?');
+    const hashIndex = urlString.indexOf('#');
 
-    // Parse search query params (?code=...&error=...)
-    parsed.searchParams.forEach((val, key) => {
-      result[key] = val;
-    });
+    let queryString = '';
+    let hashString = '';
 
-    // Parse hash fragment params (#access_token=...&refresh_token=...)
-    if (parsed.hash && parsed.hash.length > 1) {
-      const hashQuery = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash;
-      const hashParams = new URLSearchParams(hashQuery);
+    if (queryIndex !== -1) {
+      const end = hashIndex !== -1 && hashIndex > queryIndex ? hashIndex : urlString.length;
+      queryString = urlString.slice(queryIndex + 1, end);
+    }
+
+    if (hashIndex !== -1) {
+      hashString = urlString.slice(hashIndex + 1);
+    }
+
+    if (queryString) {
+      const queryParams = new URLSearchParams(queryString);
+      queryParams.forEach((val, key) => {
+        result[key] = val;
+      });
+    }
+
+    if (hashString) {
+      const hashParams = new URLSearchParams(hashString);
       hashParams.forEach((val, key) => {
         result[key] = val;
       });
     }
   } catch {
-    // Return whatever was parsed
+    // Fallback regex parsing if URLSearchParams fails
+    const regex = /[?&#]([^=#]+)=([^&#]*)/g;
+    let match;
+    while ((match = regex.exec(urlString)) !== null) {
+      try {
+        result[decodeURIComponent(match[1])] = decodeURIComponent(match[2]);
+      } catch {
+        result[match[1]] = match[2];
+      }
+    }
   }
 
   return result;
