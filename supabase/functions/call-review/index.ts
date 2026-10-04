@@ -291,6 +291,7 @@ SUBSEQUENT-CALL SCHEMA (include what_changed_since_last_call at the top level, a
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const VALID_DEAL_STATUSES = new Set([
@@ -852,6 +853,7 @@ async function callGemini(prompt: string, model: string): Promise<string> {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(40000),
       body: JSON.stringify({
         system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -875,8 +877,8 @@ async function callGemini(prompt: string, model: string): Promise<string> {
     return text;
   }
 
-  const err = await geminiResponse.json();
-  const message = err.error?.message || 'Gemini API error';
+  const err = await geminiResponse.json().catch(() => ({}));
+  const message = err.error?.message || `Gemini API error (HTTP ${geminiResponse.status})`;
   const isRateLimit =
     geminiResponse.status === 429 ||
     message.toLowerCase().includes('demand') ||
@@ -940,9 +942,8 @@ async function callGeminiWithFallback(prompt: string): Promise<{
           continue;
         }
 
-        if (!isRateLimit && !isMalformed) {
-          throw lastError;
-        }
+        // On non-retryable error or exhausted attempts for this model,
+        // break from the inner attempt loop to try the next model in MODEL_CHAIN.
         break;
       }
     }
@@ -950,9 +951,13 @@ async function callGeminiWithFallback(prompt: string): Promise<{
 
   const wasRateLimit = lastError?.message === 'RATE_LIMITED';
   if (wasRateLimit) {
-    throw new Error('All available models are experiencing high demand right now. Please try again in a moment.');
+    throw new Error('All available AI models are experiencing high demand right now. Please try again in a moment.');
   }
-  throw new Error('The review could not be generated cleanly. Please try again.');
+  throw new Error(
+    lastError?.message
+      ? `AI review generation failed: ${lastError.message}`
+      : 'The review could not be generated cleanly. Please try again.'
+  );
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -968,6 +973,12 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  let userId: string | null = null;
+  let quotaConsumed = false;
+  let isInternalReview = false;
+  let consumedEventId: string | null = null;
+  let supabase: any = null;
+
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
@@ -977,13 +988,11 @@ serve(async (req) => {
       });
     }
 
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const token = authHeader.replace('Bearer ', '');
 
     const body = await req.json();
     const { transcript, deal_context, seller_context } = body;
-
-    let userId: string;
 
     if (token === SUPABASE_SERVICE_ROLE_KEY) {
       if (!body.user_id) {
@@ -993,6 +1002,7 @@ serve(async (req) => {
         });
       }
       userId = body.user_id;
+      isInternalReview = true;
     } else {
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
@@ -1003,6 +1013,7 @@ serve(async (req) => {
         });
       }
       userId = user.id;
+      isInternalReview = false;
     }
 
     // Authorize deal ownership if deal_id is provided
@@ -1040,9 +1051,6 @@ serve(async (req) => {
       }
     }
 
-    const isInternalReview = token === SUPABASE_SERVICE_ROLE_KEY;
-    let quotaConsumed = false;
-
     if (!transcript || typeof transcript !== 'string') {
       return new Response(JSON.stringify({ error: 'Transcript is required' }), {
         status: 400,
@@ -1067,8 +1075,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    let consumedEventId: string | null = null;
 
     if (!isInternalReview) {
       const { data: quotaResult, error: quotaError } = await supabase.rpc(

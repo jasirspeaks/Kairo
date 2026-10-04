@@ -72,25 +72,57 @@ export async function reviewCall(
 
   const { supabaseUrl, supabaseAnonKey } = getClientConfig();
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/call-review`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({
-      transcript,
-      deal_context,
-      seller_context: deal_context?.seller_context,
-      idempotency_key: idempotencyKey,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${supabaseUrl}/functions/v1/call-review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      signal: AbortSignal.timeout(90000),
+      body: JSON.stringify({
+        transcript,
+        deal_context,
+        seller_context: deal_context?.seller_context,
+        idempotency_key: idempotencyKey,
+      }),
+    });
+  } catch (err: any) {
+    console.error('reviewCall transport error:', err);
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      throw new Error('The review request timed out. Please try again.');
+    }
+    throw new Error("Couldn't reach Kairo's review service. Please check your internet connection and try again.");
+  }
 
-  const data = await response.json();
+  let data: any = null;
+  try {
+    const text = await response.text();
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Response body is not valid JSON (e.g. gateway error HTML)
+  }
 
   if (!response.ok) {
-    throw new Error(data.error || 'Call review failed. Please try again.');
+    if (response.status === 401) {
+      throw new Error(data?.error || 'Your session has expired. Please sign in again.');
+    }
+    if (response.status === 403) {
+      throw new Error(data?.error || 'Your current subscription or permissions do not allow reviewing calls.');
+    }
+    if (response.status === 429) {
+      throw new Error(data?.error || 'Review rate limit reached. Please wait before reviewing another call.');
+    }
+    if (response.status >= 500) {
+      throw new Error(data?.error || 'Review service is temporarily unavailable. Please try again in a moment.');
+    }
+    throw new Error(data?.error || 'Call review failed. Please try again.');
+  }
+
+  if (!data || !data.review || typeof data.review !== 'object') {
+    throw new Error('The review service returned an invalid response structure. Please try again.');
   }
 
   return data.review as DealReview;
@@ -181,22 +213,38 @@ export async function submitRecording(
 
   const { supabaseUrl } = getClientConfig();
 
-  const response = await fetch(
-    `${supabaseUrl}/functions/v1/mobile-recording-review`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ conversation_id: newConv.id }),
+  let response: Response;
+  try {
+    response = await fetch(
+      `${supabaseUrl}/functions/v1/mobile-recording-review`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        signal: AbortSignal.timeout(90000),
+        body: JSON.stringify({ conversation_id: newConv.id }),
+      }
+    );
+  } catch (err: any) {
+    console.error('submitRecording transport error:', err);
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      throw new Error('Recording processing timed out. Please check your inbox in a moment.');
     }
-  );
+    throw new Error("Couldn't reach Kairo's recording review service. Please check your connection.");
+  }
 
-  const data = await response.json();
+  let data: any = null;
+  try {
+    const text = await response.text();
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Non-JSON response
+  }
 
   if (!response.ok) {
-    throw new Error(describeRecordingError(data.error));
+    throw new Error(describeRecordingError(data?.error));
   }
 
   return { conversationId: newConv.id, dealId };

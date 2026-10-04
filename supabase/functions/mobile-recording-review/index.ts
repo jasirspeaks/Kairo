@@ -643,12 +643,12 @@ serve(async (req: Request) => {
       }
     );
 
-    const reviewData = await reviewRes.json();
+    const reviewData = await reviewRes.json().catch(() => ({}));
 
     if (!reviewRes.ok || !reviewData.review) {
       throw new Error(
         reviewData.error ||
-          'call-review did not return a valid review'
+          `call-review failed (HTTP ${reviewRes.status})`
       );
     }
 
