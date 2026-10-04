@@ -22,6 +22,7 @@ import {
   PILLAR_LABELS,
   getPillarBarColor,
   buildActivityTimeline,
+  buildEvolution,
   type Deal,
   type DealState,
   type Conversation,
@@ -30,6 +31,8 @@ import {
   type PillarKey,
   type DealRisk,
   type DealLongitudinalHistory,
+  type EvolutionEntry,
+  type NormalizedRiskDelta,
 } from '@kairo/core';
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
@@ -38,53 +41,6 @@ import { EvidenceInspectorSheet } from '../components/evidence/EvidenceInspector
 import { ScheduleMeetingSheet } from '../components/ui/ScheduleMeetingSheet';
 
 type DealReviewTab = 'action_plan' | 'evolution' | 'stakeholders';
-
-type EvolutionEntry = {
-  call: Conversation;
-  resolved: string[];
-  persists: string[];
-  newRisks: string[];
-  isFirstRead: boolean;
-};
-
-function buildEvolution(calls: Conversation[]): EvolutionEntry[] {
-  return calls
-    .map((call, i) => {
-      const changed = call.analysis_json?.what_changed_since_last_call;
-
-      if (changed) {
-        const hasContent =
-          changed.resolved.length || changed.persists.length || changed.new_risks.length;
-        if (!hasContent) return null;
-        return {
-          call,
-          resolved: changed.resolved,
-          persists: changed.persists,
-          newRisks: changed.new_risks,
-          isFirstRead: false,
-        };
-      }
-
-      if (i !== 0) return null;
-
-      const risk = call.analysis_json?.deal?.highest_priority_risk?.risk;
-      const gaps = (call.analysis_json?.deal?.what_youre_missing ?? [])
-        .map((m: any) => m?.gap)
-        .filter(Boolean);
-
-      if (!risk && gaps.length === 0) return null;
-
-      return {
-        call,
-        resolved: [],
-        persists: [risk, ...gaps].filter(Boolean),
-        newRisks: [],
-        isFirstRead: true,
-      };
-    })
-    .filter((e): e is EvolutionEntry => e !== null)
-    .reverse();
-}
 
 export function DealReviewScreen({ dealId }: { dealId?: string }) {
   const { goBack, navigate } = useNavigation();
@@ -572,19 +528,28 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
                       </View>
 
                       {e.resolved.map((res, i) => (
-                        <Text key={i} style={styles.evolutionResolvedItem}>
-                          ✓ {res}
-                        </Text>
+                        <View key={i} style={styles.evolutionItemBlock}>
+                          <Text style={styles.evolutionResolvedItem}>✓ {res.risk}</Text>
+                          {res.why_it_matters ? (
+                            <Text style={styles.evolutionItemWhy}>{res.why_it_matters}</Text>
+                          ) : null}
+                        </View>
                       ))}
                       {e.persists.map((per, i) => (
-                        <Text key={i} style={styles.evolutionPersistsItem}>
-                          • {per}
-                        </Text>
+                        <View key={i} style={styles.evolutionItemBlock}>
+                          <Text style={styles.evolutionPersistsItem}>• {per.risk}</Text>
+                          {per.why_it_matters ? (
+                            <Text style={styles.evolutionItemWhy}>{per.why_it_matters}</Text>
+                          ) : null}
+                        </View>
                       ))}
                       {e.newRisks.map((nr, i) => (
-                        <Text key={i} style={styles.evolutionNewRiskItem}>
-                          ! {nr}
-                        </Text>
+                        <View key={i} style={styles.evolutionItemBlock}>
+                          <Text style={styles.evolutionNewRiskItem}>! {nr.risk}</Text>
+                          {nr.why_it_matters ? (
+                            <Text style={styles.evolutionItemWhy}>{nr.why_it_matters}</Text>
+                          ) : null}
+                        </View>
                       ))}
                     </View>
                   ))}
@@ -1224,6 +1189,9 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
   },
+  evolutionItemBlock: {
+    marginBottom: 4,
+  },
   evolutionResolvedItem: {
     fontSize: 11,
     color: colors.successText,
@@ -1238,6 +1206,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.dangerText,
     paddingLeft: 4,
+  },
+  evolutionItemWhy: {
+    fontSize: 10,
+    color: colors.textMuted,
+    paddingLeft: 14,
+    marginTop: 1,
   },
   stakeholdersContainer: {
     gap: 8,

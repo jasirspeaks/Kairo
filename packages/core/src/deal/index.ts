@@ -7,4 +7,5 @@ export * from './stakeholders';
 export * from './healthScore';
 export * from './activity';
 export * from './consistency';
+export * from './riskEvolution';
 

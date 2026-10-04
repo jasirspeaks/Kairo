@@ -19,6 +19,9 @@ import {
   DealRisk,
   DealPillarHistoryItem,
   DealLongitudinalHistory,
+  EvolutionEntry,
+  NormalizedRiskDelta,
+  buildEvolution,
   SENTIMENT_LABEL,
   SENTIMENT_COLOR,
   PILLAR_LABELS,
@@ -153,52 +156,6 @@ function PillarStrip({
 }
 
 // --- Risk Evolution: a real timeline + durable risk ledger --------
-type EvolutionEntry = {
-  call: Conversation;
-  resolved: string[];
-  persists: string[];
-  newRisks: string[];
-  isFirstRead: boolean;
-};
-
-function buildEvolution(calls: Conversation[]): EvolutionEntry[] {
-  return calls
-    .map((call, i) => {
-      const changed = call.analysis_json?.what_changed_since_last_call;
-
-      if (changed) {
-        const hasContent = changed.resolved.length || changed.persists.length || changed.new_risks.length;
-        if (!hasContent) return null;
-        return {
-          call,
-          resolved: changed.resolved,
-          persists: changed.persists,
-          newRisks: changed.new_risks,
-          isFirstRead: false,
-        };
-      }
-
-      if (i !== 0) return null;
-
-      const risk = call.analysis_json?.deal?.highest_priority_risk?.risk;
-      const gaps = (call.analysis_json?.deal?.what_youre_missing ?? [])
-        .map((m: any) => m?.gap)
-        .filter(Boolean);
-
-      if (!risk && gaps.length === 0) return null;
-
-      return {
-        call,
-        resolved: [],
-        persists: [risk, ...gaps].filter(Boolean),
-        newRisks: [],
-        isFirstRead: true,
-      };
-    })
-    .filter((e): e is EvolutionEntry => e !== null)
-    .reverse(); // newest first
-}
-
 function evolutionTrend(entry: EvolutionEntry): { icon: React.ReactNode; color: string; label: string } {
   if (entry.isFirstRead) {
     return { icon: <Minus className="w-3.5 h-3.5" />, color: '#8B93A7', label: 'First read' };
@@ -250,9 +207,14 @@ function EvolutionRow({ entry, defaultOpen }: { entry: EvolutionEntry; defaultOp
               <p className="text-xs font-semibold text-emerald-400 mb-1.5 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3 h-3" /> Resolved
               </p>
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {entry.resolved.map((item, i) => (
-                  <p key={i} className="text-xs text-textSecondary pl-4.5 leading-relaxed">{item}</p>
+                  <div key={i} className="pl-4.5">
+                    <p className="text-xs text-textSecondary leading-relaxed">{item.risk}</p>
+                    {item.why_it_matters && (
+                      <p className="text-[11px] text-textMuted leading-relaxed mt-0.5">{item.why_it_matters}</p>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -262,9 +224,14 @@ function EvolutionRow({ entry, defaultOpen }: { entry: EvolutionEntry; defaultOp
               <p className="text-xs font-semibold text-amber-400 mb-1.5 flex items-center gap-1.5">
                 <Clock className="w-3 h-3" /> {entry.isFirstRead ? 'What we found' : 'Still open'}
               </p>
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {entry.persists.map((item, i) => (
-                  <p key={i} className="text-xs text-textSecondary pl-4.5 leading-relaxed">{item}</p>
+                  <div key={i} className="pl-4.5">
+                    <p className="text-xs text-textSecondary leading-relaxed">{item.risk}</p>
+                    {item.why_it_matters && (
+                      <p className="text-[11px] text-textMuted leading-relaxed mt-0.5">{item.why_it_matters}</p>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -274,9 +241,14 @@ function EvolutionRow({ entry, defaultOpen }: { entry: EvolutionEntry; defaultOp
               <p className="text-xs font-semibold text-red-400 mb-1.5 flex items-center gap-1.5">
                 <AlertCircle className="w-3 h-3" /> New
               </p>
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {entry.newRisks.map((item, i) => (
-                  <p key={i} className="text-xs text-textSecondary pl-4.5 leading-relaxed">{item}</p>
+                  <div key={i} className="pl-4.5">
+                    <p className="text-xs text-textSecondary leading-relaxed">{item.risk}</p>
+                    {item.why_it_matters && (
+                      <p className="text-[11px] text-textMuted leading-relaxed mt-0.5">{item.why_it_matters}</p>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
