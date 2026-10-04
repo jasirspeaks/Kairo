@@ -57,6 +57,15 @@ describe('reviewCall service suite', () => {
     stakeholder_signals: [
       { name: 'Sarah', role: 'Head of Ops', sentiment: 'champion', evidence: 'Explicitly asked for rollout plan' },
     ],
+    supporting_evidence: [
+      {
+        quote: 'Our current legacy vendor contract expires December 31st.',
+        speaker: 'Sarah',
+        pillar_key: 'compelling_event',
+        grounding_type: 'explicit_statement',
+        confidence: 95,
+      },
+    ],
   };
 
   beforeEach(() => {

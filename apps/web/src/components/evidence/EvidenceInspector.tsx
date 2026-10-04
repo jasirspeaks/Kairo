@@ -61,10 +61,13 @@ export function EvidenceInspector({
     if (risk) {
       if (risk.risk_category && e.pillar_key === risk.risk_category) return true;
       if (risk.title && e.quote && (
-        risk.title.toLowerCase().includes(e.quote.toLowerCase().slice(0, 20)) ||
-        e.quote.toLowerCase().includes(risk.title.toLowerCase().slice(0, 20))
+        risk.title.toLowerCase().includes(e.quote.toLowerCase()) ||
+        e.quote.toLowerCase().includes(risk.title.toLowerCase())
       )) return true;
-      if (risk.why_it_matters && e.quote && risk.why_it_matters.toLowerCase().includes(e.quote.toLowerCase().slice(0, 20))) return true;
+      if (risk.why_it_matters && e.quote && (
+        risk.why_it_matters.toLowerCase().includes(e.quote.toLowerCase()) ||
+        e.quote.toLowerCase().includes(risk.why_it_matters.toLowerCase())
+      )) return true;
       return false;
     }
     return true;

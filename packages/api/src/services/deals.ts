@@ -201,6 +201,14 @@ export async function getDealLongitudinalHistory(
 
   if (dealRes.error) throw dealRes.error;
   if (!dealRes.data) throw new Error('Deal not found');
+  if (stateRes.error) throw stateRes.error;
+  if (risksRes.error) throw risksRes.error;
+  if (pillarRes.error) throw pillarRes.error;
+  if (evidenceRes.error) throw evidenceRes.error;
+  if (transitionsRes.error) throw transitionsRes.error;
+  if (convsRes.error) throw convsRes.error;
+  if (meetingsRes.error) throw meetingsRes.error;
+  if (stakeholdersRes.error) throw stakeholdersRes.error;
 
   return {
     deal: dealRes.data,

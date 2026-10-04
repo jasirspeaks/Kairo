@@ -26,7 +26,21 @@ export function EvidenceInspectorSheet({
       return evidence.filter((e) => e.pillar_key === pillarKey);
     }
     if (risk) {
-      return evidence;
+      if (risk.risk_category) {
+        const catMatches = evidence.filter((e) => e.pillar_key === risk.risk_category);
+        if (catMatches.length > 0) return catMatches;
+      }
+      return evidence.filter((e) => {
+        if (risk.title && e.quote && (
+          e.quote.toLowerCase().includes(risk.title.toLowerCase()) ||
+          risk.title.toLowerCase().includes(e.quote.toLowerCase())
+        )) return true;
+        if (risk.why_it_matters && e.quote && (
+          e.quote.toLowerCase().includes(risk.why_it_matters.toLowerCase()) ||
+          risk.why_it_matters.toLowerCase().includes(e.quote.toLowerCase())
+        )) return true;
+        return false;
+      });
     }
     return evidence;
   }, [pillarKey, risk, evidence]);

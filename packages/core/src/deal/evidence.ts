@@ -14,6 +14,24 @@ const VALID_GROUNDING_TYPES = new Set<GroundingType>([
   'structural_absence',
 ]);
 
+export function normalizePillarKey(key: unknown): PillarKey | null {
+  if (typeof key !== 'string') return null;
+  const clean = key.trim().toLowerCase().replace(/-/g, '_');
+  if (VALID_PILLAR_KEYS.has(clean as PillarKey)) {
+    return clean as PillarKey;
+  }
+  return null;
+}
+
+export function normalizeGroundingType(type: unknown): GroundingType {
+  if (typeof type !== 'string') return 'explicit_statement';
+  const clean = type.trim().toLowerCase().replace(/-/g, '_');
+  if (VALID_GROUNDING_TYPES.has(clean as GroundingType)) {
+    return clean as GroundingType;
+  }
+  return 'explicit_statement';
+}
+
 /**
  * Normalizes any evidence input (string or object) into a canonical GroundedEvidenceItem.
  */
@@ -38,14 +56,8 @@ export function normalizeEvidenceItem(raw: unknown): GroundedEvidenceItem | null
     if (!quote) return null;
 
     const speaker = typeof obj.speaker === 'string' && obj.speaker.trim() ? obj.speaker.trim() : null;
-    const pillar_key =
-      typeof obj.pillar_key === 'string' && VALID_PILLAR_KEYS.has(obj.pillar_key as PillarKey)
-        ? (obj.pillar_key as PillarKey)
-        : null;
-    const grounding_type =
-      typeof obj.grounding_type === 'string' && VALID_GROUNDING_TYPES.has(obj.grounding_type as GroundingType)
-        ? (obj.grounding_type as GroundingType)
-        : 'explicit_statement';
+    const pillar_key = normalizePillarKey(obj.pillar_key);
+    const grounding_type = normalizeGroundingType(obj.grounding_type);
     const confidence =
       typeof obj.confidence === 'number' && !Number.isNaN(obj.confidence)
         ? Math.max(0, Math.min(100, Math.round(obj.confidence)))

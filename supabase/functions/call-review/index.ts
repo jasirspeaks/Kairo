@@ -203,10 +203,10 @@ KEY FOLLOW-UP MESSAGE (call.key_follow_up_message): short, natural, ready-to-sen
 
 MANAGER NOTE (call.manager_note / deal.manager_note): max 20 words each, blunt and judgment-oriented.
 
-SUPPORTING EVIDENCE: 2-4 of the strongest grounded observations from this transcript at the deal level. Each item should be an object with:
-- quote: exact quote or concrete observation snippet from transcript
+SUPPORTING EVIDENCE: 2-4 of the strongest verbatim quotes from this transcript at the deal level that ground your qualification read. Each item must be an object with:
+- quote: exact, literal spoken quote from the transcript (verbatim substring; never summarize or paraphrase)
 - speaker: named buyer/prospect speaker or 'Prospect'/'Rep' if unnamed
-- pillar_key: compelling_event | economic_buyer | decision_process | budget | champion
+- pillar_key: EXACTLY one of compelling_event | economic_buyer | decision_process | budget | champion. Every quote MUST be assigned to the qualification pillar it directly evidences.
 - grounding_type: explicit_statement (verbatim stated fact) | behavioral_inference (deduced from hesitation/evasion/enthusiasm) | structural_absence (crucial item asked but unanswered or silent)
 - confidence: integer 0-100 reflecting grounding strength
 
@@ -341,7 +341,7 @@ function normalizeRisk(risk: unknown, label: string): Json {
 
 function normalizeSupportingEvidence(raw: unknown): Json[] {
   if (!Array.isArray(raw)) return [];
-  const items = raw.slice(0, 6);
+  const items = raw.slice(0, 8);
   const result: Json[] = [];
 
   for (const item of items) {
@@ -349,7 +349,7 @@ function normalizeSupportingEvidence(raw: unknown): Json[] {
       result.push({
         quote: item.trim(),
         grounding_type: 'explicit_statement',
-        confidence: 100,
+        confidence: 80,
         pillar_key: null,
         speaker: null,
       });
@@ -359,13 +359,15 @@ function normalizeSupportingEvidence(raw: unknown): Json[] {
       if (!quote) continue;
 
       const speaker = typeof obj.speaker === 'string' && obj.speaker.trim() ? obj.speaker.trim() : null;
-      const pillar_key = typeof obj.pillar_key === 'string' && PILLAR_KEYS.includes(obj.pillar_key as any)
-        ? obj.pillar_key
+      const rawPillar = typeof obj.pillar_key === 'string' ? obj.pillar_key.trim().toLowerCase().replace(/-/g, '_') : '';
+      const pillar_key = rawPillar && PILLAR_KEYS.includes(rawPillar as any)
+        ? rawPillar
         : null;
-      const grounding_type = typeof obj.grounding_type === 'string' && VALID_GROUNDING_TYPES.has(obj.grounding_type)
-        ? obj.grounding_type
+      const rawGrounding = typeof obj.grounding_type === 'string' ? obj.grounding_type.trim().toLowerCase().replace(/-/g, '_') : '';
+      const grounding_type = VALID_GROUNDING_TYPES.has(rawGrounding)
+        ? rawGrounding
         : 'explicit_statement';
-      const rawConf = typeof obj.confidence === 'number' && !Number.isNaN(obj.confidence) ? obj.confidence : 100;
+      const rawConf = typeof obj.confidence === 'number' && !Number.isNaN(obj.confidence) ? obj.confidence : 80;
       const confidence = Math.max(0, Math.min(100, Math.round(rawConf)));
 
       result.push({
@@ -684,7 +686,7 @@ const EVIDENCE_ITEM_SCHEMA = {
     },
     confidence: { type: 'NUMBER' },
   },
-  required: ['quote'],
+  required: ['quote', 'speaker', 'pillar_key', 'grounding_type', 'confidence'],
 };
 
 const RESPONSE_SCHEMA = {
