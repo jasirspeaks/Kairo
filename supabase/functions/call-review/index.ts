@@ -437,9 +437,70 @@ function applyDealConsistency(raw: Json): Json {
   return raw;
 }
 
-function normalizeMissing(arr: unknown, label: string): Json[] {
-  if (!Array.isArray(arr)) throw new Error(`${label} must be an array.`);
-  return arr.slice(0, 3);
+function normalizeMissing(raw: unknown, label: string): Json[] {
+  // If undefined or null, it represents an empty list (model omitted optional field or found no missing info)
+  if (raw === undefined || raw === null) {
+    return [];
+  }
+
+  // If a single string was returned
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed || /^(none|n\/?a|nil|nothing|\[\]|\{\})$/i.test(trimmed)) {
+      return [];
+    }
+    return [{ gap: trimmed, question_to_answer: '' }];
+  }
+
+  // If a single object was returned instead of an array
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    const gap = typeof obj.gap === 'string' ? obj.gap.trim() : '';
+    const question = typeof obj.question_to_answer === 'string'
+      ? obj.question_to_answer.trim()
+      : typeof obj.question === 'string'
+      ? (obj.question as string).trim()
+      : '';
+
+    if (gap || question) {
+      return [{ gap: gap || question, question_to_answer: question }];
+    }
+    if (Object.keys(obj).length === 0) {
+      return [];
+    }
+    throw new Error(`${label} contains an unrecognized object structure.`);
+  }
+
+  // If an array was returned
+  if (Array.isArray(raw)) {
+    const result: Json[] = [];
+    for (const item of raw.slice(0, 3)) {
+      if (!item) continue;
+      if (typeof item === 'string') {
+        const trimmed = item.trim();
+        if (trimmed && !/^(none|n\/?a|nil|nothing)$/i.test(trimmed)) {
+          result.push({ gap: trimmed, question_to_answer: '' });
+        }
+      } else if (typeof item === 'object') {
+        const obj = item as Record<string, unknown>;
+        const gap = typeof obj.gap === 'string' ? obj.gap.trim() : '';
+        const question = typeof obj.question_to_answer === 'string'
+          ? obj.question_to_answer.trim()
+          : typeof obj.question === 'string'
+          ? (obj.question as string).trim()
+          : '';
+
+        if (gap || question) {
+          result.push({ gap: gap || question, question_to_answer: question });
+        }
+      } else {
+        throw new Error(`${label} item must be an object with gap and question_to_answer or a string.`);
+      }
+    }
+    return result;
+  }
+
+  throw new Error(`${label} has invalid type ${typeof raw}. Expected an array of missing information.`);
 }
 
 // Fallback confidence per status, used only when the model omits confidence
@@ -689,6 +750,18 @@ const EVIDENCE_ITEM_SCHEMA = {
   required: ['quote', 'speaker', 'pillar_key', 'grounding_type', 'confidence'],
 };
 
+const MISSING_INFO_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      gap: { type: 'STRING' },
+      question_to_answer: { type: 'STRING' },
+    },
+    required: ['gap', 'question_to_answer'],
+  },
+};
+
 const RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -699,18 +772,12 @@ const RESPONSE_SCHEMA = {
         verdict: { type: 'STRING' },
         reason: { type: 'STRING' },
         highest_priority_risk: RISK_SCHEMA,
-        what_youre_missing: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: { gap: { type: 'STRING' }, question_to_answer: { type: 'STRING' } },
-          },
-        },
+        what_youre_missing: MISSING_INFO_SCHEMA,
         recommended_next_action: { type: 'STRING' },
         key_follow_up_message: { type: 'STRING' },
         manager_note: { type: 'STRING' },
       },
-      required: ['call_status', 'verdict', 'reason', 'highest_priority_risk', 'manager_note'],
+      required: ['call_status', 'verdict', 'reason', 'highest_priority_risk', 'what_youre_missing', 'manager_note'],
     },
     deal: {
       type: 'OBJECT',
@@ -723,13 +790,7 @@ const RESPONSE_SCHEMA = {
         status_reason: { type: 'STRING' },
         health_score: { type: 'NUMBER' },
         highest_priority_risk: RISK_SCHEMA,
-        what_youre_missing: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: { gap: { type: 'STRING' }, question_to_answer: { type: 'STRING' } },
-          },
-        },
+        what_youre_missing: MISSING_INFO_SCHEMA,
         recommended_next_action: { type: 'STRING' },
         manager_note: { type: 'STRING' },
         // The field this whole schema exists to protect: declared required
@@ -752,7 +813,7 @@ const RESPONSE_SCHEMA = {
       },
       required: [
         'status', 'confidence', 'status_reason', 'health_score',
-        'highest_priority_risk', 'manager_note', 'suggested_deal_stage', 'pillars',
+        'highest_priority_risk', 'what_youre_missing', 'manager_note', 'suggested_deal_stage', 'pillars',
       ],
     },
     what_changed_since_last_call: {
@@ -899,8 +960,8 @@ async function callGemini(prompt: string, model: string): Promise<string> {
 const PROMPT_VERSION = 'v2.1.0';
 const SYSTEM_PROMPT_HASH = 'kairo-sys-2.1.0';
 
-async function callGeminiWithFallback(prompt: string): Promise<{
-  parsed: Json;
+async function callGeminiWithFallback(prompt: string, isFirstCall: boolean): Promise<{
+  extraction: Json;
   modelUsed: string;
   modelsAttempted: string[];
   fallbackOccurred: boolean;
@@ -918,8 +979,9 @@ async function callGeminiWithFallback(prompt: string): Promise<{
       try {
         const text = await callGemini(prompt, model);
         const parsed = parseModelJson(text);
+        const extraction = normalizeExtraction(parsed, isFirstCall);
         return {
-          parsed,
+          extraction,
           modelUsed: model,
           modelsAttempted,
           fallbackOccurred: modelIndex > 0,
@@ -931,7 +993,10 @@ async function callGeminiWithFallback(prompt: string): Promise<{
         const isMalformed =
           lastError.message === 'MAX_TOKENS_TRUNCATED' ||
           lastError.message === 'Model did not return JSON.' ||
-          lastError instanceof SyntaxError;
+          lastError instanceof SyntaxError ||
+          lastError.message.includes('must be an array') ||
+          lastError.message.includes('Missing ') ||
+          lastError.message.includes('Invalid ');
 
         console.error(`call-review: ${model} attempt ${attempt} failed:`, lastError.message);
 
@@ -1219,12 +1284,11 @@ serve(async (req) => {
 
     userMessage += `TRANSCRIPT\n${transcript}`;
 
-    const { parsed, modelUsed, modelsAttempted, fallbackOccurred, rawText } =
-      await callGeminiWithFallback(userMessage);
+    const { extraction, modelUsed, modelsAttempted, fallbackOccurred, rawText } =
+      await callGeminiWithFallback(userMessage, isFirstCall);
     inferenceModelUsed = modelUsed;
     inferenceAttempts = modelsAttempted;
     console.log(`call-review: served by ${modelUsed}`);
-    const extraction = normalizeExtraction(parsed, isFirstCall);
 
     const latencyMs = Date.now() - startTime;
 
@@ -1259,7 +1323,8 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('call-review error:', err);
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('call-review error:', errorMsg);
 
     if (quotaConsumed && !isInternalReview && userId) {
       try {
@@ -1268,14 +1333,26 @@ serve(async (req) => {
             p_event_id: consumedEventId,
             p_user_id: userId,
           });
+          console.log(`call-review: refunded review quota for user ${userId}, event ${consumedEventId}`);
         }
       } catch (rollbackErr) {
         console.error('call-review: failed to refund quota event:', rollbackErr);
       }
     }
 
+    let clientMessage = errorMsg;
+    if (
+      errorMsg.includes('must be an array') ||
+      errorMsg.includes('Missing ') ||
+      errorMsg.includes('Invalid ') ||
+      errorMsg.includes('SyntaxError') ||
+      errorMsg.includes('AI review generation failed')
+    ) {
+      clientMessage = 'We encountered an issue analyzing this call transcript cleanly. Your review quota was not charged. Please try again in a moment.';
+    }
+
     return new Response(JSON.stringify({
-      error: err instanceof Error ? err.message : 'Internal server error',
+      error: clientMessage,
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

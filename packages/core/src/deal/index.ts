@@ -8,4 +8,5 @@ export * from './healthScore';
 export * from './activity';
 export * from './consistency';
 export * from './riskEvolution';
+export * from './normalization';
 
