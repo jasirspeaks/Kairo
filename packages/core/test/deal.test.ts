@@ -193,13 +193,83 @@ describe('Domain Deal Logic - Activity Timeline', () => {
     ];
 
     const timeline = buildActivityTimeline(calls, stakeholders);
-    expect(timeline.length).toBe(3);
-    expect(timeline[0].id).toBe('c2'); // Jan 20
-    expect(timeline[1].id).toBe('s1'); // Jan 15
-    expect(timeline[2].id).toBe('c1'); // Jan 10
+    // Jan 20: stage_transition (c2) + call (c2); Jan 15: stakeholder (s1); Jan 10: call (c1)
+    expect(timeline.length).toBe(4);
+    expect(timeline[0].kind).toBe('stage_transition');
+    expect(timeline[1].id).toBe('c2');
+    expect(timeline[2].id).toBe('s1');
+    expect(timeline[3].id).toBe('c1');
   });
 
-  it('correctly includes stage transitions in chronological order', () => {
+  // 1. One-call deal: No stage-change event
+  it('scenario 1: one-call deal never displays a stage-change event', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, []);
+    expect(timeline.length).toBe(1);
+    expect(timeline[0].kind).toBe('call');
+    expect(timeline.some((item) => item.kind === 'stage_transition')).toBe(false);
+  });
+
+  // 2. Two-call deal with no stage change
+  it('scenario 2: two-call deal with same stage displays no stage-change event', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+      {
+        id: 'c2',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 2',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 2',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-20T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, []);
+    expect(timeline.length).toBe(2);
+    expect(timeline.filter((item) => item.kind === 'call').length).toBe(2);
+    expect(timeline.some((item) => item.kind === 'stage_transition')).toBe(false);
+  });
+
+  // 3. Two-call deal with stage change
+  it('scenario 3: two-call deal with stage change displays exactly one stage-change event', () => {
     const calls: Conversation[] = [
       {
         id: 'c1',
@@ -216,30 +286,350 @@ describe('Domain Deal Logic - Activity Timeline', () => {
         status: 'complete',
         created_at: '2026-01-10T10:00:00Z',
       },
-    ];
-
-    const stakeholders: Stakeholder[] = [];
-
-    const transitions = [
       {
-        id: 't1',
+        id: 'c2',
+        user_id: 'u1',
         deal_id: 'd1',
-        conversation_id: 'c1',
-        from_stage: 'Discovery' as const,
-        to_stage: 'Proposal' as const,
-        from_status: 'Healthy' as const,
-        to_status: 'Healthy' as const,
-        health_score_delta: 5,
-        transition_reason: 'Proposal requested by buyer',
-        created_at: '2026-01-12T10:00:00Z',
+        title: 'Call 2',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 2',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-20T10:00:00Z',
       },
     ];
 
-    const timeline = buildActivityTimeline(calls, stakeholders, transitions);
-    expect(timeline.length).toBe(2);
-    expect(timeline[0].id).toBe('t1');
-    expect(timeline[0].kind).toBe('stage_transition');
-    expect(timeline[1].id).toBe('c1');
-    expect(timeline[1].kind).toBe('call');
+    const timeline = buildActivityTimeline(calls, []);
+    const stageEvents = timeline.filter((item) => item.kind === 'stage_transition');
+    expect(stageEvents.length).toBe(1);
+    if (stageEvents[0].kind === 'stage_transition') {
+      expect(stageEvents[0].transition.from_stage).toBe('Qualification');
+      expect(stageEvents[0].transition.to_stage).toBe('Discovery');
+    }
+  });
+
+  // 4. Three-call deal with stage change on call 3
+  it('scenario 4: three-call deal with stage change on call 3 displays one stage-change event', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+      {
+        id: 'c2',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 2',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 2',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-20T10:00:00Z',
+      },
+      {
+        id: 'c3',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 3',
+        deal_stage: 'Evaluation',
+        input_type: 'transcript',
+        transcript: 'Call 3',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-30T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, []);
+    const stageEvents = timeline.filter((item) => item.kind === 'stage_transition');
+    expect(stageEvents.length).toBe(1);
+    if (stageEvents[0].kind === 'stage_transition') {
+      expect(stageEvents[0].transition.from_stage).toBe('Discovery');
+      expect(stageEvents[0].transition.to_stage).toBe('Evaluation');
+      expect(stageEvents[0].transition.conversation_id).toBe('c3');
+    }
+  });
+
+  // 5. Multiple consecutive stage changes
+  it('scenario 5: multiple consecutive stage changes generate transitions for each change', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: 'Qualification',
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+      {
+        id: 'c2',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 2',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 2',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-20T10:00:00Z',
+      },
+      {
+        id: 'c3',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 3',
+        deal_stage: 'Evaluation',
+        input_type: 'transcript',
+        transcript: 'Call 3',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-30T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, []);
+    const stageEvents = timeline.filter((item) => item.kind === 'stage_transition');
+    expect(stageEvents.length).toBe(2);
+
+    // Newest first
+    if (stageEvents[0].kind === 'stage_transition' && stageEvents[1].kind === 'stage_transition') {
+      expect(stageEvents[0].transition.from_stage).toBe('Discovery');
+      expect(stageEvents[0].transition.to_stage).toBe('Evaluation');
+
+      expect(stageEvents[1].transition.from_stage).toBe('Qualification');
+      expect(stageEvents[1].transition.to_stage).toBe('Discovery');
+    }
+  });
+
+  // 6. Initial deal stage differing from first reviewed call
+  it('scenario 6: first call stage differing from placeholder deal stage creates NO stage transition', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: 'Evaluation', // e.g. deal creation was Qualification, but first call jump-starts Evaluation
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, []);
+    expect(timeline.length).toBe(1);
+    expect(timeline[0].kind).toBe('call');
+    expect(timeline.some((item) => item.kind === 'stage_transition')).toBe(false);
+  });
+
+  // 7. Missing previous stage
+  it('scenario 7: unanalyzed/missing stage calls do not create invalid transitions', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: null,
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'pending',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+      {
+        id: 'c2',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 2',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 2',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-20T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, []);
+    // Call 2 is the first call establishing a valid stage -> NO stage transition
+    expect(timeline.some((item) => item.kind === 'stage_transition')).toBe(false);
+    expect(timeline.filter((item) => item.kind === 'call').length).toBe(2);
+  });
+
+  // 8. Existing historical deals with legacy transition records
+  it('scenario 8: historical deals with legacy first-call transition rows are sanitized', () => {
+    const calls: Conversation[] = [
+      {
+        id: 'c1',
+        user_id: 'u1',
+        deal_id: 'd1',
+        title: 'Call 1',
+        deal_stage: 'Discovery',
+        input_type: 'transcript',
+        transcript: 'Call 1',
+        audio_url: null,
+        analysis_json: null,
+        overall_score: null,
+        sub_scores: null,
+        status: 'complete',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+    ];
+
+    // Database has legacy row created by old persist_deal_review on call 1
+    const legacyTransitions = [
+      {
+        id: 'legacy-t1',
+        deal_id: 'd1',
+        conversation_id: 'c1',
+        from_stage: 'Qualification' as const,
+        to_stage: 'Discovery' as const,
+        from_status: null,
+        to_status: 'Healthy' as const,
+        health_score_delta: 0,
+        transition_reason: 'Legacy reason',
+        created_at: '2026-01-10T10:00:00Z',
+      },
+    ];
+
+    const timeline = buildActivityTimeline(calls, [], legacyTransitions);
+    // Legacy first-call transition MUST be excluded
+    expect(timeline.length).toBe(1);
+    expect(timeline[0].kind).toBe('call');
+    expect(timeline.some((item) => item.kind === 'stage_transition')).toBe(false);
+  });
+
+  // Regression tests explicitly specified by user
+  describe('Regression Requirements', () => {
+    it('first call Qualification -> Discovery produces NO stage-update event', () => {
+      const calls: Conversation[] = [
+        {
+          id: 'c1',
+          user_id: 'u1',
+          deal_id: 'd1',
+          title: 'Call 1',
+          deal_stage: 'Discovery',
+          input_type: 'transcript',
+          transcript: 'Call 1',
+          audio_url: null,
+          analysis_json: null,
+          overall_score: null,
+          sub_scores: null,
+          status: 'complete',
+          created_at: '2026-01-10T10:00:00Z',
+        },
+      ];
+
+      const transitions = [
+        {
+          id: 't1',
+          deal_id: 'd1',
+          conversation_id: 'c1',
+          from_stage: 'Qualification' as const,
+          to_stage: 'Discovery' as const,
+          from_status: null,
+          to_status: 'Healthy' as const,
+          health_score_delta: 0,
+          transition_reason: 'Initial qualification',
+          created_at: '2026-01-10T10:00:00Z',
+        },
+      ];
+
+      const timeline = buildActivityTimeline(calls, [], transitions);
+      expect(timeline.some((item) => item.kind === 'stage_transition')).toBe(false);
+      expect(timeline.length).toBe(1);
+      expect(timeline[0].kind).toBe('call');
+    });
+
+    it('call 1 Qualification, call 2 Discovery produces ONE stage-update event Qualification -> Discovery', () => {
+      const calls: Conversation[] = [
+        {
+          id: 'c1',
+          user_id: 'u1',
+          deal_id: 'd1',
+          title: 'Call 1',
+          deal_stage: 'Qualification',
+          input_type: 'transcript',
+          transcript: 'Call 1',
+          audio_url: null,
+          analysis_json: null,
+          overall_score: null,
+          sub_scores: null,
+          status: 'complete',
+          created_at: '2026-01-10T10:00:00Z',
+        },
+        {
+          id: 'c2',
+          user_id: 'u1',
+          deal_id: 'd1',
+          title: 'Call 2',
+          deal_stage: 'Discovery',
+          input_type: 'transcript',
+          transcript: 'Call 2',
+          audio_url: null,
+          analysis_json: null,
+          overall_score: null,
+          sub_scores: null,
+          status: 'complete',
+          created_at: '2026-01-20T10:00:00Z',
+        },
+      ];
+
+      const timeline = buildActivityTimeline(calls, []);
+      const stageEvents = timeline.filter((item) => item.kind === 'stage_transition');
+      expect(stageEvents.length).toBe(1);
+      if (stageEvents[0].kind === 'stage_transition') {
+        expect(stageEvents[0].transition.from_stage).toBe('Qualification');
+        expect(stageEvents[0].transition.to_stage).toBe('Discovery');
+      }
+    });
   });
 });
+
