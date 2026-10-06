@@ -130,6 +130,7 @@ export interface DealLevelReview {
   recommended_next_action: string;
   manager_note: string;
   pillars?: DealPillars;
+  stage_justification?: string;
   suggested_deal_stage?: DealStage;
   stage_regression_override?: boolean;
 }

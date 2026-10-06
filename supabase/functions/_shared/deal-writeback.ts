@@ -63,6 +63,7 @@ export type Review = {
     manager_note: string;
     status_reason: string;
     pillars?: unknown;
+    stage_justification?: string;
     suggested_deal_stage?: string;
     stage_regression_override?: boolean;
   };

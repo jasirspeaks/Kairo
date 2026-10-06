@@ -275,6 +275,7 @@ export function normalizeDeal(raw: unknown): DealReview['deal'] {
   const highest_priority_risk = normalizeRisk(deal.highest_priority_risk, 'deal.highest_priority_risk');
   const what_youre_missing = normalizeMissingInfo(deal.what_youre_missing, 'deal.what_youre_missing');
   const pillars = normalizePillars(deal.pillars);
+  const stage_justification = typeof deal.stage_justification === 'string' ? deal.stage_justification.trim() : '';
   const suggested_deal_stage = normalizeSuggestedStage(deal.suggested_deal_stage);
   const stage_regression_override = deal.stage_regression_override === true;
 
@@ -294,6 +295,7 @@ export function normalizeDeal(raw: unknown): DealReview['deal'] {
     recommended_next_action: typeof deal.recommended_next_action === 'string' ? deal.recommended_next_action : '',
     manager_note,
     pillars,
+    stage_justification,
     suggested_deal_stage,
     stage_regression_override,
   };

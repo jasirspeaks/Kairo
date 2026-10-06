@@ -84,28 +84,62 @@ Score pillars against the deal's FULL history when prior deal state is provided,
 
 The pillars object must always contain exactly these five keys, every time, first call or not.
 
-DEAL STAGE INFERENCE (deal.suggested_deal_stage)
+DEAL STAGE INFERENCE (deal.stage_justification & deal.suggested_deal_stage)
 
-Alongside status, health, and pillars, you must also infer what Deal Stage this deal now sits at, based on what has concretely happened across the deal's history (this call plus any prior calls), not what the seller hopes happens next.
+Alongside status, health, and pillars, you must also infer what Deal Stage this deal now sits at.
+Deal stage reflects what has CONCRETELY AND ACTUALLY OCCURRED in the past or during this call. It NEVER reflects what parties intend, schedule, promise, or hope to do next.
 
-The stages, in forward order, are: Qualification, Discovery, Demo, Evaluation, Alignment, Proposal, Negotiation, Procurement, Decision.
+CRITICAL DISTINCTION: EXECUTED REALITY VS. FUTURE INTENT / NEXT STEPS
+- A statement of future action ("We'll schedule a demo next week", "I'll send you pricing tomorrow", "Procurement will review this later", "Let's set up a technical evaluation") describes NEXT STEPS. It proves ZERO progress toward that future stage.
+- General discussions of pricing models or list pricing ("Our plan starts at $50/user", "What is your typical pricing model?") do NOT constitute a Proposal or Negotiation.
+- Deal stage only advances when concrete evidence demonstrates that the core event of that stage has ALREADY BEEN EXECUTED.
 
-- Qualification: Early contact; still establishing whether this is a real fit worth pursuing.
-- Discovery: Actively exploring the buyer's problem, needs, current state -- no demo or solution walkthrough has happened yet.
-- Demo: A product/solution walkthrough has actually been given (not just scheduled).
-- Evaluation: The buyer is actively assessing the solution post-demo -- trials, technical review, comparing options.
-- Alignment: Working to get internal stakeholders (beyond the primary contact) aligned on moving forward.
-- Proposal: A formal proposal, pricing, or scope has actually been sent or presented.
-- Negotiation: Terms, pricing, or scope are being actively negotiated back and forth.
-- Procurement: Commercial/legal process (contracts, security review, procurement) is underway.
-- Decision: Final decision-maker review through waiting on a signature.
+STAGE CONTRACT (POSITIVE & NEGATIVE EVIDENCE FOR EVERY STAGE):
 
-Rules for this inference:
-- Base it on concrete events that happened (a demo was given, a proposal was sent, pricing was negotiated), never on what's scheduled, hoped for, or merely discussed as a future step. A demo being scheduled for next week does NOT move the deal to Demo stage; the deal reaches Demo stage only once that demo has actually happened.
-- Stages only ever move forward or stay the same from this inference. If this call shows no clear evidence of forward progress past the deal's current stage, suggested_deal_stage should simply repeat the current stage -- do not infer a forward stage you can't support, and do not infer a backward one.
+1. Qualification
+- POSITIVE EVIDENCE: Initial contact; exploring basic fit, company profile, and whether there is mutual relevance to pursue a conversation.
+- NEGATIVE EVIDENCE: Do NOT advance past Qualification if the call only touched basic introductions or if future meetings are merely scheduled.
+
+2. Discovery
+- POSITIVE EVIDENCE: Concrete investigation of the buyer's actual current state, business pain, requirements, workflows, existing tools, and desired outcomes.
+- NEGATIVE EVIDENCE: Do NOT infer Discovery merely because a future discovery call was agreed upon. Do NOT stay in Qualification if deep business discovery was actively conducted.
+
+3. Demo
+- POSITIVE EVIDENCE: An actual product/solution walkthrough or live screen-share demonstration occurred during the call.
+- NEGATIVE EVIDENCE: A demo scheduled for next week, offered by the rep, or requested by the buyer does NOT qualify as Demo stage.
+
+4. Evaluation
+- POSITIVE EVIDENCE: Active post-demo assessment is underway: hands-on sandbox/trial feedback reviewed, technical POC validation, deep security/architecture assessment, or structured vendor comparison against concrete criteria.
+- NEGATIVE EVIDENCE: Generic interest ("We will evaluate this"), scheduling a future technical review, or discussing a hypothetical trial does NOT qualify as Evaluation stage.
+
+5. Alignment
+- POSITIVE EVIDENCE: Active internal stakeholder consensus building is underway: cross-functional buy-in sessions, multi-threaded alignment meetings with department heads/champions actively driving internal agreement.
+- NEGATIVE EVIDENCE: Merely naming an executive ("My VP is John") or saying "I'll mention this to my boss" does NOT qualify as Alignment.
+
+6. Proposal
+- POSITIVE EVIDENCE: A formal customized proposal, quote, statement of work, or pricing package with specific dollar amounts/scope has actually been presented, delivered, or formally reviewed with the buyer.
+- NEGATIVE EVIDENCE: Answering general pricing questions, discussing list/ballpark pricing, or promising to "send over a proposal tomorrow" does NOT qualify as Proposal stage.
+
+7. Negotiation
+- POSITIVE EVIDENCE: Active back-and-forth give-and-take negotiation over commercial terms, discount requests, contractual terms, payment terms, or scope concessions ("If you can do $65k we can sign", "Can we get net 60 terms?").
+- NEGATIVE EVIDENCE: Rep reviewing standard pricing tiers or buyer asking "Is pricing negotiable?" without active term-by-term negotiation does NOT qualify as Negotiation.
+
+8. Procurement
+- POSITIVE EVIDENCE: Formal legal, security, compliance, or procurement review is actively in flight (e.g. MSAs/DPAs being redlined by legal, security review questionnaires submitted, vendor onboarding underway).
+- NEGATIVE EVIDENCE: Casual remarks ("We have a procurement department" or "Eventually this will go to legal") do NOT qualify as Procurement.
+
+9. Decision
+- POSITIVE EVIDENCE: Final review with the ultimate decision-maker is in progress, pending formal board/executive sign-off, or the contract is actively out for signature.
+- NEGATIVE EVIDENCE: Vague statements like "We will make a decision soon" or "We hope to wrap this up this quarter" do NOT qualify as Decision.
+
+STAGE JUSTIFICATION (deal.stage_justification):
+You MUST provide a concise 1-2 sentence justification citing the exact executed event (and verbatim quote where possible) that anchors your chosen suggested_deal_stage. If holding stage or on a first call, cite what was concretely proven and what has not yet occurred.
+
+Rules for stage progression:
+- Stages only ever move forward or stay the same from this inference unless stage_regression_override is true. If this call shows no clear evidence of forward progress past the deal's current stage, suggested_deal_stage should simply repeat the current stage -- do not infer a forward stage you can't support with concrete executed events.
 - The ONLY exception is stage_regression_override (see below): a rare, explicit case where the deal has genuinely reopened qualification.
-- Do not skip stages you have no evidence for. If a proposal was just sent but there's no evidence Evaluation or Alignment ever concretely happened, it's still reasonable to move to Proposal directly -- infer the furthest concretely-evidenced stage, not a mechanical one-step-at-a-time crawl.
-- If no prior deal state was provided (first call) and no deal_stage is given in context, infer the most concretely evidenced stage from this call alone, defaulting to Qualification if the call is too early to tell.
+- Infer the furthest concretely-evidenced stage that actually occurred, but only when supported by concrete executed events, not unverified assumptions.
+- If no prior deal state was provided (first call), infer the stage from what actually occurred on this call alone, landing on Qualification or Discovery unless an actual demo or later stage event genuinely took place.
 
 STAGE REGRESSION OVERRIDE (deal.stage_regression_override)
 
@@ -212,7 +246,7 @@ SUPPORTING EVIDENCE: 2-4 of the strongest verbatim quotes from this transcript a
 
 PILLARS (deal.pillars): see the dedicated section above. Exactly five keys, every time: compelling_event, economic_buyer, decision_process, budget, champion.
 
-DEAL STAGE (deal.suggested_deal_stage / deal.stage_regression_override): see the dedicated sections above.
+DEAL STAGE (deal.stage_justification / deal.suggested_deal_stage / deal.stage_regression_override): see the dedicated sections above.
 
 STYLE
 
@@ -241,6 +275,7 @@ BASE SCHEMA (first call, no what_changed_since_last_call key):
     "what_youre_missing": [ { "gap": "", "question_to_answer": "" } ],
     "recommended_next_action": "",
     "manager_note": "",
+    "stage_justification": "",
     "suggested_deal_stage": "Qualification | Discovery | Demo | Evaluation | Alignment | Proposal | Negotiation | Procurement | Decision",
     "stage_regression_override": false,
     "pillars": {
@@ -268,7 +303,7 @@ BASE SCHEMA (first call, no what_changed_since_last_call key):
 SUBSEQUENT-CALL SCHEMA (include what_changed_since_last_call at the top level, alongside call/deal):
 {
   "call": { ...same shape as above... },
-  "deal": { ...same shape as above, including pillars, suggested_deal_stage, and stage_regression_override... },
+  "deal": { ...same shape as above, including pillars, stage_justification, suggested_deal_stage, and stage_regression_override... },
   "what_changed_since_last_call": {
     "resolved": [ { "risk": "", "category": "compelling_event | economic_buyer | decision_process | budget | champion | competitor_threat | procurement_delay | general_risk" } ],
     "persists": [ { "risk": "", "category": "compelling_event | economic_buyer | decision_process | budget | champion | competitor_threat | procurement_delay | general_risk" } ],
@@ -619,6 +654,7 @@ function normalizeDeal(raw: unknown): Json {
   deal.highest_priority_risk = normalizeRisk(deal.highest_priority_risk, 'deal.highest_priority_risk');
   deal.what_youre_missing = normalizeMissing(deal.what_youre_missing, 'deal.what_youre_missing');
   deal.pillars = normalizePillars(deal.pillars);
+  deal.stage_justification = typeof deal.stage_justification === 'string' ? deal.stage_justification.trim() : '';
   deal.suggested_deal_stage = normalizeSuggestedStage(deal.suggested_deal_stage);
   deal.stage_regression_override = deal.stage_regression_override === true;
 
@@ -793,6 +829,7 @@ const RESPONSE_SCHEMA = {
         what_youre_missing: MISSING_INFO_SCHEMA,
         recommended_next_action: { type: 'STRING' },
         manager_note: { type: 'STRING' },
+        stage_justification: { type: 'STRING' },
         // The field this whole schema exists to protect: declared required
         // and constrained to exactly DEAL_STAGE_VALUES, so Gemini cannot
         // return the response at all without a valid enum value here --
@@ -813,7 +850,7 @@ const RESPONSE_SCHEMA = {
       },
       required: [
         'status', 'confidence', 'status_reason', 'health_score',
-        'highest_priority_risk', 'what_youre_missing', 'manager_note', 'suggested_deal_stage', 'pillars',
+        'highest_priority_risk', 'what_youre_missing', 'manager_note', 'stage_justification', 'suggested_deal_stage', 'pillars',
       ],
     },
     what_changed_since_last_call: {
@@ -1222,9 +1259,9 @@ serve(async (req) => {
       // and the instruction is stated as a directive, not a parenthetical.
       if (deal_context.deal_stage && deal_context.previous_review) {
         userMessage += `Current stage on record: ${deal_context.deal_stage}\n`;
-        userMessage += `This is the stage the deal's most recent review concretely established -- it is evidence-backed, not a default. Your job on THIS call is to determine whether anything in the transcript concretely moves the deal past this stage. Default to repeating "${deal_context.deal_stage}" ONLY if nothing in this call clears the bar for the next stage. Do not move backward from it unless stage_regression_override applies.\n`;
+        userMessage += `This is the stage the deal's most recent review concretely established. Your job on THIS call is to determine whether anything in the transcript provides concrete evidence of an executed event that moves the deal past this stage. Distinguish executed events from future intent (e.g. scheduling a demo != Demo, promising a proposal != Proposal). Default to repeating "${deal_context.deal_stage}" unless concrete evidence clears the bar for a later stage or stage_regression_override applies.\n`;
       } else if (isFirstCall) {
-        userMessage += `This is a brand-new deal with no prior review. Ignore any placeholder stage the app may track internally -- it is not a real assessment. Infer suggested_deal_stage from this call's content alone: read what concretely happened (discovery questions, a demo actually given, pricing actually discussed, etc.) and pick the furthest stage the transcript actually supports. Do not default to Qualification out of caution -- only land there if the call genuinely shows nothing more than early qualification.\n`;
+        userMessage += `This is a brand-new deal with no prior review. Ignore any placeholder stage the app may track internally -- it is not a real assessment. Infer suggested_deal_stage and stage_justification from this call's content alone based on what CONCRETELY OCCURRED on this call (e.g. basic fit qualification, in-depth discovery, product demo actually given). Distinguish executed events from future plans (e.g. a demo scheduled for next week is NOT Demo stage). Land on Qualification or Discovery unless an actual product demo or later stage event genuinely occurred on this call.\n`;
       }
 
       if (deal_context.deal_notes) {
