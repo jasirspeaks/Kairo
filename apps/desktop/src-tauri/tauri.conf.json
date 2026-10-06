@@ -28,7 +28,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,6 +39,12 @@
     ]
   },
   "plugins": {
-    "opener": {}
+    "opener": {},
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ0NDMxRjNERDY5RjRDNzEKUldSeFRKL1dQUjlEMUtYelgwbU5RNGRLZ04zeXZFZURldDVQblRPckV3Y1h2MU9ialFLN3ppblIK",
+      "endpoints": [
+        "https://github.com/jasirspeaks/Kairo/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

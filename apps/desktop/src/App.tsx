@@ -21,7 +21,9 @@ import { Inbox } from '@web/pages/app/Inbox';
 // Desktop-specific capabilities
 import { TitleBar } from './components/TitleBar';
 import { ActiveMeetingBar } from './components/ActiveMeetingBar';
+import { UpdateNotification } from './components/UpdateNotification';
 import { useMeetingWatcher } from './hooks/useMeetingWatcher';
+import { useDesktopUpdater } from './hooks/useDesktopUpdater';
 
 function LoadingScreen() {
   return (
@@ -69,6 +71,7 @@ function RootRoute() {
 
 function DesktopShell() {
   const { user } = useAuth();
+  const updater = useDesktopUpdater();
 
   const watcher = useMeetingWatcher({
     userId: user?.id,
@@ -77,8 +80,17 @@ function DesktopShell() {
 
   return (
     <div className="min-h-screen bg-bg text-textPrimary flex flex-col antialiased select-none">
-      {/* Native Desktop TitleBar */}
-      <TitleBar isConnected={!!user} />
+      {/* Native Desktop TitleBar with Version & Update Status */}
+      <TitleBar
+        isConnected={!!user}
+        currentVersion={updater.currentVersion}
+        updateAvailable={updater.status === 'available'}
+        isCheckingUpdate={updater.status === 'checking'}
+        onCheckUpdate={() => updater.checkForUpdates(true)}
+      />
+
+      {/* Non-intrusive Update Notification Banner */}
+      <UpdateNotification updater={updater} />
 
       {/* Floating Active Meeting Intelligence Bar */}
       <ActiveMeetingBar

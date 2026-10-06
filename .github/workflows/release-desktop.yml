@@ -1,0 +1,61 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build & Release Windows Application
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './apps/desktop/src-tauri -> target'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Turborepo Typecheck
+        run: npm run check-types
+
+      - name: Build Tauri Desktop & Publish Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL || 'https://kknnuerbxydfdkuspbkg.supabase.co' }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtrbm51ZXJieHlkZmRrdXNwYmtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMjU4MzYsImV4cCI6MjA5NTcwMTgzNn0.amDJvm16MDJ5uDuV4Ho-J5pcxVyr3_Gk1_7u93Ao20Y' }}
+        with:
+          projectPath: './apps/desktop'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Kairo v__VERSION__'
+          releaseBody: 'Kairo Desktop release v__VERSION__ for Windows.'
+          releaseDraft: false
+          prerelease: false
