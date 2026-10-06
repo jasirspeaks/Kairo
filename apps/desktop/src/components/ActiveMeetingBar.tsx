@@ -66,6 +66,7 @@ export function ActiveMeetingBar({
           {isPaused && <span className="h-3 w-3 rounded-full bg-amber-400" />}
           {isProcessing && <Loader2 className="w-4 h-4 text-primary animate-spin" />}
           {captureStatus === 'completed' && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+          {captureStatus === 'failed' && <span className="h-3 w-3 rounded-full bg-red-500" />}
 
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold tracking-wider uppercase text-textPrimary">
@@ -74,6 +75,8 @@ export function ActiveMeetingBar({
               {captureStatus === 'uploading' && 'Uploading Spooled Audio...'}
               {captureStatus === 'processing' && 'Running 5-Pillar Deal Intelligence...'}
               {captureStatus === 'completed' && 'Review Complete'}
+              {captureStatus === 'failed' && 'Capture / Processing Failed'}
+              {captureStatus === 'approaching' && 'Meeting Approaching'}
               {captureStatus === 'idle' && 'Meeting Approaching'}
             </span>
             <span className="font-mono text-xs text-primary font-semibold bg-primary/10 px-2 py-0.5 rounded border border-primary/20">

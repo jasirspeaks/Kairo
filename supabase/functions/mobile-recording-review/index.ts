@@ -333,7 +333,7 @@ serve(async (req: Request) => {
     } = await supabase
       .from('conversations')
       .select(
-        'id, deal_id, user_id, audio_url, status, transcript, analysis_json, retry_attempts'
+        'id, deal_id, user_id, meeting_id, audio_url, status, transcript, analysis_json, retry_attempts'
       )
       .eq('id', conversationId)
       .single();

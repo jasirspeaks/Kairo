@@ -18,6 +18,8 @@ export interface GetMeetingsOptions {
   status?: MeetingStatus | MeetingStatus[];
   captureStatus?: CaptureStatus | CaptureStatus[];
   upcomingOnly?: boolean;
+  activeOrUpcoming?: boolean;
+  since?: string;
   limit?: number;
 }
 
@@ -52,8 +54,15 @@ export async function getMeetings(
     }
   }
 
-  if (options.upcomingOnly) {
-    query = query.gte('start_time', new Date().toISOString());
+  if (options.since) {
+    query = query.gte('start_time', options.since);
+  } else if (options.activeOrUpcoming) {
+    const lookback = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+    query = query.gte('start_time', lookback);
+  } else if (options.upcomingOnly) {
+    // Include meetings starting within the last 30 minutes or future to avoid dropping in-flight calls
+    const inFlightThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    query = query.gte('start_time', inFlightThreshold);
   }
 
   query = query.order('start_time', { ascending: true });
