@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MeetingWithDeal } from '@kairo/core';
-import { getMeetings, updateMeetingCaptureStatus, submitRecording } from '@kairo/api';
+import { getMeetings, updateMeetingCaptureStatus, submitRecording, syncGoogleCalendar } from '@kairo/api';
 import { useMeetingCapture } from '@kairo/platform';
 
 interface UseMeetingWatcherOptions {
@@ -84,19 +84,23 @@ export function useMeetingWatcher({
     if (!userId || isProcessingRef.current) return;
 
     try {
+      // Sync Google Calendar periodically to discover newly scheduled meetings
+      syncGoogleCalendar().catch(() => {});
+
       const meetings = await getMeetings(userId, {
         activeOrUpcoming: true,
-        limit: 10,
+        limit: 50,
       });
 
-      // Filter eligible meetings: not cancelled, not completed, not discarded, must have deal_id
-      const eligibleMeetings = meetings.filter((m) => {
+      // Filter eligible meetings: not cancelled, not completed, not discarded
+      const validMeetings = meetings.filter((m) => {
         if (!m.start_time || m.cancelled_at || m.status === 'cancelled' || m.status === 'completed') return false;
         if (m.capture_status === 'completed' || m.capture_status === 'discarded') return false;
-        return !!m.deal_id;
+        return true;
       });
 
-      setUpcomingMeetings(eligibleMeetings);
+      const eligibleMeetingsWithDeal = validMeetings.filter((m) => !!m.deal_id);
+      setUpcomingMeetings(eligibleMeetingsWithDeal);
 
       const now = Date.now();
 
@@ -115,45 +119,63 @@ export function useMeetingWatcher({
 
       // 2. If not capturing and not currently starting or processing, check for candidate meetings
       if (!captureRef.current.isCapturing && !isStartingRef.current && !isProcessingRef.current) {
-        const candidate = eligibleMeetings.find((m) => {
+        // First priority: assigned candidate within 3 minutes or in-progress
+        const assignedCandidate = eligibleMeetingsWithDeal.find((m) => {
           const start = new Date(m.start_time!).getTime();
           const end = m.end_time ? new Date(m.end_time).getTime() : start + 30 * 60 * 1000;
-          // Approaching within 3 minutes or currently in progress
           return start - 3 * 60 * 1000 <= now && now < end;
         });
 
-        if (candidate) {
-          setCurrentMeeting(candidate);
-          currentMeetingRef.current = candidate;
+        if (assignedCandidate) {
+          setCurrentMeeting(assignedCandidate);
+          currentMeetingRef.current = assignedCandidate;
 
-          const start = new Date(candidate.start_time!).getTime();
-          const end = candidate.end_time ? new Date(candidate.end_time).getTime() : start + 30 * 60 * 1000;
+          const start = new Date(assignedCandidate.start_time!).getTime();
+          const end = assignedCandidate.end_time ? new Date(assignedCandidate.end_time).getTime() : start + 30 * 60 * 1000;
 
           // Auto-start capture within pre-roll (1 minute before start) or in-flight
           if (
             autoCaptureEnabled &&
             now >= start - 60 * 1000 &&
             now < end &&
-            candidate.capture_status !== 'failed' &&
-            candidate.capture_status !== 'processing' &&
-            candidate.capture_status !== 'uploading'
+            assignedCandidate.capture_status !== 'failed' &&
+            assignedCandidate.capture_status !== 'processing' &&
+            assignedCandidate.capture_status !== 'uploading'
           ) {
             isStartingRef.current = true;
             try {
-              console.log(`[MeetingWatcher] Auto-starting capture for "${candidate.title}"...`);
-              await updateMeetingCaptureStatus(candidate.id, 'recording');
-              await captureRef.current.startCapture(candidate.id, candidate.deal_id);
+              console.log(`[MeetingWatcher] Auto-starting capture for "${assignedCandidate.title}"...`);
+              await updateMeetingCaptureStatus(assignedCandidate.id, 'recording');
+              await captureRef.current.startCapture(assignedCandidate.id, assignedCandidate.deal_id);
               setIngestionStatus('recording');
             } catch (startErr) {
               console.error('[MeetingWatcher] Failed to auto-start capture:', startErr);
-              await updateMeetingCaptureStatus(candidate.id, 'failed').catch(() => {});
+              await updateMeetingCaptureStatus(assignedCandidate.id, 'failed').catch(() => {});
               setIngestionStatus('failed');
             } finally {
               isStartingRef.current = false;
             }
-          } else if (candidate.capture_status === 'idle') {
-            await updateMeetingCaptureStatus(candidate.id, 'approaching').catch(() => {});
+          } else if (assignedCandidate.capture_status === 'idle') {
+            await updateMeetingCaptureStatus(assignedCandidate.id, 'approaching').catch(() => {});
             setIngestionStatus('approaching');
+          }
+        } else {
+          // Check for approaching unassigned meetings to alert the user rather than staying silent
+          const unassignedCandidate = validMeetings.find((m) => {
+            if (m.deal_id) return false;
+            const start = new Date(m.start_time!).getTime();
+            const end = m.end_time ? new Date(m.end_time).getTime() : start + 30 * 60 * 1000;
+            return start - 3 * 60 * 1000 <= now && now < end;
+          });
+
+          if (unassignedCandidate) {
+            setCurrentMeeting(unassignedCandidate);
+            currentMeetingRef.current = unassignedCandidate;
+            setIngestionStatus('unassigned');
+          } else if (currentMeetingRef.current && !captureRef.current.isCapturing) {
+            setCurrentMeeting(null);
+            currentMeetingRef.current = null;
+            setIngestionStatus('idle');
           }
         }
       }
