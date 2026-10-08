@@ -314,7 +314,7 @@ export function SettingsScreen() {
     if (!user || !user.email) return;
     Alert.alert(
       'Delete Account',
-      'This will permanently purge your Kairo account, active deals, transcripts, audio recordings, and intelligence history. This cannot be undone.',
+      'This will permanently purge your Kairo account, active deals, transcripts, audio recordings, and intelligence history. Any active paid subscription will be immediately canceled with Stripe with no refund. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -326,7 +326,7 @@ export function SettingsScreen() {
               if (!session) throw new Error('Session expired. Please sign in again.');
 
               const { data, error } = await supabase.functions.invoke('delete-account', {
-                body: { confirm_email: user.email },
+                body: { confirm_email: user.email, cancel_stripe_subscription: true },
                 headers: { Authorization: `Bearer ${session.access_token}` },
               });
               if (error || data?.error) throw error || new Error(data?.error);

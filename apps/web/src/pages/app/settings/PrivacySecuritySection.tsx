@@ -69,17 +69,17 @@ export function PrivacySecuritySection({ userId }: PrivacySecuritySectionProps) 
         </div>
       </div>
 
-      {/* Model Training Privacy Guarantee */}
+      {/* AI Processing & Deal Confidentiality */}
       <div className="card p-5 md:p-6 space-y-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-primary" />
           <h3 className="text-sm font-semibold text-textPrimary">
-            Zero Model Training Commitment
+            AI Processing & Deal Confidentiality
           </h3>
         </div>
 
         <p className="text-textSecondary text-xs leading-relaxed">
-          Kairo respects deal confidentiality. Your sales conversations, buyer quotes, transcripts, and CRM data are strictly isolated and <strong>never used to train public or commercial AI models</strong>.
+          Kairo respects deal confidentiality. Your sales conversations, buyer quotes, transcripts, and CRM data are processed strictly to evaluate deal qualification and surface deal risks in your workspace. AI inference requests are isolated to your workspace and not shared with other customers.
         </p>
 
         <div className="pt-2">
@@ -89,7 +89,7 @@ export function PrivacySecuritySection({ userId }: PrivacySecuritySectionProps) 
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:text-primaryLight transition-colors"
           >
-            Review Complete Privacy Policy
+            Review Complete Privacy Policy & Subprocessors
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>

@@ -82,6 +82,8 @@ export interface UseMeetingCaptureResult {
   resumeCapture: () => Promise<void>;
   stopCapture: () => Promise<{ blob?: Blob; filePath?: string; mimeType: string; durationSeconds: number } | null>;
   discardCapture: () => Promise<void>;
+  deleteCaptureFile: (filePath: string) => Promise<boolean>;
+  cleanupStaleCaptures: (maxAgeSeconds?: number) => Promise<number>;
 }
 
 export interface StorageAdapter {

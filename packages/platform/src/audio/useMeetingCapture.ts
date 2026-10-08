@@ -9,6 +9,8 @@ import {
   discardNativeMeetingCapture,
   getNativeCaptureStatus,
   readNativeCaptureBytes,
+  deleteNativeCaptureFile,
+  cleanupStaleNativeCaptures,
 } from './desktopCaptureBridge';
 import { useAudioRecorder } from './useAudioRecorder';
 
@@ -147,6 +149,14 @@ export function useMeetingCapture(): UseMeetingCaptureResult {
     setElapsedMs(0);
   }, [isTauri, fallbackRecorder, clearTimer]);
 
+  const deleteCaptureFile = useCallback(async (filePath: string) => {
+    return await deleteNativeCaptureFile(filePath);
+  }, []);
+
+  const cleanupStaleCaptures = useCallback(async (maxAgeSeconds?: number) => {
+    return await cleanupStaleNativeCaptures(maxAgeSeconds);
+  }, []);
+
   return {
     isCapturing: captureStatus === 'recording' || captureStatus === 'paused',
     isPaused: captureStatus === 'paused',
@@ -161,5 +171,7 @@ export function useMeetingCapture(): UseMeetingCaptureResult {
     resumeCapture,
     stopCapture,
     discardCapture,
+    deleteCaptureFile,
+    cleanupStaleCaptures,
   };
 }

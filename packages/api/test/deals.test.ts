@@ -92,3 +92,44 @@ describe('getDealLongitudinalHistory service suite', () => {
     await expect(getDealLongitudinalHistory(dealId, mockClient)).rejects.toThrow('RLS policy violation on deal_evidence');
   });
 });
+
+describe('exportUserPipeline service suite', () => {
+  const userId = 'user-test-456';
+
+  it('exports comprehensive user pipeline data including conversations, stakeholders, evidence, and risks', async () => {
+    const mockClient: any = {
+      from: vi.fn((table: string) => ({
+        select: vi.fn(() => ({
+          eq: vi.fn((_col: string, _val: string) => {
+            if (table === 'deal_state') {
+              return Promise.resolve({ data: [{ deal_id: 'd1', current_status: 'Healthy' }], error: null });
+            }
+            return {
+              order: vi.fn(() => {
+                if (table === 'deals') return Promise.resolve({ data: [{ id: 'd1', deal_name: 'Big Deal' }], error: null });
+                if (table === 'meetings') return Promise.resolve({ data: [{ id: 'm1', title: 'Sync' }], error: null });
+                if (table === 'conversations') return Promise.resolve({ data: [{ id: 'c1', transcript: 'Hello' }], error: null });
+                if (table === 'stakeholders') return Promise.resolve({ data: [{ id: 's1', name: 'Alice' }], error: null });
+                if (table === 'deal_evidence') return Promise.resolve({ data: [{ id: 'e1', quote: 'Must buy' }], error: null });
+                if (table === 'deal_risks') return Promise.resolve({ data: [{ id: 'r1', risk_text: 'Budget' }], error: null });
+                return Promise.resolve({ data: [], error: null });
+              }),
+            };
+          }),
+        })),
+      })),
+    };
+
+    const res = await (await import('../src/services/deals')).exportUserPipeline(userId, mockClient);
+
+    expect(res.deals).toHaveLength(1);
+    expect(res.dealStates).toHaveLength(1);
+    expect(res.meetings).toHaveLength(1);
+    expect(res.conversations).toHaveLength(1);
+    expect(res.stakeholders).toHaveLength(1);
+    expect(res.dealEvidence).toHaveLength(1);
+    expect(res.dealRisks).toHaveLength(1);
+    expect(res.exportDate).toBeDefined();
+  });
+});
+

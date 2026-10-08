@@ -7,3 +7,5 @@ export * from './stakeholders';
 export * from './profiles';
 export * from './subscriptions';
 export * from './billing';
+export * from './geminiCleanup';
+export * from './subscriptionDeletion';

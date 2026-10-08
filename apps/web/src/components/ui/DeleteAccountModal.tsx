@@ -6,6 +6,7 @@ import { Button } from './Button';
 interface DeleteAccountModalProps {
   open: boolean;
   email: string;
+  hasActiveSubscription?: boolean;
   onClose: () => void;
 }
 
@@ -20,14 +21,21 @@ interface DeleteAccountModalProps {
 // re-checks this same confirmation independently (see delete-account),
 // so this isn't the only thing standing between a click and deletion --
 // it's the deliberate speed bump before the request is even sent.
-export function DeleteAccountModal({ open, email, onClose }: DeleteAccountModalProps) {
+export function DeleteAccountModal({
+  open,
+  email,
+  hasActiveSubscription = false,
+  onClose,
+}: DeleteAccountModalProps) {
   const [confirmText, setConfirmText] = useState('');
+  const [confirmCancelSub, setConfirmCancelSub] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setConfirmText('');
+    setConfirmCancelSub(false);
     setError(null);
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape' && !deleting) onClose();
@@ -40,9 +48,10 @@ export function DeleteAccountModal({ open, email, onClose }: DeleteAccountModalP
   if (!open) return null;
 
   const matches = confirmText.trim().toLowerCase() === email.trim().toLowerCase();
+  const canDelete = matches && (!hasActiveSubscription || confirmCancelSub);
 
   async function handleDelete() {
-    if (!matches || deleting) return;
+    if (!canDelete || deleting) return;
     setDeleting(true);
     setError(null);
 
@@ -61,7 +70,10 @@ export function DeleteAccountModal({ open, email, onClose }: DeleteAccountModalP
           'apikey': supabaseAnonKey,
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ confirm_email: email }),
+        body: JSON.stringify({
+          confirm_email: email,
+          cancel_stripe_subscription: hasActiveSubscription ? true : false,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -129,6 +141,27 @@ export function DeleteAccountModal({ open, email, onClose }: DeleteAccountModalP
             className="input-field font-mono text-xs mb-4 disabled:opacity-50"
           />
 
+          {hasActiveSubscription && (
+            <div className="space-y-3 mb-4">
+              <p className="text-amber-400/90 text-xs leading-relaxed p-2.5 rounded bg-amber-500/10 border border-amber-500/20 text-center">
+                Active paid subscription detected. Deleting your account will immediately cancel your subscription in Stripe. No refunds are issued for unused billing time.
+              </p>
+
+              <label className="flex items-start gap-2.5 p-3 rounded-lg bg-surfaceHigh border border-border text-xs text-textSecondary cursor-pointer hover:border-borderHover transition-colors">
+                <input
+                  type="checkbox"
+                  checked={confirmCancelSub}
+                  onChange={e => setConfirmCancelSub(e.target.checked)}
+                  disabled={deleting}
+                  className="mt-0.5 rounded border-border text-accent focus:ring-accent"
+                />
+                <span>
+                  I understand and agree to cancel my active paid Stripe subscription immediately with no refund.
+                </span>
+              </label>
+            </div>
+          )}
+
           {error && (
             <p className="text-red-400 text-xs mb-4 flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
@@ -139,7 +172,7 @@ export function DeleteAccountModal({ open, email, onClose }: DeleteAccountModalP
           <div className="flex flex-col gap-2">
             <Button
               onClick={handleDelete}
-              disabled={!matches}
+              disabled={!canDelete}
               loading={deleting}
               variant="danger"
               size="lg"

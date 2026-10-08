@@ -231,21 +231,45 @@ export async function exportUserPipeline(
   deals: Deal[];
   dealStates: DealState[];
   meetings: any[];
+  conversations: any[];
+  stakeholders: any[];
+  dealEvidence: any[];
+  dealRisks: any[];
 }> {
-  const [dealsRes, statesRes, meetingsRes] = await Promise.all([
+  const [
+    dealsRes,
+    statesRes,
+    meetingsRes,
+    convsRes,
+    stakeholdersRes,
+    evidenceRes,
+    risksRes,
+  ] = await Promise.all([
     client.from('deals').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     client.from('deal_state').select('*').eq('user_id', userId),
     client.from('meetings').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    client.from('conversations').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    client.from('stakeholders').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    client.from('deal_evidence').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    client.from('deal_risks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
   ]);
 
   if (dealsRes.error) throw dealsRes.error;
   if (statesRes.error) throw statesRes.error;
   if (meetingsRes.error) throw meetingsRes.error;
+  if (convsRes.error) throw convsRes.error;
+  if (stakeholdersRes.error) throw stakeholdersRes.error;
+  if (evidenceRes.error) throw evidenceRes.error;
+  if (risksRes.error) throw risksRes.error;
 
   return {
     exportDate: new Date().toISOString(),
     deals: (dealsRes.data as Deal[]) || [],
     dealStates: (statesRes.data as DealState[]) || [],
     meetings: meetingsRes.data || [],
+    conversations: convsRes.data || [],
+    stakeholders: stakeholdersRes.data || [],
+    dealEvidence: evidenceRes.data || [],
+    dealRisks: risksRes.data || [],
   };
 }

@@ -131,3 +131,30 @@ export async function readNativeCaptureBytes(filePath: string): Promise<Blob | n
   }
   return null;
 }
+
+export async function deleteNativeCaptureFile(filePath: string): Promise<boolean> {
+  if (isTauriEnvironment() && filePath) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<boolean>('delete_capture_file', { filePath });
+    } catch (e) {
+      console.error('[DesktopBridge] Failed to delete capture file:', e);
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function cleanupStaleNativeCaptures(maxAgeSeconds?: number): Promise<number> {
+  if (isTauriEnvironment()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<number>('cleanup_stale_captures', { maxAgeSeconds });
+    } catch (e) {
+      console.warn('[DesktopBridge] Failed to cleanup stale captures:', e);
+      return 0;
+    }
+  }
+  return 0;
+}
+

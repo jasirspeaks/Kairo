@@ -138,6 +138,35 @@ async function transcribeInline(
   return text;
 }
 
+async function deleteGeminiFile(
+  fileName: string,
+  apiKey: string | undefined = GEMINI_API_KEY
+): Promise<boolean> {
+  if (!fileName || !apiKey) return false;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`,
+      {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+    if (!res.ok) {
+      console.warn(
+        `[mobile-recording-review] Best-effort Gemini file cleanup returned status ${res.status} for file ${fileName}`
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(
+      `[mobile-recording-review] Best-effort Gemini file cleanup failed for file ${fileName}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    return false;
+  }
+}
+
 async function transcribeViaFilesApi(
   audioBytes: ArrayBuffer,
   mimeType: string
@@ -178,80 +207,85 @@ async function transcribeViaFilesApi(
     );
   }
 
-  let state = uploaded.file?.state;
-  let attempts = 0;
+  try {
+    let state = uploaded.file?.state;
+    let attempts = 0;
 
-  while (state !== 'ACTIVE' && attempts < 20) {
-    await new Promise((r) => setTimeout(r, 1500));
+    while (state !== 'ACTIVE' && attempts < 20) {
+      await new Promise((r) => setTimeout(r, 1500));
 
-    const statusResp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`,
-      { signal: AbortSignal.timeout(15000) }
-    );
+      const statusResp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`,
+        { signal: AbortSignal.timeout(15000) }
+      );
 
-    const statusData = await statusResp.json();
-    state = statusData.state;
-    attempts++;
-  }
-
-  if (state !== 'ACTIVE') {
-    throw new Error('Gemini file did not become ACTIVE in time');
-  }
-
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${TRANSCRIBE_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(60000),
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: 'Transcribe this sales call audio verbatim. Label speakers as Rep: and Prospect: where you can distinguish them (use Speaker 1: / Speaker 2: if roles are unclear).',
-              },
-              {
-                file_data: {
-                  mime_type: mimeType,
-                  file_uri: fileUri,
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 8192,
-        },
-      }),
+      const statusData = await statusResp.json();
+      state = statusData.state;
+      attempts++;
     }
-  );
 
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(
-      `Gemini transcription (Files API) failed: ${
-        err.error?.message || resp.statusText
-      }`
+    if (state !== 'ACTIVE') {
+      throw new Error('Gemini file did not become ACTIVE in time');
+    }
+
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${TRANSCRIBE_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(60000),
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: 'Transcribe this sales call audio verbatim. Label speakers as Rep: and Prospect: where you can distinguish them (use Speaker 1: / Speaker 2: if roles are unclear).',
+                },
+                {
+                  file_data: {
+                    mime_type: mimeType,
+                    file_uri: fileUri,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 8192,
+          },
+        }),
+      }
     );
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(
+        `Gemini transcription (Files API) failed: ${
+          err.error?.message || resp.statusText
+        }`
+      );
+    }
+
+    const data = await resp.json();
+    const finishReason = data.candidates?.[0]?.finishReason;
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+    if (finishReason === 'MAX_TOKENS') {
+      throw new Error(
+        'Recording too long to transcribe in one pass -- MAX_TOKENS_TRUNCATED'
+      );
+    }
+
+    if (!text.trim()) {
+      throw new Error('Gemini returned an empty transcript');
+    }
+
+    return text;
+  } finally {
+    // Explicit best-effort cleanup of uploaded audio from Google's servers
+    await deleteGeminiFile(fileName);
   }
-
-  const data = await resp.json();
-  const finishReason = data.candidates?.[0]?.finishReason;
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-
-  if (finishReason === 'MAX_TOKENS') {
-    throw new Error(
-      'Recording too long to transcribe in one pass -- MAX_TOKENS_TRUNCATED'
-    );
-  }
-
-  if (!text.trim()) {
-    throw new Error('Gemini returned an empty transcript');
-  }
-
-  return text;
 }
 
 function nextRetryAt(attempts: number): string | null {

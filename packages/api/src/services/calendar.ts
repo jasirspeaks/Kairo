@@ -30,29 +30,25 @@ export async function checkCalendarConnected(
 }
 
 export async function getCalendarConnectionStatus(
-  userId: string,
+  _userId?: string,
   client: KairoClient = getKairoClient()
 ): Promise<CalendarStatus> {
-  const { data, error } = await client
-    .from('calendar_connections')
-    .select('scope, needs_reconnect, token_expires_at')
-    .eq('user_id', userId)
-    .eq('provider', 'google')
-    .maybeSingle();
+  const { data, error } = await client.rpc('get_calendar_connection_status');
 
-  if (error || !data) {
+  if (error || !data || !Array.isArray(data) || data.length === 0) {
     return { connected: false, hasWriteAccess: false, needsReconnect: false };
   }
 
-  const scope = data.scope || '';
-  const hasWriteAccess =
-    scope.includes('calendar.events') ||
-    (scope.includes('https://www.googleapis.com/auth/calendar') && !scope.includes('calendar.readonly'));
+  const row = data[0] as {
+    connected?: boolean;
+    has_write_access?: boolean;
+    needs_reconnect?: boolean;
+  };
 
   return {
-    connected: true,
-    hasWriteAccess,
-    needsReconnect: data.needs_reconnect === true || !hasWriteAccess,
+    connected: Boolean(row.connected),
+    hasWriteAccess: Boolean(row.has_write_access),
+    needsReconnect: Boolean(row.needs_reconnect),
   };
 }
 

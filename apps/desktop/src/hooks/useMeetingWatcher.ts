@@ -52,6 +52,14 @@ export function useMeetingWatcher({
           res.mimeType || 'audio/wav',
           meetingToProcess.id
         );
+
+        // Upload safely completed and confirmed stored in Supabase Storage.
+        // Clean up the local temporary file now that it is no longer needed.
+        if (res.filePath && captureRef.current.deleteCaptureFile) {
+          await captureRef.current.deleteCaptureFile(res.filePath).catch((cleanupErr) => {
+            console.warn('[MeetingWatcher] Failed to cleanup local capture file:', cleanupErr);
+          });
+        }
       }
 
       await updateMeetingCaptureStatus(meetingToProcess.id, 'completed', { status: 'completed' }).catch(() => {});
@@ -185,6 +193,9 @@ export function useMeetingWatcher({
   }, [userId, autoCaptureEnabled, handleStopAndProcess]);
 
   useEffect(() => {
+    // Sweep any abandoned temporary capture files older than 24 hours on desktop startup
+    captureRef.current.cleanupStaleCaptures?.().catch(() => {});
+
     tick();
     const interval = setInterval(tick, checkIntervalMs);
 

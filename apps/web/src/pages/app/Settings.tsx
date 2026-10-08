@@ -510,6 +510,7 @@ export function Settings() {
       <DeleteAccountModal
         open={deleteModalOpen}
         email={profile?.email || user?.email || ''}
+        hasActiveSubscription={subscription?.status === 'active' || subscription?.status === 'trialing'}
         onClose={() => setDeleteModalOpen(false)}
       />
 

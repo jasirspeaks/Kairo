@@ -4,8 +4,10 @@ pub mod windows_loopback;
 
 use capture::CaptureEngine;
 use commands::{
-    discard_meeting_capture, get_capture_capabilities, get_capture_status, pause_meeting_capture,
-    read_capture_bytes, resume_meeting_capture, start_meeting_capture, stop_meeting_capture,
+    cleanup_stale_captures, delete_capture_file, discard_meeting_capture,
+    get_capture_capabilities, get_capture_status, pause_meeting_capture,
+    read_capture_bytes, resume_meeting_capture, start_meeting_capture,
+    stop_meeting_capture,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +27,8 @@ pub fn run() {
             discard_meeting_capture,
             get_capture_status,
             read_capture_bytes,
+            delete_capture_file,
+            cleanup_stale_captures,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kairo desktop application");

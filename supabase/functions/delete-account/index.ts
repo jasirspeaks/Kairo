@@ -24,9 +24,11 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import Stripe from 'https://esm.sh/stripe@14.25.0?target=deno';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 // Google's /revoke endpoint takes a bare token and needs no client
 // id/secret, so none are required here.
 
@@ -86,7 +88,66 @@ async function revokeCalendarConnection(
   // no need to delete it here separately.
 }
 
+interface StripeDeletionResult {
+  blocked?: boolean;
+  error?: string;
+}
+
+// Option A: Inspects and handles active Stripe subscriptions prior to dropping
+// the database row via cascade.
+// Requires explicit user consent to cancel the active subscription immediately.
+// If consent is missing, blocks deletion with a clear message.
+// If Stripe cancellation fails, halts deletion to prevent ongoing billing.
+async function handleStripeSubscriptionOnDeletion(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  cancelRequested: boolean
+): Promise<StripeDeletionResult> {
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('stripe_customer_id, stripe_subscription_id, status')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!sub || !sub.stripe_subscription_id) return {};
+
+  const isActive = sub.status === 'active' || sub.status === 'trialing';
+  if (!isActive) return {};
+
+  if (!cancelRequested) {
+    return {
+      blocked: true,
+      error:
+        'You have an active paid subscription. Please confirm immediate subscription cancellation to proceed with account deletion.',
+    };
+  }
+
+  if (STRIPE_SECRET_KEY) {
+    try {
+      console.log(`delete-account: canceling active Stripe subscription ${sub.stripe_subscription_id} for user ${userId}`);
+      const stripe = new Stripe(STRIPE_SECRET_KEY, {
+        apiVersion: '2023-10-16',
+        httpClient: Stripe.createFetchHttpClient(),
+      });
+      await stripe.subscriptions.cancel(sub.stripe_subscription_id);
+      console.log(`delete-account: successfully canceled Stripe subscription ${sub.stripe_subscription_id}`);
+    } catch (stripeErr) {
+      console.error('delete-account: failed to cancel Stripe subscription:', stripeErr);
+      return {
+        blocked: true,
+        error:
+          'Failed to cancel your subscription with Stripe. Your account was not deleted to prevent unexpected billing. Please contact support.',
+      };
+    }
+  } else {
+    console.warn(`delete-account: STRIPE_SECRET_KEY not set; skipping Stripe API cancel for ${sub.stripe_subscription_id}`);
+  }
+
+  return {};
+}
+
 // Deletes every object under the user's folder in the private `recordings`
+
 // bucket. Storage paths are `{user_id}/{deal_id}/{conversation_id}.ext`
 // (per mobile-recording-review and audio-retention-job), so listing by the
 // `{user_id}` prefix and recursing one level into each deal folder covers
@@ -173,7 +234,7 @@ serve(async (req) => {
     // collects, and re-checked server-side so a replayed/forged request
     // without the right body can't slip through even if it somehow had a
     // valid token for a different flow.
-    let body: { confirm_email?: string };
+    let body: { confirm_email?: string; cancel_stripe_subscription?: boolean };
     try {
       body = await req.json();
     } catch {
@@ -195,7 +256,18 @@ serve(async (req) => {
     // 2. Best-effort wipe the Storage folder -- cascade won't touch this.
     await wipeRecordingsFolder(supabase, userId);
 
-    // 3. Delete the auth.users row. This cascades through every
+    // 3. Handle active Stripe subscriptions before the DB row cascades.
+    const stripeResult = await handleStripeSubscriptionOnDeletion(
+      supabase,
+      userId,
+      Boolean(body.cancel_stripe_subscription)
+    );
+
+    if (stripeResult.blocked) {
+      return jsonRes({ error: stripeResult.error }, 400);
+    }
+
+    // 4. Delete the auth.users row. This cascades through every
     //    user-owned table (verified ON DELETE CASCADE on all of them):
     //    profiles, deals, conversations, deal_state, stakeholders,
     //    calendar_connections, subscriptions, pending_schedule_intents,
