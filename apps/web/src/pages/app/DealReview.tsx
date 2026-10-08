@@ -5,7 +5,7 @@ import {
   ChevronRight, Building2, UserPlus, TrendingUp, TrendingDown,
   Minus, CheckCircle2, AlertCircle, ArrowRight, Quote, ShieldAlert
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseUrl } from '../../lib/supabase';
 import { getStatusStyle, getDealLongitudinalHistory } from '../../lib/kairo';
 import {
   Deal,
@@ -600,6 +600,7 @@ export function DealReview() {
   const [nextMeeting, setNextMeeting] = useState<{ start_time: string; title: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isRetryingAnalysis, setIsRetryingAnalysis] = useState(false);
   const [reviewTab, setReviewTab] = useState<DealReviewTab>('action_plan');
 
   // Evidence Inspector state
@@ -648,9 +649,10 @@ export function DealReview() {
         getDealLongitudinalHistory(dealId),
         supabase
           .from('conversations')
-          .select('id, status')
+          .select('id, status, created_at, updated_at')
           .eq('deal_id', dealId)
           .in('status', ['pending', 'processing', 'retry_pending'])
+          .order('created_at', { ascending: false })
           .limit(1),
       ]);
 
@@ -658,7 +660,34 @@ export function DealReview() {
       setDealState(histData.state);
       setCalls(histData.conversations || []);
       setStakeholders(histData.stakeholders || []);
-      setIsAnalyzing(Boolean(activeConvsRes.data && activeConvsRes.data.length > 0));
+
+      const activeConv = activeConvsRes.data && activeConvsRes.data.length > 0 ? activeConvsRes.data[0] : null;
+      if (activeConv) {
+        setIsAnalyzing(true);
+        const ageMs = Date.now() - new Date(activeConv.updated_at || activeConv.created_at).getTime();
+        const isRetrying = activeConv.status === 'retry_pending' || ageMs > 2 * 60 * 1000;
+        setIsRetryingAnalysis(isRetrying);
+
+        // Ambient Self-Healing: If an active conversation has been quiet for > 2 minutes,
+        // kickstart background recovery so navigation directly heals stalled jobs.
+        if (ageMs > 2 * 60 * 1000) {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+              fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ conversation_id: activeConv.id }),
+              }).catch(() => {});
+            }
+          });
+        }
+      } else {
+        setIsAnalyzing(false);
+        setIsRetryingAnalysis(false);
+      }
 
       const now = new Date();
       const upcoming = (histData.meetings || []).find(
@@ -801,7 +830,10 @@ export function DealReview() {
         <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 flex items-center gap-3 mb-4 md:mb-5 animate-fade-in">
           <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
           <p className="text-xs text-amber-200/90 leading-relaxed flex-1">
-            <strong>Analyzing latest call:</strong> Kairo is extracting 5-pillar intelligence in the background. This page will update live when complete.
+            <strong>Analyzing latest call:</strong>{' '}
+            {isRetryingAnalysis
+              ? 'Kairo is finalizing 5-pillar intelligence in the background. Retrying analysis if interrupted — this page will update live when complete.'
+              : 'Kairo is extracting 5-pillar intelligence in the background. This page will update live when complete.'}
           </p>
         </div>
       )}

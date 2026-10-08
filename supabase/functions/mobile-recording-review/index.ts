@@ -89,6 +89,7 @@ async function transcribeInline(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(60000),
       body: JSON.stringify({
         contents: [
           {
@@ -153,6 +154,7 @@ async function transcribeViaFilesApi(
         'X-Goog-Upload-Protocol': 'raw',
         'Content-Type': mimeType,
       },
+      signal: AbortSignal.timeout(60000),
       body: audioBytes,
     }
   );
@@ -183,7 +185,8 @@ async function transcribeViaFilesApi(
     await new Promise((r) => setTimeout(r, 1500));
 
     const statusResp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`
+      `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`,
+      { signal: AbortSignal.timeout(15000) }
     );
 
     const statusData = await statusResp.json();
@@ -200,6 +203,7 @@ async function transcribeViaFilesApi(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(60000),
       body: JSON.stringify({
         contents: [
           {
@@ -411,6 +415,7 @@ serve(async (req: Request) => {
           deal_stage: resolvedStage,
           retry_after: null,
           last_error: null,
+          processing_lease_until: null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId);
@@ -620,6 +625,7 @@ serve(async (req: Request) => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
+        signal: AbortSignal.timeout(75000),
         body: JSON.stringify({
           user_id: userId,
           conversation_id: conversationId,
@@ -670,6 +676,7 @@ serve(async (req: Request) => {
         deal_stage: resolvedStage,
         retry_after: null,
         last_error: null,
+        processing_lease_until: null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversationId);
@@ -744,6 +751,7 @@ serve(async (req: Request) => {
               retry_attempts: nextAttempts,
               retry_after: retryAfter,
               last_error: errorMessage,
+              processing_lease_until: null,
               updated_at: new Date().toISOString(),
             })
             .eq('id', conversationId);
@@ -762,6 +770,7 @@ serve(async (req: Request) => {
               retry_attempts: nextAttempts,
               retry_after: null,
               last_error: errorMessage,
+              processing_lease_until: null,
               updated_at: new Date().toISOString(),
             })
             .eq('id', conversationId);

@@ -78,6 +78,7 @@ async function requeueOrFail(
         status: 'retry_pending',
         retry_after: retryAfter,
         last_error: safeError,
+        processing_lease_until: null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', job.id);
@@ -95,6 +96,7 @@ async function requeueOrFail(
         status: 'failed',
         retry_after: null,
         last_error: safeError,
+        processing_lease_until: null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', job.id);
@@ -159,6 +161,7 @@ serve(async (req) => {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
             },
+            signal: AbortSignal.timeout(90000),
             body: JSON.stringify({
               conversation_id: job.id,
               user_id: job.user_id,
