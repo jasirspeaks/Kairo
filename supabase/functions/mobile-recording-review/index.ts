@@ -480,7 +480,7 @@ serve(async (req: Request) => {
     if (transcript.length < 100) {
       if (!conversation.audio_url) {
         throw new Error(
-          'Conversation transcript is missing and no audio is available for transcription'
+          'Transcript is too short to review. Please provide a more complete conversation.'
         );
       }
 

@@ -305,7 +305,7 @@ export async function submitTranscript(
     : clientArg || getKairoClient();
 
   const trimmed = typeof transcript === 'string' ? transcript.trim() : '';
-  if (!trimmed || trimmed.length < 50) {
+  if (!trimmed || trimmed.length < 100) {
     throw new Error('Transcript is too short. Please provide a more complete conversation.');
   }
 

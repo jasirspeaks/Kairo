@@ -112,3 +112,70 @@ REVOKE ALL ON FUNCTION public.claim_call_review_retry(integer, integer)
 
 GRANT EXECUTE ON FUNCTION public.claim_call_review_retry(integer, integer)
   TO service_role;
+
+-- Allow normal callers to claim conversations in both 'pending' and 'retry_pending' status.
+CREATE OR REPLACE FUNCTION public.claim_conversation_review(
+  p_conversation_id uuid,
+  p_user_id uuid,
+  p_retry boolean DEFAULT false
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_role text;
+  v_owner uuid;
+BEGIN
+  v_role := (SELECT auth.role());
+
+  SELECT c.user_id
+  INTO v_owner
+  FROM public.conversations c
+  WHERE c.id = p_conversation_id;
+
+  IF v_owner IS DISTINCT FROM p_user_id THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  IF v_role <> 'service_role' AND (SELECT auth.uid()) IS DISTINCT FROM p_user_id THEN
+    RAISE EXCEPTION 'Unauthorized';
+  END IF;
+
+  IF p_retry THEN
+    IF v_role <> 'service_role' THEN
+      RAISE EXCEPTION 'Unauthorized';
+    END IF;
+
+    RETURN EXISTS (
+      SELECT 1
+      FROM public.conversations c
+      WHERE c.id = p_conversation_id
+        AND c.user_id = p_user_id
+        AND c.status = 'processing'
+        AND c.retry_attempts > 0
+        AND c.last_retry_at IS NOT NULL
+    );
+  END IF;
+
+  UPDATE public.conversations
+  SET
+    status = 'processing',
+    retry_after = NULL,
+    last_error = NULL,
+    updated_at = now()
+  WHERE id = p_conversation_id
+    AND user_id = p_user_id
+    AND status IN ('pending', 'retry_pending')
+  RETURNING id;
+
+  RETURN FOUND;
+END;
+$$;
+
+ALTER FUNCTION public.claim_conversation_review(uuid, uuid, boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.claim_conversation_review(uuid, uuid, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.claim_conversation_review(uuid, uuid, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_conversation_review(uuid, uuid, boolean) TO service_role;
+

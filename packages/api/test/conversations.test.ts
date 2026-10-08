@@ -232,7 +232,7 @@ describe('submitTranscript service suite (WAL & Non-blocking)', () => {
     mockClient.auth.getSession.mockResolvedValue({ data: { session: null } });
 
     await expect(
-      submitTranscript('deal-123', 'This is a sufficiently long transcript that contains sales conversation content.', null, {}, mockClient as any)
+      submitTranscript('deal-123', 'This is a sufficiently long sales transcript that contains detailed discovery conversation content between rep and prospect.', null, {}, mockClient as any)
     ).rejects.toThrow('You must be signed in to submit a transcript.');
   });
 
@@ -240,7 +240,7 @@ describe('submitTranscript service suite (WAL & Non-blocking)', () => {
     const mockClient = createMockClient();
     global.fetch = vi.fn().mockResolvedValue({ ok: true });
 
-    const validTranscript = 'Rep: Welcome to the demo today. Buyer: Thanks, we are looking for a solution before Q4 begins.';
+    const validTranscript = 'Rep: Welcome to the demo today. Buyer: Thanks, we are looking for a solution before Q4 begins and our budget is approved.';
     const result = await submitTranscript('deal-123', validTranscript, null, {}, mockClient as any);
 
     expect(result.conversationId).toBe('conv-test-999');
