@@ -160,6 +160,12 @@ export function SignIn() {
             Create one
           </Link>
         </p>
+
+        <p className="text-center text-textMuted text-caption mt-4">
+          <Link to="/privacy" className="hover:text-textSecondary transition-colors">
+            Privacy Policy
+          </Link>
+        </p>
       </div>
     </div>
   );

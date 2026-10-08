@@ -17,6 +17,7 @@ import { DealReview } from './pages/app/DealReview';
 import { Settings } from './pages/app/Settings';
 import { AppLayout } from './components/layout/AppLayout';
 import { Inbox } from './pages/app/Inbox';
+import { PrivacyPolicy } from './pages/legal/PrivacyPolicy';
 
 function LoadingScreen() {
   return (
@@ -76,6 +77,9 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/auth/callback" element={<Navigate to="/" replace />} />
         <Route path="/auth/reset-password" element={<ResetPassword />} />
+
+        {/* Public Legal */}
+        <Route path="/privacy" element={<PrivacyPolicy />} />
 
         {/* Mandatory Onboarding */}
         <Route

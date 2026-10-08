@@ -91,10 +91,22 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps) {
             </Button>
             <button
               onClick={onClose}
-              className="text-textMuted hover:text-textSecondary text-xs font-medium py-2 transition-colors"
+              className="text-textMuted hover:text-textSecondary text-xs font-medium py-1.5 transition-colors"
             >
               Not now
             </button>
+            <p className="text-[11px] text-textMuted mt-1">
+              Payments processed securely by Stripe. View our{' '}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-textSecondary hover:underline"
+              >
+                Privacy Policy
+              </a>
+              .
+            </p>
           </div>
         </div>
       </div>

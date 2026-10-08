@@ -4,18 +4,16 @@
 // no external caller for this function).
 //
 // Policy:
-//   - status = 'complete' AND audio_url is not null AND audio_deleted_at
-//     is null AND updated_at < now() - 48 hours -> delete audio, stamp
-//     audio_deleted_at.
+//   - audio_url is not null AND audio_deleted_at is null AND created_at < now() - 48 hours
+//     -> delete audio from Storage, stamp audio_deleted_at.
 //
-// IMPORTANT:
-//   Failed/pending/processing recordings are NOT deleted by this job.
-//   Their audio is the source material required for a future retry.
-//   A failed review must remain recoverable until a later retry succeeds.
-//
-// This means:
-//   audio -> review succeeds -> status = complete -> 48h retention -> delete
-//   audio -> review fails   -> status = failed   -> KEEP audio for retry
+// Universal 48-Hour Purge:
+//   Audio objects in the recordings Storage bucket are purged strictly after 48 hours
+//   regardless of conversation status ('complete', 'failed', 'retry_pending', etc.).
+//   All automatic review retries exhaust their attempts within ~8 hours total.
+//   Once transcribed, conversations save the transcript text directly in the database,
+//   so audio is no longer needed for subsequent analysis. Purging after 48h guarantees
+//   user data privacy and storage cost bounds.
 //
 // Deletes from Storage first, only stamps audio_deleted_at if the
 // Storage delete actually succeeds (or the object is already gone) --
@@ -49,8 +47,8 @@ serve(async (req) => {
 
   const now = Date.now();
 
-  // Successful reviews retain their audio for 48 hours before cleanup.
-  const completeThreshold = new Date(
+  // Any recording older than 48 hours is eligible for audio cleanup.
+  const cutoffThreshold = new Date(
     now - 48 * 60 * 60 * 1000
   ).toISOString();
 
@@ -61,23 +59,20 @@ serve(async (req) => {
   };
 
   try {
-    // ONLY completed reviews are eligible for deletion.
-    //
-    // Failed / processing / pending conversations are deliberately excluded.
-    // Their audio must remain available because the review can be retried later.
-    const { data: completeRows, error: completeErr } = await supabase
+    // Universal 48-hour purge: all recordings older than 48h with un-deleted
+    // audio are purged regardless of status ('complete', 'failed', 'retry_pending').
+    const { data: eligibleRows, error: fetchErr } = await supabase
       .from('conversations')
       .select('id, audio_url')
-      .eq('status', 'complete')
       .not('audio_url', 'is', null)
       .is('audio_deleted_at', null)
-      .lt('updated_at', completeThreshold);
+      .lt('created_at', cutoffThreshold);
 
-    if (completeErr) {
-      throw completeErr;
+    if (fetchErr) {
+      throw fetchErr;
     }
 
-    for (const row of completeRows ?? []) {
+    for (const row of eligibleRows ?? []) {
       try {
         const { error: removeErr } = await supabase.storage
           .from('recordings')

@@ -8,6 +8,7 @@ import {
   LogOut,
   Clock,
   CreditCard,
+  Shield,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
@@ -739,7 +740,7 @@ export function Settings() {
             Account
           </h2>
 
-          <div className="card px-5 md:px-6 py-3.5 flex items-center justify-between">
+          <div className="card px-5 md:px-6 py-3.5 flex items-center justify-between mb-3">
             <span className="text-xs text-textMuted">
               Signed in as {profile?.email}
             </span>
@@ -752,6 +753,23 @@ export function Settings() {
               <LogOut className="w-3.5 h-3.5" />
               Sign Out
             </button>
+          </div>
+
+          <div className="card px-5 md:px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className="w-3.5 h-3.5 text-textMuted" />
+              <span className="text-xs text-textMuted">
+                Privacy & Data
+              </span>
+            </div>
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium text-accent hover:text-primaryLight transition-colors"
+            >
+              View Privacy Policy
+            </a>
           </div>
         </section>
 
