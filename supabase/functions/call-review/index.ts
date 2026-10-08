@@ -8,7 +8,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const GEMINI_MODEL_OVERRIDE = Deno.env.get('GEMINI_MODEL');
 const MODEL_CHAIN = GEMINI_MODEL_OVERRIDE
   ? [GEMINI_MODEL_OVERRIDE]
-  : ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'];
+  : ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash'];
 
 // Deal Stage values Kairo tracks -- kept in sync manually with DEAL_STAGES
 // in src/types/index.ts. Closed Won/Closed Lost are NEVER produced here;
