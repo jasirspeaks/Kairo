@@ -18,6 +18,8 @@ interface DealRow extends Deal {
   last_contact: string | null;
   next_meeting: string | null;
   has_reviewed_call: boolean;
+  has_active_analysis?: boolean;
+  has_recent_review?: boolean;
 }
 
 function formatValue(value: number | null): string {
@@ -39,6 +41,21 @@ export function Deals() {
   useEffect(() => {
     if (!user) return;
     fetchDeals();
+
+    const channel = supabase
+      .channel('deals-conversations-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `user_id=eq.${user.id}` },
+        () => {
+          fetchDeals();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -79,12 +96,25 @@ export function Deals() {
       if (!nextMeetingByDeal.has(m.deal_id)) nextMeetingByDeal.set(m.deal_id, m.start_time);
     });
 
+    const activeAnalysesByDeal = new Set(
+      (lastCalls || [])
+        .filter(c => c.status === 'pending' || c.status === 'processing' || c.status === 'retry_pending')
+        .map(c => c.deal_id)
+    );
+    const recentReviewsByDeal = new Set(
+      (lastCalls || [])
+        .filter(c => c.status === 'complete' && Date.now() - new Date(c.created_at).getTime() < 2 * 60 * 60 * 1000)
+        .map(c => c.deal_id)
+    );
+
     setRows(deals.map(d => ({
       ...d,
       current_status: statusByDeal.get(d.id) || null,
       last_contact: lastContactByDeal.get(d.id) || null,
       next_meeting: nextMeetingByDeal.get(d.id) || null,
       has_reviewed_call: reviewedDealIds.has(d.id),
+      has_active_analysis: activeAnalysesByDeal.has(d.id),
+      has_recent_review: recentReviewsByDeal.has(d.id),
     })));
     setLoading(false);
   }
@@ -260,7 +290,23 @@ export function Deals() {
                   onClick={() => navigate(`/app/deals/${d.id}`)}
                   className="border-b border-border last:border-0 cursor-pointer hover:bg-surfaceHigh active:bg-surfaceHigh transition-colors"
                 >
-                  <td className="px-5 py-3.5 font-medium text-textPrimary whitespace-nowrap md:whitespace-normal md:max-w-[220px]">{d.deal_name}</td>
+                  <td className="px-5 py-3.5 font-medium text-textPrimary whitespace-nowrap md:whitespace-normal md:max-w-[260px]">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{d.deal_name}</span>
+                      {d.has_active_analysis && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          Analyzing
+                        </span>
+                      )}
+                      {!d.has_active_analysis && d.has_recent_review && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          Review ready
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap md:whitespace-normal md:max-w-[160px]">{d.company_name}</td>
                   <td className="px-5 py-3.5 text-textSecondary whitespace-nowrap">{d.deal_stage}</td>
                   <td className="px-5 py-3.5 whitespace-nowrap">

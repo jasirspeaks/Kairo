@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
+import { ReviewReadyToast } from '../ui/ReviewReadyToast';
 import { cn } from '../../lib/utils';
 
 interface AppLayoutProps {
@@ -48,6 +49,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Mobile bottom tab bar */}
       <BottomNav />
+
+      {/* Global Review Ready Toast & Desktop Notifier */}
+      <ReviewReadyToast />
     </div>
   );
 }

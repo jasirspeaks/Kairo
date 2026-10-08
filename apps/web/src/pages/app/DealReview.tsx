@@ -599,6 +599,7 @@ export function DealReview() {
   const [history, setHistory] = useState<DealLongitudinalHistory | null>(null);
   const [nextMeeting, setNextMeeting] = useState<{ start_time: string; title: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [reviewTab, setReviewTab] = useState<DealReviewTab>('action_plan');
 
   // Evidence Inspector state
@@ -613,6 +614,28 @@ export function DealReview() {
   useEffect(() => {
     if (!dealId) return;
     fetchData();
+
+    const channel = supabase
+      .channel(`deal-review-live-${dealId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `deal_id=eq.${dealId}` },
+        () => {
+          fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'deal_state', filter: `deal_id=eq.${dealId}` },
+        () => {
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
 
@@ -621,11 +644,22 @@ export function DealReview() {
     setLoading(true);
 
     try {
-      const histData = await getDealLongitudinalHistory(dealId);
+      const [histData, activeConvsRes] = await Promise.all([
+        getDealLongitudinalHistory(dealId),
+        supabase
+          .from('conversations')
+          .select('id, status')
+          .eq('deal_id', dealId)
+          .in('status', ['pending', 'processing', 'retry_pending'])
+          .limit(1),
+      ]);
+
       setDeal(histData.deal);
       setDealState(histData.state);
       setCalls(histData.conversations || []);
       setStakeholders(histData.stakeholders || []);
+      setIsAnalyzing(Boolean(activeConvsRes.data && activeConvsRes.data.length > 0));
+
       const now = new Date();
       const upcoming = (histData.meetings || []).find(
         (m) =>
@@ -761,6 +795,16 @@ export function DealReview() {
           </div>
         </div>
       </div>
+
+      {/* Ambient active analysis banner */}
+      {isAnalyzing && (
+        <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 flex items-center gap-3 mb-4 md:mb-5 animate-fade-in">
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+          <p className="text-xs text-amber-200/90 leading-relaxed flex-1">
+            <strong>Analyzing latest call:</strong> Kairo is extracting 5-pillar intelligence in the background. This page will update live when complete.
+          </p>
+        </div>
+      )}
 
       {/* Metrics strip */}
       <div className="card p-4 md:p-5 mb-4 md:mb-5 w-full">
