@@ -8,55 +8,72 @@
 -- 1. Recordings Storage Bucket & RLS Policies
 -- ============================================================================
 
--- Ensure the private recordings bucket exists
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('recordings', 'recordings', false)
-ON CONFLICT (id) DO UPDATE SET public = false;
+DO $$
+BEGIN
+  -- Check if storage schema and storage.buckets exist (hosted Supabase vs bare test runners)
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'storage'
+      AND table_name = 'buckets'
+  ) THEN
+    -- Ensure the private recordings bucket exists
+    EXECUTE $cmd$
+      INSERT INTO storage.buckets (id, name, public)
+      VALUES ('recordings', 'recordings', false)
+      ON CONFLICT (id) DO UPDATE SET public = false;
+    $cmd$;
 
--- Clean up any existing policies on storage.objects for the recordings bucket
-DROP POLICY IF EXISTS "recordings_select_own" ON storage.objects;
-DROP POLICY IF EXISTS "recordings_insert_own" ON storage.objects;
-DROP POLICY IF EXISTS "recordings_update_own" ON storage.objects;
-DROP POLICY IF EXISTS "recordings_delete_own" ON storage.objects;
-DROP POLICY IF EXISTS "Authenticated users can read recordings in their own folder" ON storage.objects;
-DROP POLICY IF EXISTS "Authenticated users can upload recordings to their own folder" ON storage.objects;
-DROP POLICY IF EXISTS "Authenticated users can update recordings in their own folder" ON storage.objects;
-DROP POLICY IF EXISTS "Authenticated users can delete recordings in their own folder" ON storage.objects;
+    -- Clean up any existing policies on storage.objects for the recordings bucket
+    EXECUTE $cmd$
+      DROP POLICY IF EXISTS "recordings_select_own" ON storage.objects;
+      DROP POLICY IF EXISTS "recordings_insert_own" ON storage.objects;
+      DROP POLICY IF EXISTS "recordings_update_own" ON storage.objects;
+      DROP POLICY IF EXISTS "recordings_delete_own" ON storage.objects;
+      DROP POLICY IF EXISTS "Authenticated users can read recordings in their own folder" ON storage.objects;
+      DROP POLICY IF EXISTS "Authenticated users can upload recordings to their own folder" ON storage.objects;
+      DROP POLICY IF EXISTS "Authenticated users can update recordings in their own folder" ON storage.objects;
+      DROP POLICY IF EXISTS "Authenticated users can delete recordings in their own folder" ON storage.objects;
+    $cmd$;
 
--- Strict least-privilege user isolation:
--- Storage path structure is {userId}/{dealId}/{conversationId}.{ext}
--- Users can ONLY access objects where the top-level folder matches auth.uid()
-CREATE POLICY "recordings_select_own" ON storage.objects
-  FOR SELECT TO authenticated
-  USING (
-    bucket_id = 'recordings'
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-  );
+    -- Strict least-privilege user isolation:
+    -- Storage path structure is {userId}/{dealId}/{conversationId}.{ext}
+    -- Users can ONLY access objects where the top-level folder matches auth.uid()
+    EXECUTE $cmd$
+      CREATE POLICY "recordings_select_own" ON storage.objects
+        FOR SELECT TO authenticated
+        USING (
+          bucket_id = 'recordings'
+          AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+        );
 
-CREATE POLICY "recordings_insert_own" ON storage.objects
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    bucket_id = 'recordings'
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-  );
+      CREATE POLICY "recordings_insert_own" ON storage.objects
+        FOR INSERT TO authenticated
+        WITH CHECK (
+          bucket_id = 'recordings'
+          AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+        );
 
-CREATE POLICY "recordings_update_own" ON storage.objects
-  FOR UPDATE TO authenticated
-  USING (
-    bucket_id = 'recordings'
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-  )
-  WITH CHECK (
-    bucket_id = 'recordings'
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-  );
+      CREATE POLICY "recordings_update_own" ON storage.objects
+        FOR UPDATE TO authenticated
+        USING (
+          bucket_id = 'recordings'
+          AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+        )
+        WITH CHECK (
+          bucket_id = 'recordings'
+          AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+        );
 
-CREATE POLICY "recordings_delete_own" ON storage.objects
-  FOR DELETE TO authenticated
-  USING (
-    bucket_id = 'recordings'
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-  );
+      CREATE POLICY "recordings_delete_own" ON storage.objects
+        FOR DELETE TO authenticated
+        USING (
+          bucket_id = 'recordings'
+          AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
+        );
+    $cmd$;
+  END IF;
+END $$;
 
 -- ============================================================================
 -- 2. Relax Meetings DELETE Policy (Right to Erasure for Expired Users)
