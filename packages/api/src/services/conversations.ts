@@ -335,16 +335,19 @@ export async function submitTranscript(
   }
 
   if (meetingId) {
-    await client
-      .from('meetings')
-      .update({
-        conversation_id: newConv.id,
-        matched_conversation_id: newConv.id,
-        capture_status: 'processing',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', meetingId)
-      .catch(() => {});
+    try {
+      await client
+        .from('meetings')
+        .update({
+          conversation_id: newConv.id,
+          matched_conversation_id: newConv.id,
+          capture_status: 'processing',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', meetingId);
+    } catch {
+      // Ignore non-critical meeting metadata update errors
+    }
   }
 
   const { supabaseUrl } = getClientConfig();

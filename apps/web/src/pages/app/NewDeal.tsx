@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Building2, FileText, AlertCircle, DollarSign, Calendar, CheckCircle2, X, Mic } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, resolveDealStage, checkCalendarConnected, getDealLongitudinalHistory } from '../../lib/kairo';
+import { reviewCall, saveDealState, resolveDealStage, checkCalendarConnected, getDealLongitudinalHistory, submitTranscript } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Button } from '../../components/ui/Button';
@@ -11,6 +11,7 @@ import { TopBar } from '../../components/layout/TopBar';
 import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { UpgradeModal } from '../../components/ui/UpgradeModal';
 import { ScheduleMeetingModal } from '../../components/ui/ScheduleMeetingModal';
+import { FlashCaptureModal } from '../../components/ui/FlashCaptureModal';
 import { INITIAL_DEAL_STAGE } from '../../types';
 import { cn } from '../../lib/utils';
 
@@ -23,12 +24,12 @@ export function NewDeal() {
   const { canWrite } = useSubscription(user?.id);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showFlashModal, setShowFlashModal] = useState(false);
   const [step, setStep] = useState<Step>('deal');
   const [dealName, setDealName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [dealValue, setDealValue] = useState('');
   const [transcript, setTranscript] = useState('');
-  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
 
   // Set once "Schedule First Meeting" successfully creates the deal, so the
@@ -188,9 +189,9 @@ export function NewDeal() {
     return dealId;
   }
 
-  function handleRecordingComplete(result: { conversationId: string; dealId: string }) {
+  function handleRecordingComplete() {
     callSucceeded.current = true;
-    navigate(`/app/deals/${result.dealId}/calls/${result.conversationId}`);
+    setShowFlashModal(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -201,96 +202,30 @@ export function NewDeal() {
     const text = transcript.trim();
 
     if (!text) { setError('Please paste a transcript before reviewing.'); return; }
-    if (text.length < 100) { setError('Transcript is too short.'); return; }
+    if (text.length < 100) { setError('Transcript is too short. Please provide at least 100 characters.'); return; }
     if (text.length > 50000) { setError('Transcript is too long.'); return; }
 
-    setAnalyzing(true);
     setError('');
 
     let dealId: string | null = scheduledDealIdRef.current ?? scheduledDealId;
-    let createdDealHere = false;
 
     try {
       if (!dealId) {
         dealId = await createDealRow();
         if (!dealId) throw new Error('Failed to create deal.');
-        createdDealHere = true;
         setScheduledDealId(dealId);
         scheduledDealIdRef.current = dealId;
       }
 
-      let previousReview: any = null;
-      let hist: any = null;
-      let currentStage = INITIAL_DEAL_STAGE;
-
-      if (dealIsPreexisting.current && dealId) {
-        const [{ data: existingState }, { data: existingDeal }, histData] = await Promise.all([
-          supabase.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
-          supabase.from('deals').select('deal_stage').eq('id', dealId).maybeSingle(),
-          getDealLongitudinalHistory(dealId).catch(() => null),
-        ]);
-        if (existingDeal?.deal_stage) currentStage = existingDeal.deal_stage;
-        if (existingState) {
-          previousReview = (existingState as any).deal ? existingState : { deal: existingState, call: null };
-        }
-        hist = histData;
-      }
-
-      const review = await reviewCall(text, {
-        deal_id: dealId || undefined,
-        deal_name: dealName.trim(),
-        company_name: companyName.trim(),
-        deal_stage: currentStage,
-        previous_review: previousReview,
-        longitudinal_history: hist || undefined,
-        seller_context: {
-          what_you_sell: profile?.what_you_sell || undefined,
-          who_you_are: profile?.who_you_are || undefined,
-        },
-      });
-
-      const resolvedStage = resolveDealStage(currentStage, review);
-
-      const { data: conv, error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          user_id: user.id,
-          deal_id: dealId,
-          deal_stage: resolvedStage,
-          input_type: 'transcript',
-          transcript: text,
-          status: 'complete',
-          analysis_json: review,
-        })
-        .select()
-        .single();
-
-      if (convError || !conv) throw new Error('Failed to save conversation.');
-
-      // Persist deal review state and pass conversationId for atomic evidence & history tracking
-      await saveDealState(dealId, user.id, review, resolvedStage, conv.id);
+      // Write-Ahead Persistence (WAL) & non-blocking background orchestration:
+      // Instantly commits transcript to DB as pending and triggers review in background.
+      await submitTranscript(dealId, text);
 
       callSucceeded.current = true;
-      navigate(`/app/deals/${dealId}/calls/${conv.id}`);
-
+      setShowFlashModal(true);
     } catch (err: any) {
-      // Only delete the deal if we created it in this submission -- a deal
-      // that already existed (created earlier via Schedule First Meeting)
-      // must survive a failed transcript review.
-      if (dealId && createdDealHere) {
-        await supabase.from('deals').delete().eq('id', dealId);
-      }
       setError(err.message || 'Something went wrong. Please try again.');
-      setAnalyzing(false);
     }
-  }
-
-  if (analyzing) {
-    return (
-      <div className="min-h-[calc(100vh-64px)]">
-        <LoadingState phase="analyzing" />
-      </div>
-    );
   }
 
   if (step === 'record') {
@@ -567,6 +502,13 @@ export function NewDeal() {
       )}
 
       <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+
+      <FlashCaptureModal
+        open={showFlashModal}
+        dealName={dealName.trim()}
+        targetPath="/app/dashboard"
+        onDismiss={() => setShowFlashModal(false)}
+      />
 
       {scheduledDealId && (
         <ScheduleMeetingModal

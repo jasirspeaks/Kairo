@@ -5,7 +5,7 @@ import {
   TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { reviewCall, saveDealState, getCallStatusStyle, getCallStatusColor, resolveDealStage, getDealLongitudinalHistory } from '../../lib/kairo';
+import { reviewCall, saveDealState, getCallStatusStyle, getCallStatusColor, resolveDealStage, getDealLongitudinalHistory, submitTranscript } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { Deal, Conversation } from '../../types';
@@ -16,6 +16,7 @@ import { TopBar } from '../../components/layout/TopBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { ScheduleMeetingButton } from '../../components/ui/ScheduleMeetingButton';
 import { UpgradeModal } from '../../components/ui/UpgradeModal';
+import { FlashCaptureModal } from '../../components/ui/FlashCaptureModal';
 import { RecordCallScreen } from '../../components/record/RecordCallScreen';
 import { formatDate } from '../../lib/utils';
 
@@ -45,10 +46,10 @@ export function Review() {
   const [copied, setCopied] = useState(false);
   const [addingCall, setAddingCall] = useState(false);
   const [newTranscript, setNewTranscript] = useState('');
-  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
   const [recordingNow, setRecordingNow] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showFlashModal, setShowFlashModal] = useState(false);
 
   useEffect(() => {
     if (!dealId) return;
@@ -97,91 +98,23 @@ export function Review() {
   async function handleAddCall(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !deal || !newTranscript.trim()) return;
-    // Belt-and-suspenders: the trigger button already redirects to the
-    // modal instead of opening this sheet when !canWrite, so this sheet
-    // shouldn't be reachable in that state. Kept as a second check purely
-    // to avoid spending a Gemini call before RLS would reject the insert
-    // anyway, in case this is ever reached some other way.
     if (!canWrite) { setAddingCall(false); setShowUpgradeModal(true); return; }
 
     const text = newTranscript.trim();
-    if (text.length < 100) { setError('Transcript is too short.'); return; }
+    if (text.length < 100) { setError('Transcript is too short. Please provide at least 100 characters.'); return; }
 
-    setAnalyzing(true);
     setError('');
 
-    let convId: string | null = null;
-
     try {
-      const [{ data: currentDealState }, hist] = await Promise.all([
-        supabase.from('deal_state').select('*').eq('deal_id', deal.id).maybeSingle(),
-        getDealLongitudinalHistory(deal.id).catch(() => null),
-      ]);
-
-      const previousReview = currentDealState || conv?.analysis_json || null;
-
-      const review = await reviewCall(text, {
-        deal_id: deal.id,
-        deal_name: deal.deal_name,
-        company_name: deal.company_name,
-        deal_stage: deal.deal_stage,
-        previous_review: previousReview ? ((previousReview as any).deal ? previousReview : { deal: previousReview, call: null } as any) : null,
-        longitudinal_history: hist || undefined,
-        seller_context: {
-          what_you_sell: profile?.what_you_sell || undefined,
-          who_you_are: profile?.who_you_are || undefined,
-        },
-      });
-
-      // Deal Stage is now fully automatic: resolveDealStage reads what
-      // call-review concretely observed happened (or infers an unambiguous
-      // Won/Lost close) and only ever advances the deal's stage, or holds
-      // it, from wherever it currently sits -- never moves it backward
-      // except on the model's own rare, explicit regression call. Resolved
-      // BEFORE the conversations insert below so deal_stage on that row
-      // reflects the stage this call resulted in, not the stage the deal
-      // was at before the call was reviewed. Previously this stamped
-      // deal.deal_stage (the pre-call value), which meant Deal Activity and
-      // Risk Evolution on Deal Review always showed the outgoing stage for
-      // every call -- most visibly wrong on the latest call, whose own
-      // Call Review page reads deals.deal_stage live and so showed the new
-      // stage while Deal Activity showed the old one for that same call.
-      const resolvedStage = resolveDealStage(deal.deal_stage, review);
-
-      const { data: newConv, error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          user_id: user.id,
-          deal_id: deal.id,
-          deal_stage: resolvedStage,
-          input_type: 'transcript',
-          transcript: text,
-          status: 'complete',
-          analysis_json: review,
-        })
-        .select()
-        .single();
-
-      if (convError || !newConv) throw new Error('Failed to save conversation.');
-      convId = newConv.id;
-
-      // review.deal is already the deal's complete current-state assessment
-      // -- computed by call-review with the full prior history as context.
-      // Write directly, no aggregation step. persist_deal_review owns
-      // deal_state, stakeholders, and stage writeback atomically.
-      await saveDealState(deal.id, user.id, review, resolvedStage, newConv.id);
+      // 1. Write-Ahead Persistence (WAL) and non-blocking background orchestration:
+      // Instantly commits the conversation to DB and triggers review in background.
+      await submitTranscript(deal.id, text);
 
       setNewTranscript('');
       setAddingCall(false);
-      navigate(`/app/deals/${deal.id}/calls/${newConv.id}`);
-
+      setShowFlashModal(true);
     } catch (err: any) {
-      if (convId) {
-        await supabase.from('conversations').delete().eq('id', convId);
-      }
-      setError(err.message || 'Something went wrong.');
-    } finally {
-      setAnalyzing(false);
+      setError(err.message || 'Failed to submit transcript. Please try again.');
     }
   }
 
@@ -198,19 +131,13 @@ export function Review() {
     </div>
   );
 
-  if (analyzing) return (
-    <div className="min-h-[calc(100vh-64px)]">
-      <LoadingState phase="analyzing" />
-    </div>
-  );
-
   if (recordingNow && dealId) {
     return (
       <RecordCallScreen
         dealId={dealId}
-        onComplete={(result) => {
+        onComplete={() => {
           setRecordingNow(false);
-          navigate(`/app/deals/${result.dealId}/calls/${result.conversationId}`);
+          setShowFlashModal(true);
         }}
         onClose={() => setRecordingNow(false)}
       />
@@ -455,6 +382,12 @@ export function Review() {
       </BottomSheet>
 
       <UpgradeModal open={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
+      <FlashCaptureModal
+        open={showFlashModal}
+        dealName={deal?.deal_name}
+        targetPath="/app/dashboard"
+        onDismiss={() => setShowFlashModal(false)}
+      />
     </div>
   );
 }

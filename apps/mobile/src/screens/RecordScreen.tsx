@@ -176,18 +176,17 @@ export function RecordScreen({ dealId: initialDealId }: { dealId?: string }) {
         throw new Error('Audio payload contains 0 bytes. Recording discarded.');
       }
 
-      setStatusMessage(
-        `Uploading recording (${(audioBlob.size / 1024).toFixed(1)} KB) and generating 5-pillar deal intelligence...`
-      );
+      setStatusMessage('Call captured! Kairo is analyzing deal intelligence in the background.');
 
-      const review = await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
-      setStatusMessage('Audio recorded & 5-pillar deal intelligence generated successfully!');
+      await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
 
       await FileSystem.deleteAsync(recordedUri, { idempotent: true }).catch(() => {});
 
-      if (review && selectedDealId) {
-        navigate('deal_review', { dealId: selectedDealId });
-      }
+      setTimeout(() => {
+        if (selectedDealId) {
+          navigate('deal_review', { dealId: selectedDealId });
+        }
+      }, 1500);
     } catch (err: any) {
       console.error('[MobileRecorder] Submission failed:', err);
       setErrorMessage(err?.message || 'Failed to process mobile audio recording.');
