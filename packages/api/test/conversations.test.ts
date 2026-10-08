@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { reviewCall } from '../src/services/conversations';
+import { reviewCall, submitTranscript, submitRecording } from '../src/services/conversations';
 import type { DealReview } from '@kairo/core';
 
 describe('reviewCall service suite', () => {
@@ -190,3 +190,72 @@ describe('reviewCall service suite', () => {
     ).rejects.toThrow('The review service returned an invalid response structure. Please try again.');
   });
 });
+
+describe('submitTranscript service suite (WAL & Non-blocking)', () => {
+  const mockSession = {
+    access_token: 'valid-jwt-token-123',
+    user: { id: 'user-123' },
+  };
+
+  const createMockClient = () => {
+    const singleMock = vi.fn().mockResolvedValue({
+      data: { id: 'conv-test-999', deal_id: 'deal-123', user_id: 'user-123', status: 'pending' },
+      error: null,
+    });
+    const selectMock = vi.fn().mockReturnValue({ single: singleMock });
+    const insertMock = vi.fn().mockReturnValue({ select: selectMock });
+    const fromMock = vi.fn().mockReturnValue({
+      insert: insertMock,
+      update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ catch: vi.fn() }) }),
+    });
+
+    return {
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: mockSession } }) },
+      from: fromMock,
+      _insertMock: insertMock,
+    };
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rejects transcripts that are too short', async () => {
+    const mockClient = createMockClient();
+    await expect(
+      submitTranscript('deal-123', 'Too short', null, {}, mockClient as any)
+    ).rejects.toThrow('Transcript is too short. Please provide a more complete conversation.');
+  });
+
+  it('rejects if user session is absent', async () => {
+    const mockClient = createMockClient();
+    mockClient.auth.getSession.mockResolvedValue({ data: { session: null } });
+
+    await expect(
+      submitTranscript('deal-123', 'This is a sufficiently long transcript that contains sales conversation content.', null, {}, mockClient as any)
+    ).rejects.toThrow('You must be signed in to submit a transcript.');
+  });
+
+  it('persists transcript with status "pending" and returns immediately (fire-and-forget)', async () => {
+    const mockClient = createMockClient();
+    global.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+    const validTranscript = 'Rep: Welcome to the demo today. Buyer: Thanks, we are looking for a solution before Q4 begins.';
+    const result = await submitTranscript('deal-123', validTranscript, null, {}, mockClient as any);
+
+    expect(result.conversationId).toBe('conv-test-999');
+    expect(result.dealId).toBe('deal-123');
+
+    expect(mockClient._insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'user-123',
+        deal_id: 'deal-123',
+        input_type: 'transcript',
+        transcript: validTranscript,
+        status: 'pending',
+      })
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+

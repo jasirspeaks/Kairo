@@ -143,13 +143,24 @@ export interface SubmitRecordingResult {
   meetingId?: string;
 }
 
+export interface SubmitRecordingOptions {
+  waitForReview?: boolean;
+}
+
 export async function submitRecording(
   dealId: string,
   blob: Blob,
   mimeType: string,
   meetingId?: string | null,
-  client: KairoClient = getKairoClient()
+  optionsOrClient: SubmitRecordingOptions | KairoClient = {},
+  clientArg?: KairoClient
 ): Promise<SubmitRecordingResult> {
+  const isClient = (obj: any): obj is KairoClient => Boolean(obj && typeof obj.from === 'function');
+  const options: SubmitRecordingOptions = isClient(optionsOrClient) ? {} : optionsOrClient;
+  const client: KairoClient = isClient(optionsOrClient)
+    ? optionsOrClient
+    : clientArg || getKairoClient();
+
   if (!blob || blob.size === 0) {
     throw new Error('Cannot submit empty audio recording. The recording must contain captured audio data.');
   }
@@ -213,41 +224,168 @@ export async function submitRecording(
 
   const { supabaseUrl } = getClientConfig();
 
-  let response: Response;
-  try {
-    response = await fetch(
-      `${supabaseUrl}/functions/v1/mobile-recording-review`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        signal: AbortSignal.timeout(90000),
-        body: JSON.stringify({ conversation_id: newConv.id }),
+  if (options.waitForReview) {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${supabaseUrl}/functions/v1/mobile-recording-review`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          signal: AbortSignal.timeout(90000),
+          body: JSON.stringify({ conversation_id: newConv.id }),
+        }
+      );
+    } catch (err: any) {
+      console.error('submitRecording transport error:', err);
+      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+        throw new Error('Recording processing timed out. Please check your inbox in a moment.');
       }
-    );
-  } catch (err: any) {
-    console.error('submitRecording transport error:', err);
-    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
-      throw new Error('Recording processing timed out. Please check your inbox in a moment.');
+      throw new Error("Couldn't reach Kairo's recording review service. Please check your connection.");
     }
-    throw new Error("Couldn't reach Kairo's recording review service. Please check your connection.");
+
+    let data: any = null;
+    try {
+      const text = await response.text();
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      // Non-JSON response
+    }
+
+    if (!response.ok) {
+      throw new Error(describeRecordingError(data?.error));
+    }
+  } else {
+    // Non-blocking fire-and-forget: The audio is safely stored in Storage and
+    // marked 'pending'. Trigger the background review orchestrator without
+    // holding the client on a blocking loading screen.
+    fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ conversation_id: newConv.id }),
+    }).catch((err: any) => {
+      console.warn('submitRecording background review dispatch warning:', err);
+    });
   }
 
-  let data: any = null;
-  try {
-    const text = await response.text();
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    // Non-JSON response
+  return { conversationId: newConv.id, dealId, meetingId: meetingId || undefined };
+}
+
+export interface SubmitTranscriptOptions {
+  waitForReview?: boolean;
+}
+
+export interface SubmitTranscriptResult {
+  conversationId: string;
+  dealId: string;
+  meetingId?: string;
+}
+
+/**
+ * Persists a text transcript immediately (Write-Ahead Persistence) and triggers
+ * the background review orchestrator asynchronously.
+ */
+export async function submitTranscript(
+  dealId: string,
+  transcript: string,
+  meetingId?: string | null,
+  optionsOrClient: SubmitTranscriptOptions | KairoClient = {},
+  clientArg?: KairoClient
+): Promise<SubmitTranscriptResult> {
+  const isClient = (obj: any): obj is KairoClient => Boolean(obj && typeof obj.from === 'function');
+  const options: SubmitTranscriptOptions = isClient(optionsOrClient) ? {} : optionsOrClient;
+  const client: KairoClient = isClient(optionsOrClient)
+    ? optionsOrClient
+    : clientArg || getKairoClient();
+
+  const trimmed = typeof transcript === 'string' ? transcript.trim() : '';
+  if (!trimmed || trimmed.length < 50) {
+    throw new Error('Transcript is too short. Please provide a more complete conversation.');
   }
 
-  if (!response.ok) {
-    throw new Error(describeRecordingError(data?.error));
+  const { data: { session } } = await client.auth.getSession();
+  if (!session) {
+    throw new Error('You must be signed in to submit a transcript.');
+  }
+  const userId = session.user.id;
+
+  // 1. Write-Ahead Persistence (WAL): Immediately persist to DB so user input
+  // is never lost on network disconnects or downstream errors.
+  const { data: newConv, error: convError } = await client
+    .from('conversations')
+    .insert({
+      user_id: userId,
+      deal_id: dealId,
+      meeting_id: meetingId || null,
+      input_type: 'transcript',
+      transcript: trimmed,
+      status: 'pending',
+    })
+    .select()
+    .single();
+
+  if (convError || !newConv) {
+    throw new Error('Failed to create the call record. Please try again.');
   }
 
-  return { conversationId: newConv.id, dealId };
+  if (meetingId) {
+    await client
+      .from('meetings')
+      .update({
+        conversation_id: newConv.id,
+        matched_conversation_id: newConv.id,
+        capture_status: 'processing',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', meetingId)
+      .catch(() => {});
+  }
+
+  const { supabaseUrl } = getClientConfig();
+
+  if (options.waitForReview) {
+    try {
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/mobile-recording-review`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          signal: AbortSignal.timeout(90000),
+          body: JSON.stringify({ conversation_id: newConv.id }),
+        }
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(describeRecordingError(data?.error));
+      }
+    } catch (err: any) {
+      console.warn('submitTranscript synchronous wait failed; proceeding asynchronously:', err);
+    }
+  } else {
+    // Non-blocking fire-and-forget: The transcript is safely committed to DB.
+    // Trigger the background review orchestrator without blocking UI thread.
+    fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ conversation_id: newConv.id }),
+    }).catch((err: any) => {
+      console.warn('submitTranscript background review dispatch warning:', err);
+    });
+  }
+
+  return { conversationId: newConv.id, dealId, meetingId: meetingId || undefined };
 }
 
 export function describeRecordingError(rawError: string | undefined): string {
