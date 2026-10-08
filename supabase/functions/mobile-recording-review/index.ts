@@ -280,7 +280,10 @@ serve(async (req: Request) => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   let conversationId: string | undefined;
+  let userId: string | undefined;
+  let workerToken: string = crypto.randomUUID();
   let processingStarted = false;
+  const startTime = Date.now();
 
   try {
     const authHeader = req.headers.get('Authorization');
@@ -298,14 +301,19 @@ serve(async (req: Request) => {
     const body = await req.json();
     conversationId = body.conversation_id;
 
+    if (
+      typeof body.processing_token === 'string' &&
+      body.processing_token.trim()
+    ) {
+      workerToken = body.processing_token.trim();
+    }
+
     if (!conversationId) {
       return jsonRes(
         { error: 'conversation_id is required' },
         400
       );
     }
-
-    let userId: string;
 
     // Internal server-to-server path.
     if (token === SUPABASE_SERVICE_ROLE_KEY) {
@@ -383,6 +391,32 @@ serve(async (req: Request) => {
       conversation.analysis_json &&
       typeof conversation.analysis_json === 'object'
     ) {
+      const { data: claimed, error: repairClaimError } = await supabase.rpc(
+        'claim_conversation_review',
+        {
+          p_conversation_id: conversationId,
+          p_user_id: userId,
+          p_retry: false,
+          p_worker_token: workerToken,
+        }
+      );
+
+      if (repairClaimError) {
+        throw new Error(`Failed to claim conversation review for repair: ${repairClaimError.message}`);
+      }
+
+      if (!claimed) {
+        return jsonRes(
+          {
+            error:
+              'Conversation is not available for repair (already processing or not pending)',
+          },
+          409
+        );
+      }
+
+      processingStarted = true;
+
       const { data: deal, error: dealFetchError } = await supabase
         .from('deals')
         .select('*')
@@ -393,38 +427,14 @@ serve(async (req: Request) => {
         throw new Error('Associated deal not found');
       }
 
-      const resolvedStage = deal.deal_stage
-        ? resolveDealStageServer(
-            deal.deal_stage,
-            conversation.analysis_json as any
-          )
-        : null;
-
       await writeBackDealReview(
         supabase,
         deal.id,
         userId,
         conversation.analysis_json as any,
-        conversationId
+        conversationId,
+        workerToken
       );
-
-      const { error: repairUpdateError } = await supabase
-        .from('conversations')
-        .update({
-          status: 'complete',
-          deal_stage: resolvedStage,
-          retry_after: null,
-          last_error: null,
-          processing_lease_until: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', conversationId);
-
-      if (repairUpdateError) {
-        throw new Error(
-          `Failed to repair conversation state: ${repairUpdateError.message}`
-        );
-      }
 
       return jsonRes({
         ok: true,
@@ -452,6 +462,7 @@ serve(async (req: Request) => {
         p_conversation_id: conversationId,
         p_user_id: userId,
         p_retry: isRetry,
+        p_worker_token: workerToken,
       }
     );
 
@@ -473,6 +484,16 @@ serve(async (req: Request) => {
 
     // Only now is this run considered a processing attempt.
     processingStarted = true;
+    console.log(
+      JSON.stringify({
+        event: 'review_claimed',
+        conversation_id: conversationId,
+        deal_id: conversation.deal_id,
+        user_id: userId,
+        worker_token_prefix: workerToken.slice(0, 8),
+        is_retry: isRetry,
+      })
+    );
 
     // Prefer a previously saved transcript. This is critical for retries:
     // once transcription succeeded, retrying the analysis should not require
@@ -660,39 +681,32 @@ serve(async (req: Request) => {
 
     const review = reviewData.review;
 
-    const resolvedStage = deal.deal_stage
-      ? resolveDealStageServer(
-          deal.deal_stage,
-          review
-        )
-      : (deal.deal_stage ?? null);
+    if (transcript !== conversation.transcript) {
+      const { error: transcriptUpdateError } = await supabase
+        .from('conversations')
+        .update({
+          transcript,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversationId);
 
-    const { error: updateError } = await supabase
-      .from('conversations')
-      .update({
-        transcript,
-        analysis_json: review,
-        status: 'complete',
-        deal_stage: resolvedStage,
-        retry_after: null,
-        last_error: null,
-        processing_lease_until: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conversationId);
-
-    if (updateError) {
-      throw new Error(
-        `Failed to save analysis: ${updateError.message}`
-      );
+      if (transcriptUpdateError) {
+        throw new Error(
+          `Failed to save transcript: ${transcriptUpdateError.message}`
+        );
+      }
     }
 
+    // Atomic deal writeback AND conversation completion:
+    // persist_deal_review verifies workerToken under row lock, updates deal_state,
+    // stakeholders, risks, deals, AND sets conversations.status = 'complete'.
     await writeBackDealReview(
       supabase,
       deal.id,
       userId,
       review,
-      conversationId
+      conversationId,
+      workerToken
     );
 
     if (conversation.meeting_id) {
@@ -709,7 +723,14 @@ serve(async (req: Request) => {
     }
 
     console.log(
-      `mobile-recording-review: completed conversation ${conversationId} for deal ${deal.id}`
+      JSON.stringify({
+        event: 'review_completed',
+        conversation_id: conversationId,
+        deal_id: deal.id,
+        user_id: userId,
+        worker_token_prefix: workerToken.slice(0, 8),
+        duration_ms: Date.now() - startTime,
+      })
     );
 
     return jsonRes({
@@ -721,17 +742,24 @@ serve(async (req: Request) => {
     const errorMessage = normalizeError(err);
 
     console.error(
-      'mobile-recording-review error:',
-      errorMessage
+      JSON.stringify({
+        event: 'review_failed',
+        conversation_id: conversationId,
+        user_id: userId,
+        worker_token_prefix: workerToken.slice(0, 8),
+        error: errorMessage,
+        duration_ms: Date.now() - startTime,
+      })
     );
 
     // Only the run that actually entered processing is allowed to change
-    // retry state. Ownership was already verified before this flag was set.
-    if (conversationId && processingStarted) {
+    // retry state. Token-guarded RPC guarantees that a stale worker whose lease
+    // expired cannot overwrite a newer worker's state.
+    if (conversationId && processingStarted && userId) {
       try {
         const { data: current } = await supabase
           .from('conversations')
-          .select('retry_attempts, status')
+          .select('retry_attempts')
           .eq('id', conversationId)
           .maybeSingle();
 
@@ -739,48 +767,27 @@ serve(async (req: Request) => {
           typeof current?.retry_attempts === 'number'
             ? current.retry_attempts
             : 0;
-        const nextAttempts = attempts + 1;
 
         const retryAfter = nextRetryAt(attempts);
 
-        if (retryAfter) {
-          const { error: retryStateError } = await supabase
-            .from('conversations')
-            .update({
-              status: 'retry_pending',
-              retry_attempts: nextAttempts,
-              retry_after: retryAfter,
-              last_error: errorMessage,
-              processing_lease_until: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', conversationId);
+        const { data: transitioned, error: failOrRetryError } =
+          await supabase.rpc('fail_or_retry_conversation_review', {
+            p_conversation_id: conversationId,
+            p_user_id: userId,
+            p_processing_token: workerToken,
+            p_error_message: errorMessage,
+            p_retry_after: retryAfter,
+          });
 
-          if (retryStateError) {
-            console.error(
-              `mobile-recording-review: failed to queue retry for ${conversationId}:`,
-              retryStateError.message
-            );
-          }
-        } else {
-          const { error: terminalError } = await supabase
-            .from('conversations')
-            .update({
-              status: 'failed',
-              retry_attempts: nextAttempts,
-              retry_after: null,
-              last_error: errorMessage,
-              processing_lease_until: null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', conversationId);
-
-          if (terminalError) {
-            console.error(
-              `mobile-recording-review: failed to mark ${conversationId} terminally failed:`,
-              terminalError.message
-            );
-          }
+        if (failOrRetryError) {
+          console.error(
+            `mobile-recording-review: fail_or_retry_conversation_review RPC error for ${conversationId}:`,
+            failOrRetryError.message
+          );
+        } else if (!transitioned) {
+          console.warn(
+            `mobile-recording-review: worker token ${workerToken} no longer owns conversation ${conversationId}; state change ignored`
+          );
         }
       } catch (retryStateHandlerError) {
         console.error(

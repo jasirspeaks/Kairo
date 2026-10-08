@@ -252,7 +252,13 @@ export interface Conversation {
   overall_score: number | null;
   sub_scores: null;
   status: ConversationStatus;
+  retry_attempts?: number;
+  retry_after?: string | null;
+  last_error?: string | null;
+  processing_token?: string | null;
+  processing_lease_until?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Stakeholder {

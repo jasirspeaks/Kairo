@@ -67,7 +67,7 @@ export function FlashCaptureModal({
         </p>
 
         <p className="text-xs text-textMuted mt-1">
-          You will receive an alert as soon as the review is ready.
+          Your deal intelligence will update automatically once analysis is complete.
         </p>
 
         {/* Action Button */}

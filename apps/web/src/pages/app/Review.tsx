@@ -125,6 +125,26 @@ export function Review() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  useEffect(() => {
+    if (!conv || !['pending', 'processing', 'retry_pending'].includes(conv.status)) return;
+    const interval = setInterval(() => {
+      if (dealId) {
+        supabase
+          .from('conversations')
+          .select('*')
+          .eq('deal_id', dealId)
+          .order('created_at', { ascending: true })
+          .then(({ data: callsData }) => {
+            const calls = callsData || [];
+            setAllCalls(calls);
+            const targetCall = callId ? calls.find(c => c.id === callId) : calls[calls.length - 1];
+            if (targetCall) setConv(targetCall);
+          });
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [conv?.status, dealId, callId]);
+
   if (loading) return (
     <div className="flex items-center justify-center py-32">
       <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
@@ -144,11 +164,37 @@ export function Review() {
     );
   }
 
+  if (conv && (conv.status === 'pending' || conv.status === 'processing' || conv.status === 'retry_pending')) {
+    return (
+      <EmptyState
+        icon={<div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin mx-auto" />}
+        title="Analyzing Conversation"
+        description={
+          conv.status === 'retry_pending'
+            ? 'Review retry scheduled. Kairo is analyzing 5-pillar deal intelligence...'
+            : 'Extracting 5-pillar intelligence, risks, and next steps in the background...'
+        }
+        action={<Button onClick={() => navigate(dealId ? `/app/deals/${dealId}` : '/app/dashboard')}>Back to Deal</Button>}
+      />
+    );
+  }
+
+  if (conv && conv.status === 'failed') {
+    return (
+      <EmptyState
+        icon={<AlertTriangle className="w-6 h-6 text-red-400" />}
+        title="Review Failed"
+        description={conv.last_error || 'We encountered an issue analyzing this conversation.'}
+        action={<Button onClick={() => navigate(dealId ? `/app/deals/${dealId}` : '/app/dashboard')}>Back to Deal</Button>}
+      />
+    );
+  }
+
   if (!deal || !conv || !conv.analysis_json) return (
     <EmptyState
       icon={<AlertTriangle className="w-6 h-6" />}
       title="Review not found"
-      description="This review doesn't exist or hasn't been processed yet."
+      description="This review doesn't exist or hasn't been created yet."
       action={<Button onClick={() => navigate('/app/dashboard')}>Back to Dashboard</Button>}
     />
   );

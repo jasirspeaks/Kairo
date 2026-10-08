@@ -65,47 +65,66 @@ function isAuthorized(req: Request): boolean {
 
 async function requeueOrFail(
   supabase: ReturnType<typeof createClient>,
-  job: { id: string; retry_attempts: number },
+  job: { id: string; user_id?: string; processing_token?: string; retry_attempts: number },
   errorMessage: string
 ) {
   const retryAfter = nextRetryAt(job.retry_attempts);
   const safeError = errorMessage.slice(0, 2000);
 
-  if (retryAfter) {
-    const { error } = await supabase
-      .from('conversations')
-      .update({
-        status: 'retry_pending',
-        retry_after: retryAfter,
-        last_error: safeError,
-        processing_lease_until: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', job.id);
+  if (job.user_id && job.processing_token) {
+    const { error } = await supabase.rpc('fail_or_retry_conversation_review', {
+      p_conversation_id: job.id,
+      p_user_id: job.user_id,
+      p_processing_token: job.processing_token,
+      p_error_message: safeError,
+      p_retry_after: retryAfter,
+    });
 
     if (error) {
       console.error(
-        `retry-call-reviews: failed to requeue ${job.id}:`,
+        `retry-call-reviews: fail_or_retry RPC failed for ${job.id}:`,
         error.message
       );
     }
   } else {
-    const { error } = await supabase
-      .from('conversations')
-      .update({
-        status: 'failed',
-        retry_after: null,
-        last_error: safeError,
-        processing_lease_until: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', job.id);
+    if (retryAfter) {
+      const { error } = await supabase
+        .from('conversations')
+        .update({
+          status: 'retry_pending',
+          retry_after: retryAfter,
+          last_error: safeError,
+          processing_lease_until: null,
+          processing_token: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
 
-    if (error) {
-      console.error(
-        `retry-call-reviews: failed to terminally fail ${job.id}:`,
-        error.message
-      );
+      if (error) {
+        console.error(
+          `retry-call-reviews: failed to requeue ${job.id}:`,
+          error.message
+        );
+      }
+    } else {
+      const { error } = await supabase
+        .from('conversations')
+        .update({
+          status: 'failed',
+          retry_after: null,
+          last_error: safeError,
+          processing_lease_until: null,
+          processing_token: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+
+      if (error) {
+        console.error(
+          `retry-call-reviews: failed to terminally fail ${job.id}:`,
+          error.message
+        );
+      }
     }
   }
 }
@@ -166,6 +185,7 @@ serve(async (req) => {
               conversation_id: job.id,
               user_id: job.user_id,
               retry_attempt: true,
+              processing_token: job.processing_token,
             }),
           }
         );
@@ -174,7 +194,12 @@ serve(async (req) => {
           completed++;
 
           console.log(
-            `retry-call-reviews: completed ${job.id} (attempt ${job.retry_attempts})`
+            JSON.stringify({
+              event: 'retry_worker_completed',
+              conversation_id: job.id,
+              attempt: job.retry_attempts,
+              processing_token_prefix: job.processing_token?.slice(0, 8),
+            })
           );
 
           continue;
@@ -208,7 +233,14 @@ serve(async (req) => {
         failed++;
 
         console.error(
-          `retry-call-reviews: review failed for ${job.id}: ${response.status} ${errorMessage}`
+          JSON.stringify({
+            event: 'retry_worker_failed',
+            conversation_id: job.id,
+            attempt: job.retry_attempts,
+            processing_token_prefix: job.processing_token?.slice(0, 8),
+            status: response.status,
+            error: errorMessage,
+          })
         );
       } catch (err) {
         failed++;
@@ -225,7 +257,13 @@ serve(async (req) => {
         );
 
         console.error(
-          `retry-call-reviews: invocation failed for ${job.id}: ${errorMessage}`
+          JSON.stringify({
+            event: 'retry_worker_invocation_failed',
+            conversation_id: job.id,
+            attempt: job.retry_attempts,
+            processing_token_prefix: job.processing_token?.slice(0, 8),
+            error: errorMessage,
+          })
         );
       }
     }

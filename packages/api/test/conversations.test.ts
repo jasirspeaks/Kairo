@@ -257,5 +257,78 @@ describe('submitTranscript service suite (WAL & Non-blocking)', () => {
     );
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('handles waitForReview mode without crashing when review service errors', async () => {
+    const mockClient = createMockClient();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'Review failed' }),
+    });
+
+    const validTranscript = 'Rep: Good morning and welcome to Kairo. Buyer: Good morning, our budget has been secured for this purchase and our team is ready to proceed with evaluation.';
+    const result = await submitTranscript('deal-123', validTranscript, null, { waitForReview: true }, mockClient as any);
+    expect(result.conversationId).toBe('conv-test-999');
+    expect(result.dealId).toBe('deal-123');
+  });
+});
+
+describe('submitRecording service suite', () => {
+  const mockSession = {
+    access_token: 'valid-jwt-token-123',
+    user: { id: 'user-123' },
+  };
+
+  it('rejects empty audio blob', async () => {
+    const emptyBlob = new Blob([], { type: 'audio/m4a' });
+    const mockClient = { auth: { getSession: vi.fn() }, from: vi.fn() };
+    await expect(
+      submitRecording('deal-123', emptyBlob, 'audio/m4a', null, {}, mockClient as any)
+    ).rejects.toThrow('Cannot submit empty audio recording.');
+  });
+
+  it('persists recording with status "pending" and uploads to storage', async () => {
+    const validBlob = new Blob(['sample audio binary bytes'], { type: 'audio/m4a' });
+    const singleMock = vi.fn().mockResolvedValue({
+      data: { id: 'conv-rec-123', deal_id: 'deal-123', user_id: 'user-123', status: 'pending' },
+      error: null,
+    });
+    const insertMock = vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: singleMock }) });
+    const uploadMock = vi.fn().mockResolvedValue({ error: null });
+    const updateMock = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+
+    const mockClient: any = {
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: mockSession } }) },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'conversations') {
+          return { insert: insertMock, update: updateMock };
+        }
+        return {};
+      }),
+      storage: {
+        from: vi.fn().mockReturnValue({ upload: uploadMock }),
+      },
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+    const result = await submitRecording('deal-123', validBlob, 'audio/m4a', null, {}, mockClient);
+
+    expect(result.conversationId).toBe('conv-rec-123');
+    expect(result.dealId).toBe('deal-123');
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'user-123',
+        deal_id: 'deal-123',
+        input_type: 'audio',
+        status: 'pending',
+      })
+    );
+    expect(uploadMock).toHaveBeenCalledWith(
+      'user-123/deal-123/conv-rec-123.m4a',
+      validBlob,
+      expect.objectContaining({ contentType: 'audio/m4a' })
+    );
+  });
 });
 

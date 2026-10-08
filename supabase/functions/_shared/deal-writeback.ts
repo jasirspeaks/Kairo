@@ -82,7 +82,8 @@ export async function writeBackDealReview(
   dealId: string,
   userId: string,
   review: Review,
-  conversationId?: string
+  conversationId?: string,
+  processingToken?: string
 ): Promise<void> {
   const { data: dealRow, error: dealReadError } = await supabase
     .from('deals')
@@ -104,6 +105,7 @@ export async function writeBackDealReview(
     p_review: review,
     p_resolved_stage: resolvedStage,
     p_conversation_id: conversationId || null,
+    p_processing_token: processingToken || null,
   });
 
   if (error) {

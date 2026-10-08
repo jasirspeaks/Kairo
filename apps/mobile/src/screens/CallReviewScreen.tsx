@@ -97,10 +97,60 @@ export function CallReviewScreen({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  useEffect(() => {
+    if (!conv || !['pending', 'processing', 'retry_pending'].includes(conv.status)) return;
+    const interval = setInterval(() => {
+      if (dealId) {
+        getConversations(dealId).then((calls) => {
+          const target = callId ? calls.find((c) => c.id === callId) : calls[calls.length - 1];
+          if (target) setConv(target);
+        }).catch(() => {});
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [conv?.status, dealId, callId]);
+
   if (loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
+
+  if (conv && (conv.status === 'pending' || conv.status === 'processing' || conv.status === 'retry_pending')) {
+    return (
+      <View style={styles.container}>
+        <TopBar title={deal?.deal_name || 'Call Review'} onBack={goBack} />
+        <View style={styles.errorContainer}>
+          <ActivityIndicator color={colors.primary} size="large" style={{ marginBottom: 16 }} />
+          <Text style={styles.errorTitle}>Analyzing Conversation</Text>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginBottom: 20 }}>
+            {conv.status === 'retry_pending'
+              ? 'AI review retry scheduled. Analyzing deal intelligence...'
+              : 'Extracting 5-pillar deal intelligence, evidence, and risks...'}
+          </Text>
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to Deal</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (conv && conv.status === 'failed') {
+    return (
+      <View style={styles.container}>
+        <TopBar title={deal?.deal_name || 'Call Review'} onBack={goBack} />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Analysis Failed</Text>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginBottom: 20 }}>
+            {conv.last_error || 'We encountered an issue analyzing this conversation.'}
+          </Text>
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to Deal</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }

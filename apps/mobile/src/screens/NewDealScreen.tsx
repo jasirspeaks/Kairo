@@ -11,14 +11,12 @@ import {
 } from 'react-native';
 import {
   supabase,
-  reviewCall,
-  saveDealState,
+  submitTranscript,
   checkCalendarConnected,
-  getDealLongitudinalHistory,
   useAuth,
   useSubscription,
 } from '@kairo/api';
-import { INITIAL_DEAL_STAGE, resolveDealStage } from '@kairo/core';
+import { INITIAL_DEAL_STAGE } from '@kairo/core';
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
@@ -232,58 +230,12 @@ export function NewDealScreen() {
         createdDealHere = true;
       }
 
-      let previousReview: any = null;
-      let hist: any = null;
-      let currentStage = INITIAL_DEAL_STAGE;
-
-      if (dealIsPreexisting.current && dealId) {
-        const [{ data: existingState }, { data: existingDeal }, histData] = await Promise.all([
-          supabase.from('deal_state').select('*').eq('deal_id', dealId).maybeSingle(),
-          supabase.from('deals').select('deal_stage').eq('id', dealId).maybeSingle(),
-          getDealLongitudinalHistory(dealId).catch(() => null),
-        ]);
-        if (existingDeal?.deal_stage) currentStage = existingDeal.deal_stage;
-        if (existingState) {
-          previousReview = (existingState as any).deal ? existingState : { deal: existingState, call: null };
-        }
-        hist = histData;
-      }
-
-      const review = await reviewCall(text, {
-        deal_id: dealId,
-        deal_name: dealName.trim(),
-        company_name: companyName.trim(),
-        deal_stage: currentStage,
-        previous_review: previousReview,
-        longitudinal_history: hist || undefined,
-        seller_context: {
-          what_you_sell: profile?.what_you_sell || undefined,
-          who_you_are: profile?.who_you_are || undefined,
-        },
-      });
-
-      const resolvedStage = resolveDealStage(currentStage, review);
-
-      const { data: conv, error: convError } = await supabase
-        .from('conversations')
-        .insert({
-          user_id: user.id,
-          deal_id: dealId,
-          deal_stage: resolvedStage,
-          input_type: 'transcript',
-          transcript: text,
-          status: 'complete',
-          analysis_json: review,
-        })
-        .select()
-        .single();
-
-      if (convError || !conv) throw new Error('Failed to save conversation.');
-
-      await saveDealState(dealId, user.id, review, resolvedStage, conv.id);
+      // Write-Ahead Persistence (WAL) & Canonical Review Pipeline:
+      // Instantly commits transcript to DB as pending and triggers review in background.
+      const res = await submitTranscript(dealId, text);
 
       callSucceeded.current = true;
-      navigate('call_review', { dealId, callId: conv.id });
+      navigate('call_review', { dealId, callId: res.conversationId });
     } catch (err: any) {
       if (dealId && createdDealHere) {
         await supabase.from('deals').delete().eq('id', dealId);

@@ -514,6 +514,14 @@ function DealActivityFeed({ activity, dealId, navigate }: { activity: ActivityIt
         {activity.map(item => {
           if (item.kind === 'call') {
             const callData = item.call.analysis_json?.call;
+            const callLabel =
+              item.call.status === 'complete'
+                ? 'Call reviewed'
+                : item.call.status === 'processing'
+                ? 'Call analyzing'
+                : item.call.status === 'failed'
+                ? 'Call review failed'
+                : 'Call queued';
             return (
               <button
                 key={item.id}
@@ -526,7 +534,7 @@ function DealActivityFeed({ activity, dealId, navigate }: { activity: ActivityIt
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-textPrimary text-xs font-medium truncate">
-                      Call reviewed · {item.call.deal_stage || 'Call'}
+                      {callLabel} · {item.call.deal_stage || 'Call'}
                     </p>
                     <span className="text-textMuted text-xs flex-shrink-0">{formatDate(item.at)}</span>
                   </div>
@@ -664,26 +672,7 @@ export function DealReview() {
       const activeConv = activeConvsRes.data && activeConvsRes.data.length > 0 ? activeConvsRes.data[0] : null;
       if (activeConv) {
         setIsAnalyzing(true);
-        const ageMs = Date.now() - new Date(activeConv.updated_at || activeConv.created_at).getTime();
-        const isRetrying = activeConv.status === 'retry_pending' || ageMs > 2 * 60 * 1000;
-        setIsRetryingAnalysis(isRetrying);
-
-        // Ambient Self-Healing: If an active conversation has been quiet for > 2 minutes,
-        // kickstart background recovery so navigation directly heals stalled jobs.
-        if (ageMs > 2 * 60 * 1000) {
-          supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session) {
-              fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({ conversation_id: activeConv.id }),
-              }).catch(() => {});
-            }
-          });
-        }
+        setIsRetryingAnalysis(activeConv.status === 'retry_pending');
       } else {
         setIsAnalyzing(false);
         setIsRetryingAnalysis(false);

@@ -79,8 +79,8 @@ export function ActiveMeetingBar({
               {captureStatus === 'recording' && 'Auto-Capturing Meeting'}
               {captureStatus === 'paused' && 'Capture Paused'}
               {captureStatus === 'uploading' && 'Uploading Spooled Audio...'}
-              {captureStatus === 'processing' && 'Running 5-Pillar Deal Intelligence...'}
-              {captureStatus === 'completed' && 'Review Complete'}
+              {captureStatus === 'processing' && 'Queueing Deal Review...'}
+              {captureStatus === 'completed' && 'Audio Uploaded · Reviewing Deal'}
               {captureStatus === 'failed' && 'Capture / Processing Failed'}
               {captureStatus === 'approaching' && 'Meeting Approaching'}
               {isUnassigned && 'Meeting Approaching (Unassigned)'}
