@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PILLAR_LABELS, PILLAR_ORDER, getPillarBarColor, DealPillars } from '../../src';
+import { PILLAR_LABELS, PILLAR_ORDER, getPillarBarColor, DealPillars, summarizePipelinePillars } from '../../src';
 
 describe('AI Evaluation - 5 Pillars Structure & Qualification Integrity', () => {
   it('enforces all five canonical pillars in exact priority order', () => {
@@ -72,5 +72,51 @@ describe('AI Evaluation - 5 Pillars Structure & Qualification Integrity', () => 
     expect(unconfirmedCount).toBe(3);
     expect(samplePillars.champion.status).toBe('confirmed');
     expect(samplePillars.economic_buyer.status).toBe('unconfirmed');
+  });
+
+  it('correctly aggregates pipeline pillar confirmations out of active deals', () => {
+    const deals = [
+      {
+        deal_state: {
+          pillars: {
+            compelling_event: { status: 'confirmed' as const, confidence: 90, evidence: 'e' },
+            economic_buyer: { status: 'unconfirmed' as const, confidence: 0, evidence: '' },
+            decision_process: { status: 'partial' as const, confidence: 50, evidence: '' },
+            budget: { status: 'unconfirmed' as const, confidence: 0, evidence: '' },
+            champion: { status: 'confirmed' as const, confidence: 80, evidence: '' },
+          },
+        },
+      },
+      {
+        deal_state: {
+          pillars: {
+            compelling_event: { status: 'confirmed' as const, confidence: 85, evidence: '' },
+            economic_buyer: { status: 'confirmed' as const, confidence: 75, evidence: '' },
+            decision_process: { status: 'confirmed' as const, confidence: 70, evidence: '' },
+            budget: { status: 'partial' as const, confidence: 45, evidence: '' },
+            champion: { status: 'confirmed' as const, confidence: 90, evidence: '' },
+          },
+        },
+      },
+      {
+        deal_state: null, // deal awaiting first call
+      },
+    ];
+
+    const summary = summarizePipelinePillars(deals);
+    expect(summary).toHaveLength(5);
+
+    const ce = summary.find((s) => s.key === 'compelling_event')!;
+    expect(ce.confirmedCount).toBe(2);
+    expect(ce.totalDeals).toBe(3);
+
+    const eb = summary.find((s) => s.key === 'economic_buyer')!;
+    expect(eb.confirmedCount).toBe(1);
+    expect(eb.unconfirmedCount).toBe(2);
+
+    const b = summary.find((s) => s.key === 'budget')!;
+    expect(b.confirmedCount).toBe(0);
+    expect(b.partialCount).toBe(1);
+    expect(b.unconfirmedCount).toBe(2);
   });
 });
