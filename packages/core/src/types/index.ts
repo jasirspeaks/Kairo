@@ -393,3 +393,5 @@ export interface DealLongitudinalHistory {
   meetings?: Meeting[];
   stakeholders?: Stakeholder[];
 }
+
+export * from './settings';

@@ -222,3 +222,30 @@ export async function getDealLongitudinalHistory(
     stakeholders: stakeholdersRes.data || [],
   };
 }
+
+export async function exportUserPipeline(
+  userId: string,
+  client: KairoClient = getKairoClient()
+): Promise<{
+  exportDate: string;
+  deals: Deal[];
+  dealStates: DealState[];
+  meetings: any[];
+}> {
+  const [dealsRes, statesRes, meetingsRes] = await Promise.all([
+    client.from('deals').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    client.from('deal_state').select('*').eq('user_id', userId),
+    client.from('meetings').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+  ]);
+
+  if (dealsRes.error) throw dealsRes.error;
+  if (statesRes.error) throw statesRes.error;
+  if (meetingsRes.error) throw meetingsRes.error;
+
+  return {
+    exportDate: new Date().toISOString(),
+    deals: (dealsRes.data as Deal[]) || [],
+    dealStates: (statesRes.data as DealState[]) || [],
+    meetings: meetingsRes.data || [],
+  };
+}

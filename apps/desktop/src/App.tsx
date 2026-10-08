@@ -24,6 +24,7 @@ import { ActiveMeetingBar } from './components/ActiveMeetingBar';
 import { UpdateNotification } from './components/UpdateNotification';
 import { useMeetingWatcher } from './hooks/useMeetingWatcher';
 import { useDesktopUpdater } from './hooks/useDesktopUpdater';
+import { loadLocalPreferences } from '@kairo/platform';
 
 function LoadingScreen() {
   return (
@@ -72,10 +73,17 @@ function RootRoute() {
 function DesktopShell() {
   const { user } = useAuth();
   const updater = useDesktopUpdater();
+  const [autoCaptureEnabled] = React.useState(() => {
+    try {
+      return loadLocalPreferences().capture.auto_capture_enabled;
+    } catch {
+      return true;
+    }
+  });
 
   const watcher = useMeetingWatcher({
     userId: user?.id,
-    autoCaptureEnabled: true,
+    autoCaptureEnabled,
   });
 
   return (

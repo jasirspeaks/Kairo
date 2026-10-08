@@ -1,24 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import {
-  Calendar,
-  CheckCircle2,
-  AlertCircle,
-  AlertTriangle,
-  LogOut,
-  Clock,
-  CreditCard,
-  Shield,
-} from 'lucide-react';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import { supabase, supabaseUrl, supabaseAnonKey } from '../../lib/supabase';
 import { createCheckoutSession, createCustomerPortalSession } from '../../lib/kairo';
 import { Button } from '../../components/ui/Button';
-import { CollapsibleSection } from '../../components/ui/CollapsibleSection';
 import { DeleteAccountModal } from '../../components/ui/DeleteAccountModal';
 import { TopBar } from '../../components/layout/TopBar';
-import { formatDate } from '../../lib/utils';
+import {
+  CurrencyCode,
+  AudioCapturePreferences,
+  NotificationPreferences,
+  DEFAULT_LOCAL_PREFERENCES,
+} from '@kairo/core';
+import {
+  loadLocalPreferences,
+  saveLocalPreferences,
+} from '@kairo/platform';
+
+// Modular Sections
+import { SettingsNavigation, SettingsTabId } from './settings/SettingsNavigation';
+import { SellerContextSection } from './settings/SellerContextSection';
+import { AudioCaptureSection } from './settings/AudioCaptureSection';
+import { IntegrationsSection } from './settings/IntegrationsSection';
+import { NotificationsSection } from './settings/NotificationsSection';
+import { PrivacySecuritySection } from './settings/PrivacySecuritySection';
+import { BillingSection } from './settings/BillingSection';
+import { AccountDangerSection } from './settings/AccountDangerSection';
 
 async function readJsonResponse(res: Response): Promise<any> {
   try {
@@ -33,23 +42,42 @@ export function Settings() {
   const {
     subscription,
     loading: subscriptionLoading,
-    canWrite,
-    isExpired,
     trialDaysLeft,
+    isExpired,
   } = useSubscription(user?.id);
 
   const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('context');
   const [highlightPlan, setHighlightPlan] = useState(false);
 
-  // Profile / selling context
+  // Profile context
   const [name, setName] = useState('');
   const [whatYouSell, setWhatYouSell] = useState('');
   const [whoYouAre, setWhoYouAre] = useState('');
-  const [initialValues, setInitialValues] = useState({
+
+  // Extended Intelligence & Hardware Preferences
+  const [currency, setCurrency] = useState<CurrencyCode>('USD');
+  const [customTerms, setCustomTerms] = useState('');
+  const [fiscalStartMonth, setFiscalStartMonth] = useState(1);
+  const [capturePrefs, setCapturePrefs] = useState<AudioCapturePreferences>(
+    DEFAULT_LOCAL_PREFERENCES.capture
+  );
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>(
+    DEFAULT_LOCAL_PREFERENCES.notifications
+  );
+
+  // Baseline initial state for dirty checking
+  const [initialState, setInitialState] = useState({
     name: '',
     whatYouSell: '',
     whoYouAre: '',
+    currency: 'USD' as CurrencyCode,
+    customTerms: '',
+    fiscalStartMonth: 1,
+    capturePrefs: DEFAULT_LOCAL_PREFERENCES.capture,
+    notificationPrefs: DEFAULT_LOCAL_PREFERENCES.notifications,
   });
+
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -71,38 +99,53 @@ export function Settings() {
   // Account deletion
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
-  const isDirty =
-    name !== initialValues.name ||
-    whatYouSell !== initialValues.whatYouSell ||
-    whoYouAre !== initialValues.whoYouAre;
+  // Load preferences from local storage on mount
+  useEffect(() => {
+    const prefs = loadLocalPreferences();
+    setCurrency(prefs.intelligence.currency);
+    setCustomTerms(prefs.intelligence.custom_terms);
+    setFiscalStartMonth(prefs.intelligence.fiscal_year_start_month);
+    setCapturePrefs(prefs.capture);
+    setNotificationPrefs(prefs.notifications);
+  }, []);
 
+  // Sync profile data once fetched
   useEffect(() => {
     if (!profile) return;
 
+    const prefs = loadLocalPreferences();
     const next = {
       name: profile.name || '',
       whatYouSell: profile.what_you_sell || '',
       whoYouAre: profile.who_you_are || '',
+      currency: prefs.intelligence.currency,
+      customTerms: prefs.intelligence.custom_terms,
+      fiscalStartMonth: prefs.intelligence.fiscal_year_start_month,
+      capturePrefs: prefs.capture,
+      notificationPrefs: prefs.notifications,
     };
 
     setName(next.name);
     setWhatYouSell(next.whatYouSell);
     setWhoYouAre(next.whoYouAre);
-    setInitialValues(next);
+    setInitialState(next);
   }, [profile]);
 
   useEffect(() => {
     if (!user) return;
-
     void checkCalendarConnection();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Handle URL query parameters (calendar callbacks, stripe checkout callbacks, tab deep-links)
   useEffect(() => {
-    const calendarParam = searchParams.get('calendar');
+    const tabParam = searchParams.get('tab') as SettingsTabId | null;
+    if (tabParam && ['context', 'audio', 'integrations', 'notifications', 'privacy', 'billing', 'account'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
 
+    const calendarParam = searchParams.get('calendar');
     if (calendarParam === 'connected') {
+      setActiveTab('integrations');
       setCalendarBanner('connected');
       setCalendarErrorMessage('');
       void checkCalendarConnection();
@@ -110,23 +153,21 @@ export function Settings() {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('calendar');
       setSearchParams(nextParams, { replace: true });
-
       window.setTimeout(() => setCalendarBanner(null), 4000);
     } else if (calendarParam === 'error') {
+      setActiveTab('integrations');
       setCalendarBanner('error');
-      setCalendarErrorMessage(
-        'Something went wrong connecting your calendar. Please check your Google OAuth configuration and try again.'
-      );
+      setCalendarErrorMessage('Google Calendar connection was cancelled or encountered an authentication error.');
 
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('calendar');
       setSearchParams(nextParams, { replace: true });
-
       window.setTimeout(() => setCalendarBanner(null), 7000);
     }
 
     const checkoutParam = searchParams.get('checkout');
     if (checkoutParam === 'success') {
+      setActiveTab('billing');
       setCheckoutBanner('success');
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('checkout');
@@ -134,6 +175,7 @@ export function Settings() {
       setSearchParams(nextParams, { replace: true });
       window.setTimeout(() => setCheckoutBanner(null), 6000);
     } else if (checkoutParam === 'cancelled') {
+      setActiveTab('billing');
       setCheckoutBanner('cancelled');
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('checkout');
@@ -141,196 +183,25 @@ export function Settings() {
       window.setTimeout(() => setCheckoutBanner(null), 5000);
     }
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (searchParams.get('upgrade') !== '1') return;
-
-    setHighlightPlan(true);
-
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete('upgrade');
-    setSearchParams(nextParams, { replace: true });
-
-    window.setTimeout(() => setHighlightPlan(false), 2500);
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function handleUpgrade() {
-    setUpgrading(true);
-    setBillingError('');
-    try {
-      const { url } = await createCheckoutSession();
-      if (url) {
-        window.location.assign(url);
-      }
-    } catch (err: any) {
-      console.error('Settings: Upgrade checkout failed:', err);
-      setBillingError(err.message || 'Could not initiate checkout. Please try again.');
-    } finally {
-      setUpgrading(false);
+    if (searchParams.get('upgrade') === '1') {
+      setActiveTab('billing');
+      setHighlightPlan(true);
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('upgrade');
+      setSearchParams(nextParams, { replace: true });
+      window.setTimeout(() => setHighlightPlan(false), 2500);
     }
-  }
+  }, [searchParams, setSearchParams]);
 
-  async function handleManageBilling() {
-    setManagingBilling(true);
-    setBillingError('');
-    try {
-      const { url } = await createCustomerPortalSession();
-      if (url) {
-        window.location.assign(url);
-      }
-    } catch (err: any) {
-      console.error('Settings: Customer portal failed:', err);
-      setBillingError(err.message || 'Could not open billing management. Please try again.');
-    } finally {
-      setManagingBilling(false);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Calendar
-  // ---------------------------------------------------------------------------
-
-  async function checkCalendarConnection() {
-    if (!user) return;
-
-    setCheckingCalendar(true);
-
-    try {
-      const { data, error } = await supabase.rpc('get_calendar_connection_status');
-
-      if (error) {
-        console.error('Settings: failed to check calendar connection:', error);
-        setCalendarConnected(false);
-        return;
-      }
-
-      setCalendarConnected(Array.isArray(data) ? data.length > 0 : !!data);
-    } catch (error) {
-      console.error('Settings: calendar connection check failed:', error);
-      setCalendarConnected(false);
-    } finally {
-      setCheckingCalendar(false);
-    }
-  }
-
-  async function handleConnectCalendar() {
-    setConnectingCalendar(true);
-    setCalendarBanner(null);
-    setCalendarErrorMessage('');
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        setCalendarBanner('error');
-        setCalendarErrorMessage(
-          'Your session expired. Refresh the page and try again.'
-        );
-        return;
-      }
-
-      const res = await fetch(
-        `${supabaseUrl}/functions/v1/google-calendar-connect`,
-        {
-          method: 'GET',
-          headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      const data = await readJsonResponse(res);
-
-      if (!res.ok || !data.auth_url) {
-        setCalendarBanner('error');
-        setCalendarErrorMessage(
-          data.error ||
-            `Calendar connection could not be started (${res.status}).`
-        );
-        return;
-      }
-
-      window.location.assign(data.auth_url);
-    } catch (error) {
-      console.error('Settings: calendar connect failed:', error);
-      setCalendarBanner('error');
-      setCalendarErrorMessage(
-        'Network error reaching Kairo. Please check your connection and try again.'
-      );
-    } finally {
-      setConnectingCalendar(false);
-    }
-  }
-
-  async function handleDisconnectCalendar() {
-    setDisconnectingCalendar(true);
-    setCalendarBanner(null);
-    setCalendarErrorMessage('');
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) {
-        setCalendarBanner('error');
-        setCalendarErrorMessage(
-          'Your session expired. Refresh the page and try again.'
-        );
-        return;
-      }
-
-      const res = await fetch(
-        `${supabaseUrl}/functions/v1/google-calendar-connect`,
-        {
-          method: 'DELETE',
-          headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      const data = await readJsonResponse(res);
-
-      if (!res.ok) {
-        setCalendarBanner('error');
-        setCalendarErrorMessage(
-          data.error ||
-            `Calendar could not be disconnected (${res.status}).`
-        );
-        return;
-      }
-
-      setCalendarConnected(false);
-
-      if (data.google_revoked === false) {
-        setCalendarBanner('error');
-        setCalendarErrorMessage(
-          'Calendar was disconnected from Kairo, but Google did not revoke the OAuth grant. You can remove Kairo access from your Google account settings.'
-        );
-      }
-    } catch (error) {
-      console.error('Settings: calendar disconnect failed:', error);
-      setCalendarBanner('error');
-      setCalendarErrorMessage(
-        'Network error disconnecting your calendar. Please try again.'
-      );
-    } finally {
-      setDisconnectingCalendar(false);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Profile save
-  // ---------------------------------------------------------------------------
+  const isDirty =
+    name !== initialState.name ||
+    whatYouSell !== initialState.whatYouSell ||
+    whoYouAre !== initialState.whoYouAre ||
+    currency !== initialState.currency ||
+    customTerms !== initialState.customTerms ||
+    fiscalStartMonth !== initialState.fiscalStartMonth ||
+    JSON.stringify(capturePrefs) !== JSON.stringify(initialState.capturePrefs) ||
+    JSON.stringify(notificationPrefs) !== JSON.stringify(initialState.notificationPrefs);
 
   async function handleSave() {
     if (!user || !isDirty) return;
@@ -344,6 +215,7 @@ export function Settings() {
       whoYouAre: whoYouAre.trim(),
     };
 
+    // 1. Save profile to Supabase
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -353,47 +225,185 @@ export function Settings() {
       })
       .eq('id', user.id);
 
-    setSaving(false);
-
     if (error) {
-      console.error('Settings: profile save failed:', error);
+      console.error('Settings: profile update failed:', error);
+      setSaving(false);
       setSaveError(true);
       window.setTimeout(() => setSaveError(false), 3000);
       return;
     }
 
+    // 2. Save extended preferences locally
+    saveLocalPreferences({
+      intelligence: {
+        currency,
+        custom_terms: customTerms.trim(),
+        fiscal_year_start_month: fiscalStartMonth,
+      },
+      capture: capturePrefs,
+      notifications: notificationPrefs,
+    });
+
+    setSaving(false);
     setName(normalized.name);
     setWhatYouSell(normalized.whatYouSell);
     setWhoYouAre(normalized.whoYouAre);
-    setInitialValues(normalized);
+
+    setInitialState({
+      name: normalized.name,
+      whatYouSell: normalized.whatYouSell,
+      whoYouAre: normalized.whoYouAre,
+      currency,
+      customTerms: customTerms.trim(),
+      fiscalStartMonth,
+      capturePrefs,
+      notificationPrefs,
+    });
 
     void refetchProfile();
-
     setJustSaved(true);
-    window.setTimeout(() => setJustSaved(false), 2000);
+    window.setTimeout(() => setJustSaved(false), 2500);
   }
 
-  function discardChanges() {
-    setName(initialValues.name);
-    setWhatYouSell(initialValues.whatYouSell);
-    setWhoYouAre(initialValues.whoYouAre);
+  function handleDiscard() {
+    setName(initialState.name);
+    setWhatYouSell(initialState.whatYouSell);
+    setWhoYouAre(initialState.whoYouAre);
+    setCurrency(initialState.currency);
+    setCustomTerms(initialState.customTerms);
+    setFiscalStartMonth(initialState.fiscalStartMonth);
+    setCapturePrefs(initialState.capturePrefs);
+    setNotificationPrefs(initialState.notificationPrefs);
+  }
+
+  async function checkCalendarConnection() {
+    if (!user) return;
+    setCheckingCalendar(true);
+    try {
+      const { data, error } = await supabase.rpc('get_calendar_connection_status');
+      if (error) {
+        setCalendarConnected(false);
+        return;
+      }
+      setCalendarConnected(Array.isArray(data) ? data.length > 0 : !!data);
+    } catch {
+      setCalendarConnected(false);
+    } finally {
+      setCheckingCalendar(false);
+    }
+  }
+
+  async function handleConnectCalendar() {
+    setConnectingCalendar(true);
+    setCalendarBanner(null);
+    setCalendarErrorMessage('');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setCalendarBanner('error');
+        setCalendarErrorMessage('Your session expired. Please sign in again.');
+        return;
+      }
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/google-calendar-connect`, {
+        method: 'GET',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const data = await readJsonResponse(res);
+      if (!res.ok || !data.auth_url) {
+        setCalendarBanner('error');
+        setCalendarErrorMessage(data.error || 'Failed to initiate Google OAuth flow.');
+        return;
+      }
+
+      window.location.assign(data.auth_url);
+    } catch (err) {
+      console.error('Settings: Calendar connect error:', err);
+      setCalendarBanner('error');
+      setCalendarErrorMessage('Network error connecting calendar.');
+    } finally {
+      setConnectingCalendar(false);
+    }
+  }
+
+  async function handleDisconnectCalendar() {
+    setDisconnectingCalendar(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/google-calendar-connect`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!res.ok) {
+        setCalendarBanner('error');
+        setCalendarErrorMessage('Failed to disconnect Google Calendar.');
+        return;
+      }
+
+      setCalendarConnected(false);
+    } catch {
+      setCalendarBanner('error');
+      setCalendarErrorMessage('Network error disconnecting calendar.');
+    } finally {
+      setDisconnectingCalendar(false);
+    }
+  }
+
+  async function handleUpgrade() {
+    setUpgrading(true);
+    setBillingError('');
+    try {
+      const { url } = await createCheckoutSession();
+      if (url) window.location.assign(url);
+    } catch (err: any) {
+      setBillingError(err.message || 'Could not initiate checkout.');
+    } finally {
+      setUpgrading(false);
+    }
+  }
+
+  async function handleManageBilling() {
+    setManagingBilling(true);
+    setBillingError('');
+    try {
+      const { url } = await createCustomerPortalSession();
+      if (url) window.location.assign(url);
+    } catch (err: any) {
+      setBillingError(err.message || 'Could not open billing management.');
+    } finally {
+      setManagingBilling(false);
+    }
   }
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in max-w-6xl mx-auto">
+      {/* Mobile Top Bar */}
       <div className="-mx-4 md:hidden">
         <TopBar title="Settings" />
       </div>
 
+      {/* Header */}
       <div className="mb-6 md:mb-8 hidden md:block">
         <h1 className="text-2xl font-display font-bold text-textPrimary mb-1">
-          Settings
+          Settings & Deal Co-Pilot
         </h1>
-        <p className="text-textSecondary text-sm">
-          Manage your account and integrations.
+        <p className="text-textSecondary text-xs">
+          Calibrate qualification reasoning, native audio hardware, calendar sync, and privacy controls.
         </p>
       </div>
 
+      {/* Calendar Alert Banner */}
       {calendarBanner && (
         <div
           className={`flex items-center gap-2 rounded-lg px-4 py-3 mb-6 text-xs font-medium border ${
@@ -407,402 +417,94 @@ export function Settings() {
           ) : (
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
           )}
-
           <span>
             {calendarBanner === 'connected'
-              ? 'Calendar connected successfully.'
-              : calendarErrorMessage ||
-                'Something went wrong connecting your calendar. Please try again.'}
+              ? 'Google Calendar connected successfully.'
+              : calendarErrorMessage || 'Calendar connection failed.'}
           </span>
         </div>
       )}
 
-      <div className="space-y-6 pb-28 md:pb-24">
-        {/* Profile */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">
-            Profile
-          </h2>
+      {/* Main Two-Column Split Architecture */}
+      <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 pb-32">
+        <SettingsNavigation
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
+        />
 
-          <div className="card p-5 md:p-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                  Name
-                </label>
-
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="input-field"
-                  placeholder="Your name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                  Role
-                </label>
-
-                <select
-                  value={whoYouAre}
-                  onChange={(e) => setWhoYouAre(e.target.value)}
-                  className="input-field"
-                >
-                  <option value="">Select your role</option>
-                  <option value="founder">
-                    Founder — running sales at an early stage company
-                  </option>
-                  <option value="ae">
-                    Account Executive — full-cycle AE managing pipeline
-                  </option>
-                  <option value="consultant">
-                    Consultant or Agency — selling services
-                  </option>
-                  <option value="freelancer">
-                    Freelancer — winning independent client work
-                  </option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <label className="block text-xs font-medium text-textSecondary mb-1.5">
-                Email
-              </label>
-
-              <input
-                type="email"
-                value={profile?.email || ''}
-                disabled
-                className="input-field opacity-50 cursor-not-allowed sm:max-w-xs"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Selling context */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">
-            Selling Context
-          </h2>
-
-          <div className="card p-5 md:p-6">
-            <p className="text-textMuted text-xs mb-4">
-              Kairo uses this to frame deal reviews more accurately for your
-              specific situation.
-            </p>
-
-            <label className="block text-xs font-medium text-textSecondary mb-1.5">
-              What are you selling?
-            </label>
-
-            <textarea
-              value={whatYouSell}
-              onChange={(e) => setWhatYouSell(e.target.value)}
-              placeholder="e.g. SaaS product for HR teams, B2B consulting for fintech companies, marketing agency services..."
-              className="input-field min-h-32 md:min-h-36 resize-none"
+        <div className="flex-1 min-w-0">
+          {activeTab === 'context' && (
+            <SellerContextSection
+              name={name}
+              setName={setName}
+              whoYouAre={whoYouAre}
+              setWhoYouAre={setWhoYouAre}
+              whatYouSell={whatYouSell}
+              setWhatYouSell={setWhatYouSell}
+              email={profile?.email || user?.email || ''}
+              currency={currency}
+              setCurrency={setCurrency}
+              customTerms={customTerms}
+              setCustomTerms={setCustomTerms}
+              fiscalStartMonth={fiscalStartMonth}
+              setFiscalStartMonth={setFiscalStartMonth}
             />
+          )}
 
-            <p className="text-textMuted text-xs mt-1.5">
-              Be specific — the more context, the sharper the analysis.
-            </p>
-          </div>
-        </section>
+          {activeTab === 'audio' && (
+            <AudioCaptureSection
+              capturePrefs={capturePrefs}
+              setCapturePrefs={setCapturePrefs}
+            />
+          )}
 
-        {/* Integrations */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">
-            Integrations
-          </h2>
+          {activeTab === 'integrations' && (
+            <IntegrationsSection
+              calendarConnected={calendarConnected}
+              checkingCalendar={checkingCalendar}
+              connectingCalendar={connectingCalendar}
+              disconnectingCalendar={disconnectingCalendar}
+              onConnectCalendar={handleConnectCalendar}
+              onDisconnectCalendar={handleDisconnectCalendar}
+              onRefreshCalendar={checkCalendarConnection}
+            />
+          )}
 
-          <CollapsibleSection
-            title="Google Calendar"
-            defaultOpen={false}
-            accent="default"
-          >
-            <div className="pt-4 max-w-xl">
-              <div className="flex items-center gap-2 mb-1">
-                <Calendar className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-semibold text-textPrimary">
-                  Calendar
-                </h3>
-              </div>
+          {activeTab === 'notifications' && (
+            <NotificationsSection
+              notificationPrefs={notificationPrefs}
+              setNotificationPrefs={setNotificationPrefs}
+            />
+          )}
 
-              <p className="text-textMuted text-xs mb-4">
-                Connect your calendar so upcoming meetings show up in your
-                Inbox — assign them to a deal before the call happens, and
-                Kairo reviews the call automatically once it&apos;s done.
-              </p>
+          {activeTab === 'privacy' && (
+            <PrivacySecuritySection userId={user?.id} />
+          )}
 
-              {checkingCalendar ? (
-                <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse" />
-              ) : calendarConnected ? (
-                <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span className="text-emerald-400 text-xs font-medium">
-                      Google Calendar connected
-                    </span>
-                  </div>
+          {activeTab === 'billing' && (
+            <BillingSection
+              subscription={subscription}
+              subscriptionLoading={subscriptionLoading}
+              trialDaysLeft={trialDaysLeft}
+              isExpired={isExpired}
+              upgrading={upgrading}
+              managingBilling={managingBilling}
+              billingError={billingError}
+              checkoutBanner={checkoutBanner}
+              highlightPlan={highlightPlan}
+              onUpgrade={handleUpgrade}
+              onManageBilling={handleManageBilling}
+            />
+          )}
 
-                  <button
-                    type="button"
-                    onClick={handleDisconnectCalendar}
-                    disabled={disconnectingCalendar}
-                    className="text-xs text-textMuted hover:text-red-400 transition-colors disabled:opacity-50"
-                  >
-                    {disconnectingCalendar
-                      ? 'Disconnecting…'
-                      : 'Disconnect'}
-                  </button>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full sm:w-auto"
-                  loading={connectingCalendar}
-                  disabled={connectingCalendar}
-                  onClick={handleConnectCalendar}
-                >
-                  <Calendar className="w-4 h-4" />
-                  Connect Google Calendar
-                </Button>
-              )}
-            </div>
-          </CollapsibleSection>
-        </section>
-
-        {/* Plan */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">
-            Plan
-          </h2>
-
-          <div
-            className={`card p-5 md:p-6 transition-shadow duration-500 ${
-              highlightPlan
-                ? 'ring-2 ring-primary/50 shadow-purple-glow-sm'
-                : ''
-            }`}
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <CreditCard className="w-4 h-4 text-primary" />
-              <h3 className="text-sm font-semibold text-textPrimary">
-                Subscription
-              </h3>
-            </div>
-
-            {checkoutBanner === 'success' && (
-              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg p-3 mt-3">
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                <span>Thank you for upgrading! Your subscription is now active.</span>
-              </div>
-            )}
-
-            {checkoutBanner === 'cancelled' && (
-              <div className="flex items-center gap-2 bg-amber-400/10 border border-amber-400/20 text-amber-400 text-xs font-medium rounded-lg p-3 mt-3">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>Checkout was cancelled. You can upgrade anytime.</span>
-              </div>
-            )}
-
-            {billingError && (
-              <div className="flex items-center gap-2 bg-red-400/10 border border-red-400/20 text-red-400 text-xs font-medium rounded-lg p-3 mt-3">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{billingError}</span>
-              </div>
-            )}
-
-            {subscriptionLoading ? (
-              <div className="h-10 bg-surfaceHigh rounded-lg animate-pulse mt-4" />
-            ) : !subscription ? (
-              <p className="text-textMuted text-xs mt-4">
-                Couldn&apos;t load your subscription status. Refresh the page,
-                or reach out if this persists.
-              </p>
-            ) : (
-              <div className="space-y-4 mt-4">
-                {subscription.status === 'trialing' && (
-                  <div className="flex items-start justify-between gap-3 bg-primary/8 border border-primary/20 rounded-lg px-4 py-3">
-                    <div className="flex items-start gap-2 min-w-0">
-                      <Clock className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-textPrimary text-xs font-medium">
-                          {trialDaysLeft === 0
-                            ? 'Your trial ends today'
-                            : `${trialDaysLeft} day${
-                                trialDaysLeft === 1 ? '' : 's'
-                              } left in your trial`}
-                        </p>
-                        <p className="text-textSecondary text-xs mt-0.5">
-                          Trial ends {formatDate(subscription.trial_end)}. You
-                          can view everything in Kairo after that — adding new
-                          deals, calls, and meetings pauses until you upgrade.
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={handleUpgrade}
-                      loading={upgrading}
-                      size="sm"
-                      className="flex-shrink-0 ml-2"
-                    >
-                      Upgrade Early
-                    </Button>
-                  </div>
-                )}
-
-                {subscription.status === 'active' && (
-                  <div className="flex items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span className="text-emerald-400 text-xs font-medium">
-                        Active Pro Subscription
-                        {subscription.current_period_end
-                          ? ` — renews ${formatDate(
-                              subscription.current_period_end
-                            )}`
-                          : ''}
-                      </span>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleManageBilling}
-                      loading={managingBilling}
-                      className="flex-shrink-0"
-                    >
-                      Manage Billing
-                    </Button>
-                  </div>
-                )}
-
-                {isExpired && (
-                  <div className="flex items-center justify-between gap-3 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
-                    <p className="text-textPrimary text-xs font-medium">
-                      Your access has expired. Upgrade to continue using Kairo.
-                    </p>
-                    <Button
-                      onClick={handleUpgrade}
-                      loading={upgrading}
-                      size="sm"
-                      className="flex-shrink-0"
-                    >
-                      Upgrade to Pro
-                    </Button>
-                  </div>
-                )}
-
-                {subscription.status === 'past_due' && (
-                  <div className="flex items-center justify-between gap-3 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
-                    <p className="text-textPrimary text-xs font-medium">
-                      Your subscription payment is past due.
-                    </p>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={handleManageBilling}
-                      loading={managingBilling}
-                      className="flex-shrink-0"
-                    >
-                      Update Payment Method
-                    </Button>
-                  </div>
-                )}
-
-                {subscription.status === 'canceled' && (
-                  <div className="flex items-center justify-between gap-3 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
-                    <p className="text-textPrimary text-xs font-medium">
-                      Your subscription is canceled.
-                    </p>
-                    <Button
-                      onClick={handleUpgrade}
-                      loading={upgrading}
-                      size="sm"
-                      className="flex-shrink-0"
-                    >
-                      Reactivate Subscription
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Account */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-textMuted mb-3">
-            Account
-          </h2>
-
-          <div className="card px-5 md:px-6 py-3.5 flex items-center justify-between mb-3">
-            <span className="text-xs text-textMuted">
-              Signed in as {profile?.email}
-            </span>
-
-            <button
-              type="button"
-              onClick={signOut}
-              className="flex items-center gap-1.5 text-xs font-medium text-textSecondary hover:text-red-400 transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Sign Out
-            </button>
-          </div>
-
-          <div className="card px-5 md:px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Shield className="w-3.5 h-3.5 text-textMuted" />
-              <span className="text-xs text-textMuted">
-                Privacy & Data
-              </span>
-            </div>
-            <a
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-medium text-accent hover:text-primaryLight transition-colors"
-            >
-              View Privacy Policy
-            </a>
-          </div>
-        </section>
-
-        {/* Danger Zone */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-red-400/70 mb-3">
-            Danger Zone
-          </h2>
-
-          <div className="card border-red-500/20 px-5 md:px-6 py-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-red-400 text-xs font-medium">
-                Delete account
-              </p>
-
-              <p className="text-textMuted text-xs mt-0.5">
-                Permanently deletes every deal, call, and transcript. This
-                cannot be undone.
-              </p>
-            </div>
-
-            <Button
-              type="button"
-              variant="danger"
-              size="sm"
-              className="flex-shrink-0"
-              onClick={() => setDeleteModalOpen(true)}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Delete Account
-            </Button>
-          </div>
-        </section>
+          {activeTab === 'account' && (
+            <AccountDangerSection
+              email={profile?.email || user?.email || ''}
+              onSignOut={signOut}
+              onOpenDeleteModal={() => setDeleteModalOpen(true)}
+            />
+          )}
+        </div>
       </div>
 
       <DeleteAccountModal
@@ -811,18 +513,17 @@ export function Settings() {
         onClose={() => setDeleteModalOpen(false)}
       />
 
+      {/* Floating Save Changes Pill */}
       {isDirty && (
-        <div className="fixed bottom-0 left-0 right-0 md:left-auto md:right-8 md:bottom-8 z-20 pb-safe-b md:pb-0">
-          <div className="mx-4 mb-4 md:mx-0 md:mb-0 flex items-center justify-between md:justify-end gap-3 bg-surface border border-border rounded-xl shadow-card px-4 py-3 md:px-5">
-            <span className="text-xs text-textSecondary md:hidden">
-              Unsaved changes
-            </span>
+        <div className="fixed bottom-0 left-0 right-0 md:left-auto md:right-8 md:bottom-8 z-30 pb-safe-b md:pb-0">
+          <div className="mx-4 mb-4 md:mx-0 md:mb-0 flex items-center justify-between md:justify-end gap-3 bg-surfaceSecondary border border-border rounded-xl shadow-card px-4 py-3 md:px-5">
+            <span className="text-xs text-textSecondary md:hidden">Unsaved changes</span>
 
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={discardChanges}
-                className="text-xs font-medium text-textMuted hover:text-textSecondary transition-colors px-2"
+                onClick={handleDiscard}
+                className="text-xs font-medium text-textMuted hover:text-textSecondary px-2 py-1"
               >
                 Discard
               </button>
@@ -834,17 +535,18 @@ export function Settings() {
                 size="sm"
                 variant={saveError ? 'danger' : 'primary'}
               >
-                {saveError ? 'Save failed — retry' : 'Save Changes'}
+                {saveError ? 'Save Failed — Retry' : 'Save Changes'}
               </Button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Temporary Just Saved Indicator */}
       {justSaved && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 md:left-auto md:right-8 md:translate-x-0 z-20 flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg px-4 py-2.5 shadow-card">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 md:left-auto md:right-8 md:translate-x-0 z-30 flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-lg px-4 py-2.5 shadow-card">
           <CheckCircle2 className="w-3.5 h-3.5" />
-          Saved
+          Settings Saved
         </div>
       )}
     </div>
