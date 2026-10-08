@@ -29,6 +29,8 @@ interface DealRowItem extends Deal {
   current_status: DealStatus | null;
   last_contact: string | null;
   next_meeting: string | null;
+  has_active_analysis?: boolean;
+  has_recent_review?: boolean;
 }
 
 function formatDate(dateString: string | null): string {
@@ -96,6 +98,13 @@ export function DealsScreen() {
 
       const statusByDeal = new Map((states || []).map((s) => [s.deal_id, s.current_status]));
       const completedCalls = (lastCalls || []).filter((c) => c.status === 'complete');
+      const activeCalls = (lastCalls || []).filter((c) => ['pending', 'processing', 'retry_pending'].includes(c.status));
+      const activeDealIds = new Set(activeCalls.map((c) => c.deal_id));
+
+      const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+      const recentCalls = completedCalls.filter((c) => new Date(c.created_at).getTime() >= twoHoursAgo);
+      const recentDealIds = new Set(recentCalls.map((c) => c.deal_id));
+
       const lastContactByDeal = new Map<string, string>();
       completedCalls.forEach((c) => {
         if (!lastContactByDeal.has(c.deal_id)) lastContactByDeal.set(c.deal_id, c.created_at);
@@ -111,6 +120,8 @@ export function DealsScreen() {
           current_status: statusByDeal.get(d.id) || null,
           last_contact: lastContactByDeal.get(d.id) || null,
           next_meeting: nextMeetingByDeal.get(d.id) || null,
+          has_active_analysis: activeDealIds.has(d.id),
+          has_recent_review: recentDealIds.has(d.id) && !activeDealIds.has(d.id),
         }))
       );
     } catch (err) {
@@ -123,6 +134,22 @@ export function DealsScreen() {
 
   useEffect(() => {
     fetchDeals();
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel('mobile-deals-conversations-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `user_id=eq.${user.id}` },
+        () => {
+          fetchDeals();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const onRefresh = () => {
@@ -362,9 +389,21 @@ export function DealsScreen() {
                 >
                   {/* Top row: Deal Name + Value */}
                   <View style={styles.dealHeader}>
-                    <Text style={styles.dealName} numberOfLines={1}>
-                      {deal.deal_name}
-                    </Text>
+                    <View style={styles.dealNameContainer}>
+                      <Text style={styles.dealName} numberOfLines={1}>
+                        {deal.deal_name}
+                      </Text>
+                      {deal.has_active_analysis ? (
+                        <View style={styles.analyzingBadge}>
+                          <View style={styles.analyzingDot} />
+                          <Text style={styles.analyzingText}>Analyzing</Text>
+                        </View>
+                      ) : deal.has_recent_review ? (
+                        <View style={styles.reviewReadyBadge}>
+                          <Text style={styles.reviewReadyText}>✦ Review ready</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={styles.dealValue}>
                       {formatDealValue(deal.deal_value)}
                     </Text>
@@ -659,5 +698,47 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  dealNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    marginRight: 8,
+  },
+  analyzingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  analyzingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#FBBF24',
+  },
+  analyzingText: {
+    color: '#FCD34D',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  reviewReadyBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  reviewReadyText: {
+    color: '#6EE7B7',
+    fontSize: 10,
+    fontWeight: '600',
   },
 });

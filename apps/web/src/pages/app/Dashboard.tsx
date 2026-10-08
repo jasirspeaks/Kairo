@@ -12,6 +12,8 @@ import { cn } from '../../lib/utils';
 
 interface DealWithState extends Deal {
   deal_state: DealState | null;
+  has_active_analysis?: boolean;
+  has_recent_review?: boolean;
 }
 
 function RiskDot({ riskLevel }: { riskLevel: string }) {
@@ -35,7 +37,20 @@ function DealRow({ deal, onClick }: { deal: DealWithState; onClick: () => void }
     >
       <RiskDot riskLevel={deal.risk_level} />
       <div className="flex-1 min-w-0 flex flex-col justify-center py-0.5">
-        <p className="text-textPrimary text-sm font-medium truncate">{deal.deal_name}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-textPrimary text-sm font-medium truncate">{deal.deal_name}</p>
+          {deal.has_active_analysis ? (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-300 animate-pulse flex items-center gap-1 flex-shrink-0">
+              <span className="w-1 h-1 rounded-full bg-amber-400" />
+              Analyzing
+            </span>
+          ) : deal.has_recent_review ? (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 flex items-center gap-1 flex-shrink-0 animate-fade-in">
+              <span>✦</span>
+              Review ready
+            </span>
+          ) : null}
+        </div>
         {deal.deal_state?.highest_priority_risk ? (
           <p className="text-textMuted text-xs truncate mt-0.5">{deal.deal_state.highest_priority_risk}</p>
         ) : (
@@ -207,25 +222,64 @@ export function Dashboard() {
     // natural place (besides Inbox) where a stale meeting should get
     // caught and reconciled before anything renders.
     syncGoogleCalendar().then(fetchData);
+
+    const channel = supabase
+      .channel('dashboard-conversations-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `user_id=eq.${user.id}` },
+        () => {
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   async function fetchData() {
-    const reviewedActiveDeals = await getDashboardDeals(user!.id);
-    setDeals(reviewedActiveDeals);
+    if (!user) return;
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 
-    const { data: meetingsData } = await supabase
-      .from('meetings')
-      .select('*, deals(deal_name)')
-      .eq('user_id', user!.id)
-      .eq('status', 'assigned')
-      .is('cancelled_at', null)
-      .gte('start_time', new Date().toISOString())
-      .order('start_time', { ascending: true })
-      .limit(8);
+    const [reviewedActiveDeals, activeConvsRes, recentReviewsRes, meetingsRes] = await Promise.all([
+      getDashboardDeals(user.id),
+      supabase
+        .from('conversations')
+        .select('deal_id')
+        .eq('user_id', user.id)
+        .in('status', ['pending', 'processing', 'retry_pending']),
+      supabase
+        .from('conversations')
+        .select('deal_id')
+        .eq('user_id', user.id)
+        .eq('status', 'complete')
+        .gte('created_at', twoHoursAgo),
+      supabase
+        .from('meetings')
+        .select('*, deals(deal_name)')
+        .eq('user_id', user.id)
+        .eq('status', 'assigned')
+        .is('cancelled_at', null)
+        .gte('start_time', new Date().toISOString())
+        .order('start_time', { ascending: true })
+        .limit(8),
+    ]);
 
+    const activeSet = new Set((activeConvsRes.data || []).map((c) => c.deal_id).filter(Boolean));
+    const recentSet = new Set((recentReviewsRes.data || []).map((c) => c.deal_id).filter(Boolean));
+
+    const enrichedDeals: DealWithState[] = (reviewedActiveDeals || []).map((deal: any) => ({
+      ...deal,
+      has_active_analysis: activeSet.has(deal.id),
+      has_recent_review: recentSet.has(deal.id) && !activeSet.has(deal.id),
+    }));
+
+    setDeals(enrichedDeals);
     setMeetings(
-      (meetingsData || []).map((m: any) => ({ ...m, deal_name: m.deals?.deal_name }))
+      (meetingsRes.data || []).map((m: any) => ({ ...m, deal_name: m.deals?.deal_name }))
     );
 
     setLoading(false);

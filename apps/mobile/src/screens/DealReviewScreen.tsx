@@ -13,6 +13,7 @@ import {
   useAuth,
   useSubscription,
   checkCalendarConnected,
+  supabase,
 } from '@kairo/api';
 import {
   getStatusColor,
@@ -53,6 +54,7 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
   const [history, setHistory] = useState<DealLongitudinalHistory | null>(null);
   const [nextMeetingTime, setNextMeetingTime] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeTab, setActiveTab] = useState<DealReviewTab>('action_plan');
   const [showScheduleSheet, setShowScheduleSheet] = useState(false);
 
@@ -85,22 +87,54 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
   useEffect(() => {
     if (!dealId) return;
     loadHistory();
+
+    const channel = supabase
+      .channel(`mobile-deal-review-live-${dealId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations', filter: `deal_id=eq.${dealId}` },
+        () => {
+          loadHistory();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'deal_state', filter: `deal_id=eq.${dealId}` },
+        () => {
+          loadHistory();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [dealId]);
 
   const loadHistory = async () => {
     if (!dealId) return;
     setLoading(true);
     try {
-      const hist = await getDealLongitudinalHistory(dealId);
+      const [hist, activeConvsRes] = await Promise.all([
+        getDealLongitudinalHistory(dealId),
+        supabase
+          .from('conversations')
+          .select('id, status')
+          .eq('deal_id', dealId)
+          .in('status', ['pending', 'processing', 'retry_pending'])
+          .limit(1),
+      ]);
+
       setDeal(hist.deal);
       setDealState(hist.state);
       setCalls(hist.conversations || []);
       setStakeholders(hist.stakeholders || []);
       setHistory(hist);
+      setIsAnalyzing(Boolean(activeConvsRes.data && activeConvsRes.data.length > 0));
 
       const now = new Date();
       const upcoming = (hist.meetings || []).find(
-        (m) =>
+        (m: any) =>
           !m.cancelled_at &&
           (m.status === 'assigned' || m.status === 'scheduled') &&
           m.start_time &&
@@ -216,6 +250,16 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
             </View>
           </View>
         </View>
+
+        {/* Ambient active analysis banner */}
+        {isAnalyzing && (
+          <View style={styles.analyzingBanner}>
+            <View style={styles.analyzingPulse} />
+            <Text style={styles.analyzingBannerText}>
+              Analyzing latest call: Kairo is extracting 5-pillar intelligence in the background. This page will update live when complete.
+            </Text>
+          </View>
+        )}
 
         {/* Metrics Card: Health Score + Facts */}
         <View style={styles.metricsCard}>
@@ -1291,5 +1335,30 @@ const styles = StyleSheet.create({
   arrowIcon: {
     fontSize: 18,
     color: colors.textMuted,
+  },
+  analyzingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  analyzingPulse: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FBBF24',
+  },
+  analyzingBannerText: {
+    flex: 1,
+    color: '#FCD34D',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '500',
   },
 });

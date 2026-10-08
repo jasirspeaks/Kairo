@@ -4,6 +4,8 @@ import {
   StatusBar,
   StyleSheet,
   View,
+  Text,
+  TouchableOpacity,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -31,6 +33,66 @@ function AppShell() {
   const { user, profile, loading } = useAuth();
   const { currentScreen, routeParams, navigate } = useNavigation();
   const [resetFlowActive, setResetFlowActive] = useState(false);
+  const [reviewToast, setReviewToast] = useState<{
+    id: string;
+    dealId: string | null;
+    dealName: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`mobile-user-reviews-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversations',
+          filter: `user_id=eq.${user.id}`,
+        },
+        async (payload) => {
+          const newRow = payload.new as { id: string; deal_id: string | null; status: string };
+          const oldRow = payload.old as { status?: string };
+          if (newRow.status === 'complete' && oldRow?.status !== 'complete') {
+            let dealName = 'Your deal';
+            if (newRow.deal_id) {
+              try {
+                const { data } = await supabase
+                  .from('deals')
+                  .select('deal_name')
+                  .eq('id', newRow.deal_id)
+                  .single();
+                if (data?.deal_name) {
+                  dealName = data.deal_name;
+                }
+              } catch {
+                // ignore
+              }
+            }
+            setReviewToast({
+              id: newRow.id,
+              dealId: newRow.deal_id,
+              dealName,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!reviewToast) return;
+    const t = setTimeout(() => {
+      setReviewToast(null);
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [reviewToast]);
 
   useEffect(() => {
     async function processUrl(url: string) {
@@ -190,6 +252,35 @@ function AppShell() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
       <View style={styles.content}>{renderScreen()}</View>
+
+      {/* Review Ready Floating Alert */}
+      {reviewToast && (
+        <View style={[styles.toastContainer, showBottomNav ? styles.toastWithNav : styles.toastWithoutNav]}>
+          <TouchableOpacity
+            style={styles.toastCard}
+            onPress={() => {
+              const { id, dealId } = reviewToast;
+              setReviewToast(null);
+              if (dealId) {
+                navigate('call_review', { dealId, callId: id });
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.toastIcon}>
+              <Text style={styles.toastSparkle}>✦</Text>
+            </View>
+            <View style={styles.toastTextContainer}>
+              <Text style={styles.toastTitle}>Call Review Ready</Text>
+              <Text style={styles.toastSubtitle} numberOfLines={1}>
+                5-pillar intelligence ready for {reviewToast.dealName}
+              </Text>
+            </View>
+            <Text style={styles.toastAction}>View →</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {showBottomNav && <BottomNav />}
     </SafeAreaView>
   );
@@ -216,5 +307,67 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  toastContainer: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 1000,
+  },
+  toastWithNav: {
+    bottom: 74,
+  },
+  toastWithoutNav: {
+    bottom: 24,
+  },
+  toastCard: {
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  toastIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toastSparkle: {
+    color: '#34D399',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  toastTextContainer: {
+    flex: 1,
+  },
+  toastTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  toastSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: 1,
+  },
+  toastAction: {
+    color: '#34D399',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 4,
   },
 });
