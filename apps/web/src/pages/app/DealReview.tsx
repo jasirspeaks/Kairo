@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle, Phone, Users, Clock, Target,
@@ -616,6 +616,7 @@ export function DealReview() {
   const [inspectPillar, setInspectPillar] = useState<PillarKey | null>(null);
   const [inspectRisk, setInspectRisk] = useState<DealRisk | null>(null);
   const [inspectTitle, setInspectTitle] = useState<string | undefined>(undefined);
+  const ambientTriggeredRef = useRef<Record<string, number>>({});
 
   const evolution = useMemo(() => buildEvolution(calls), [calls]);
   const activity = useMemo(() => buildActivity(calls, stakeholders, history?.transitions || []), [calls, stakeholders, history]);
@@ -676,8 +677,12 @@ export function DealReview() {
 
         // Safe Ambient Recovery: If an active conversation has been quiet for > 90 seconds,
         // trigger background processing so user navigating here heals stranded jobs.
+        // Throttled to at most once per 60 seconds per conversation ID to prevent realtime event floods.
         const ageMs = Date.now() - new Date(activeConv.updated_at || activeConv.created_at).getTime();
-        if (ageMs > 90 * 1000) {
+        const nowMs = Date.now();
+        const lastTriggered = ambientTriggeredRef.current[activeConv.id] || 0;
+        if (ageMs > 90 * 1000 && nowMs - lastTriggered > 60 * 1000) {
+          ambientTriggeredRef.current[activeConv.id] = nowMs;
           supabase.auth.getSession().then(({ data: { session } }) => {
             if (session) {
               fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {

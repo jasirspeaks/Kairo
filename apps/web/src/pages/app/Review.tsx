@@ -145,25 +145,6 @@ export function Review() {
     return () => clearInterval(interval);
   }, [conv?.status, dealId, callId]);
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-32">
-      <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
-    </div>
-  );
-
-  if (recordingNow && dealId) {
-    return (
-      <RecordCallScreen
-        dealId={dealId}
-        onComplete={() => {
-          setRecordingNow(false);
-          setShowFlashModal(true);
-        }}
-        onClose={() => setRecordingNow(false)}
-      />
-    );
-  }
-
   const [pollSeconds, setPollSeconds] = useState(0);
   const [retryingNow, setRetryingNow] = useState(false);
 
@@ -199,6 +180,25 @@ export function Review() {
     } finally {
       setRetryingNow(false);
     }
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-32">
+      <div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin" />
+    </div>
+  );
+
+  if (recordingNow && dealId) {
+    return (
+      <RecordCallScreen
+        dealId={dealId}
+        onComplete={() => {
+          setRecordingNow(false);
+          setShowFlashModal(true);
+        }}
+        onClose={() => setRecordingNow(false)}
+      />
+    );
   }
 
   if (conv && (conv.status === 'pending' || conv.status === 'processing' || conv.status === 'retry_pending')) {

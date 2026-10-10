@@ -50,8 +50,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL || 'https://kknnuerbxydfdkuspbkg.supabase.co' }}
-          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtrbm51ZXJieHlkZmRrdXNwYmtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMjU4MzYsImV4cCI6MjA5NTcwMTgzNn0.amDJvm16MDJ5uDuV4Ho-J5pcxVyr3_Gk1_7u93Ao20Y' }}
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
         with:
           projectPath: './apps/desktop'
           tagName: ${{ github.ref_name }}

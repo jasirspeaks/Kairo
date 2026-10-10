@@ -28,7 +28,7 @@ The repository is organized as a Turborepo monorepo:
 kairo/
 ├── apps/
 │   ├── web/         # React + Vite web application with Tailwind CSS
-│   ├── desktop/     # Electron/Desktop application with native audio capture
+│   ├── desktop/     # Tauri v2 + Rust desktop application with native WASAPI audio capture
 │   └── mobile/      # React Native / Expo mobile application
 ├── packages/
 │   ├── core/        # Shared domain types, qualification logic, timeline & evaluation test suite
