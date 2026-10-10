@@ -23,6 +23,7 @@ import {
   formatDealValue,
 } from '../../lib/kairo';
 import { getDashboardDeals } from '@kairo/api';
+import { markDealReviewViewed, isDealReviewViewed } from '@kairo/platform';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, DealState, DealStatus, DealPillars, ScheduledMeeting } from '../../types';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -438,8 +439,14 @@ export function Dashboard() {
       )
       .subscribe();
 
+    const handleDealViewed = () => {
+      fetchData();
+    };
+    window.addEventListener('kairo-deal-viewed', handleDealViewed);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('kairo-deal-viewed', handleDealViewed);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -457,7 +464,7 @@ export function Dashboard() {
         .in('status', ['pending', 'processing', 'retry_pending']),
       supabase
         .from('conversations')
-        .select('deal_id')
+        .select('deal_id, created_at')
         .eq('user_id', user.id)
         .eq('status', 'complete')
         .gte('created_at', twoHoursAgo),
@@ -474,7 +481,11 @@ export function Dashboard() {
     ]);
 
     const activeSet = new Set((activeConvsRes.data || []).map((c) => c.deal_id).filter(Boolean));
-    const recentSet = new Set((recentReviewsRes.data || []).map((c) => c.deal_id).filter(Boolean));
+    const recentSet = new Set(
+      (recentReviewsRes.data || [])
+        .filter((c: any) => c.deal_id && !isDealReviewViewed(c.deal_id, c.created_at))
+        .map((c: any) => c.deal_id)
+    );
 
     const enrichedDeals: DealWithState[] = (reviewedActiveDeals || []).map((deal: any) => ({
       ...deal,
@@ -559,7 +570,10 @@ export function Dashboard() {
                   <NextMeetingCard
                     meeting={nextMeeting}
                     assignedDeal={nextMeetingDeal}
-                    onClickDeal={(dealId) => navigate(`/app/deals/${dealId}`)}
+                    onClickDeal={(dealId) => {
+                      markDealReviewViewed(dealId);
+                      navigate(`/app/deals/${dealId}`);
+                    }}
                     onClickInbox={() => navigate('/app/inbox')}
                   />
                   {meetings.length > 1 && (
@@ -567,7 +581,12 @@ export function Dashboard() {
                       {meetings.slice(1, 5).map((m) => (
                         <button
                           key={m.id}
-                          onClick={() => m.deal_id && navigate(`/app/deals/${m.deal_id}`)}
+                          onClick={() => {
+                            if (m.deal_id) {
+                              markDealReviewViewed(m.deal_id);
+                              navigate(`/app/deals/${m.deal_id}`);
+                            }
+                          }}
                           className="card px-3 py-2 text-left flex items-center gap-2 flex-shrink-0 hover:border-primary/40 transition-colors"
                         >
                           <span className="text-xs font-semibold text-primary">
@@ -671,7 +690,10 @@ export function Dashboard() {
                     <AttentionDealRow
                       key={deal.id}
                       deal={deal}
-                      onClick={() => navigate(`/app/deals/${deal.id}`)}
+                      onClick={() => {
+                        markDealReviewViewed(deal.id);
+                        navigate(`/app/deals/${deal.id}`);
+                      }}
                     />
                   ))}
                 </div>

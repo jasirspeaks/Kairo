@@ -21,6 +21,7 @@ import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
 import { ScheduleMeetingSheet } from '../components/ui/ScheduleMeetingSheet';
+import { ReviewInProgressModal } from '../components/ReviewInProgressModal';
 
 type Step = 'deal' | 'transcript';
 
@@ -38,6 +39,8 @@ export function NewDealScreen() {
   const [error, setError] = useState('');
   const [creatingDeal, setCreatingDeal] = useState(false);
   const [showScheduleSheet, setShowScheduleSheet] = useState(false);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [targetDealId, setTargetDealId] = useState<string | null>(null);
 
   const scheduledDealIdRef = useRef<string | null>(null);
   const meetingScheduledRef = useRef(false);
@@ -235,7 +238,9 @@ export function NewDealScreen() {
       const res = await submitTranscript(dealId, text);
 
       callSucceeded.current = true;
-      navigate('call_review', { dealId, callId: res.conversationId });
+      setTargetDealId(dealId);
+      setAnalyzing(false);
+      setShowProgressModal(true);
     } catch (err: any) {
       if (dealId && createdDealHere) {
         await supabase.from('deals').delete().eq('id', dealId);
@@ -435,6 +440,21 @@ export function NewDealScreen() {
           }}
         />
       ) : null}
+
+      <ReviewInProgressModal
+        visible={showProgressModal}
+        dealName={dealName.trim()}
+        durationMs={4000}
+        onDismiss={() => {
+          setShowProgressModal(false);
+          const destinationDealId = targetDealId || scheduledDealIdRef.current;
+          if (destinationDealId) {
+            navigate('deal_review', { dealId: destinationDealId });
+          } else {
+            navigate('dashboard');
+          }
+        }}
+      />
     </View>
   );
 }

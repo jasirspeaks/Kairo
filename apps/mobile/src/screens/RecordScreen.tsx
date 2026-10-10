@@ -14,6 +14,7 @@ import { type Deal } from '@kairo/core';
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
+import { ReviewInProgressModal } from '../components/ReviewInProgressModal';
 
 export function RecordScreen({ dealId: initialDealId }: { dealId?: string }) {
   const { user } = useAuth();
@@ -26,6 +27,7 @@ export function RecordScreen({ dealId: initialDealId }: { dealId?: string }) {
   const [duration, setDuration] = useState(0);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showProgressModal, setShowProgressModal] = useState(false);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
 
@@ -176,17 +178,11 @@ export function RecordScreen({ dealId: initialDealId }: { dealId?: string }) {
         throw new Error('Audio payload contains 0 bytes. Recording discarded.');
       }
 
-      setStatusMessage('Call captured! Kairo is analyzing deal intelligence in the background.');
-
       await submitRecording(selectedDealId, audioBlob, 'audio/m4a');
 
       await FileSystem.deleteAsync(recordedUri, { idempotent: true }).catch(() => {});
 
-      setTimeout(() => {
-        if (selectedDealId) {
-          navigate('deal_review', { dealId: selectedDealId });
-        }
-      }, 1500);
+      setShowProgressModal(true);
     } catch (err: any) {
       console.error('[MobileRecorder] Submission failed:', err);
       setErrorMessage(err?.message || 'Failed to process mobile audio recording.');
@@ -301,6 +297,20 @@ export function RecordScreen({ dealId: initialDealId }: { dealId?: string }) {
           </View>
         )}
       </ScrollView>
+
+      <ReviewInProgressModal
+        visible={showProgressModal}
+        dealName={deals.find((d) => d.id === selectedDealId)?.deal_name}
+        durationMs={4000}
+        onDismiss={() => {
+          setShowProgressModal(false);
+          if (selectedDealId) {
+            navigate('deal_review', { dealId: selectedDealId });
+          } else {
+            navigate('dashboard');
+          }
+        }}
+      />
     </View>
   );
 }

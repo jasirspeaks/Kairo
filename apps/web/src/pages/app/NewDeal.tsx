@@ -189,8 +189,12 @@ export function NewDeal() {
     return dealId;
   }
 
-  function handleRecordingComplete() {
+  function handleRecordingComplete(res?: { conversationId: string; dealId: string }) {
     callSucceeded.current = true;
+    if (res?.dealId) {
+      setScheduledDealId(res.dealId);
+      scheduledDealIdRef.current = res.dealId;
+    }
     setShowFlashModal(true);
   }
 
@@ -506,7 +510,7 @@ export function NewDeal() {
       <FlashCaptureModal
         open={showFlashModal}
         dealName={dealName.trim()}
-        targetPath="/app/dashboard"
+        targetPath={scheduledDealId ? `/app/deals/${scheduledDealId}` : '/app/dashboard'}
         onDismiss={() => setShowFlashModal(false)}
       />
 

@@ -21,6 +21,7 @@ import {
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
+import { markDealReviewViewed, isDealReviewViewed } from '../lib/dealViewTracking';
 
 type TimelineFilter = 'all' | '7d' | '30d' | '90d';
 type StatusFilter = 'active' | 'all' | DealStatus;
@@ -102,7 +103,11 @@ export function DealsScreen() {
       const activeDealIds = new Set(activeCalls.map((c) => c.deal_id));
 
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-      const recentCalls = completedCalls.filter((c) => new Date(c.created_at).getTime() >= twoHoursAgo);
+      const recentCalls = completedCalls.filter((c) => {
+        const callTime = new Date(c.created_at).getTime();
+        if (callTime < twoHoursAgo) return false;
+        return !isDealReviewViewed(c.deal_id, callTime);
+      });
       const recentDealIds = new Set(recentCalls.map((c) => c.deal_id));
 
       const lastContactByDeal = new Map<string, string>();
@@ -384,7 +389,10 @@ export function DealsScreen() {
                 <TouchableOpacity
                   key={deal.id}
                   style={styles.dealCard}
-                  onPress={() => navigate('deal_review', { dealId: deal.id })}
+                  onPress={() => {
+                    markDealReviewViewed(deal.id);
+                    navigate('deal_review', { dealId: deal.id });
+                  }}
                   activeOpacity={0.7}
                 >
                   {/* Top row: Deal Name + Value */}

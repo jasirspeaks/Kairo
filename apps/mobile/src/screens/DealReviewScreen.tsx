@@ -38,6 +38,7 @@ import {
 import { colors } from '../theme/colors';
 import { useNavigation } from '../navigation/NavigationContext';
 import { TopBar } from '../components/layout/TopBar';
+import { markDealReviewViewed } from '../lib/dealViewTracking';
 import { EvidenceInspectorSheet } from '../components/evidence/EvidenceInspectorSheet';
 import { ScheduleMeetingSheet } from '../components/ui/ScheduleMeetingSheet';
 
@@ -86,6 +87,7 @@ export function DealReviewScreen({ dealId }: { dealId?: string }) {
 
   useEffect(() => {
     if (!dealId) return;
+    markDealReviewViewed(dealId);
     loadHistory();
 
     const channel = supabase

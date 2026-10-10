@@ -487,7 +487,7 @@ export function Review() {
       <FlashCaptureModal
         open={showFlashModal}
         dealName={deal?.deal_name}
-        targetPath="/app/dashboard"
+        targetPath={dealId ? `/app/deals/${dealId}` : (deal?.id ? `/app/deals/${deal.id}` : '/app/dashboard')}
         onDismiss={() => setShowFlashModal(false)}
       />
     </div>

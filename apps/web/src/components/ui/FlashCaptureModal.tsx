@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, ArrowRight } from 'lucide-react';
+import { Sparkles, X } from 'lucide-react';
 
 interface FlashCaptureModalProps {
   open: boolean;
   dealName?: string;
   targetPath?: string;
+  durationMs?: number;
   onDismiss?: () => void;
 }
 
@@ -13,6 +14,7 @@ export function FlashCaptureModal({
   open,
   dealName,
   targetPath = '/app/dashboard',
+  durationMs = 4000,
   onDismiss,
 }: FlashCaptureModalProps) {
   const navigate = useNavigate();
@@ -23,10 +25,10 @@ export function FlashCaptureModal({
     const timer = setTimeout(() => {
       if (onDismiss) onDismiss();
       navigate(targetPath);
-    }, 1500);
+    }, durationMs);
 
     return () => clearTimeout(timer);
-  }, [open, targetPath, navigate, onDismiss]);
+  }, [open, targetPath, navigate, onDismiss, durationMs]);
 
   if (!open) return null;
 
@@ -39,52 +41,40 @@ export function FlashCaptureModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-textPrimary/25 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-textPrimary/20 backdrop-blur-sm transition-opacity"
         onClick={handleImmediateRedirect}
       />
 
-      {/* Card */}
+      {/* Minimal Card */}
       <div
-        className="relative bg-surface border border-border/80 rounded-2xl shadow-sheet max-w-sm w-full p-6 text-center animate-slide-up"
+        className="relative bg-surface border border-border/80 rounded-2xl shadow-sheet max-w-sm w-full p-5 text-center animate-slide-up"
         role="dialog"
         aria-modal="true"
       >
-        {/* Pulsing check badge */}
-        <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-500 flex items-center justify-center mx-auto mb-4">
-          <CheckCircle2 className="w-6 h-6 text-emerald-500 animate-pulse" />
+        <button
+          onClick={handleImmediateRedirect}
+          className="absolute top-3.5 right-3.5 text-textMuted hover:text-textPrimary transition-colors p-1 rounded-md"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        {/* Minimal indicator */}
+        <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto mb-3">
+          <Sparkles className="w-5 h-5 text-primary animate-pulse" />
         </div>
 
-        <h3 className="text-lg font-semibold text-textPrimary tracking-tight">
-          Call Captured
+        <h3 className="text-base font-semibold text-textPrimary tracking-tight">
+          Review in Progress
         </h3>
 
-        <p className="text-sm text-textSecondary mt-2 leading-relaxed">
+        <p className="text-xs text-textSecondary mt-2 leading-relaxed">
           {dealName ? (
-            <>Kairo is analyzing 5-pillar intelligence for <strong className="text-textPrimary">{dealName}</strong> in the background.</>
+            <>Review for this call of <strong className="text-textPrimary">{dealName}</strong> is going on and will be available once it&apos;s complete.</>
           ) : (
-            <>Kairo is analyzing 5-pillar deal intelligence in the background.</>
+            <>Review for this call is going on and will be available once it&apos;s complete.</>
           )}
         </p>
-
-        <p className="text-xs text-textMuted mt-1">
-          Your deal intelligence will update automatically once analysis is complete.
-        </p>
-
-        {/* Action Button */}
-        <div className="mt-5">
-          <button
-            onClick={handleImmediateRedirect}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-surfaceHigh hover:bg-border/60 text-textPrimary text-sm font-medium transition-colors border border-border"
-          >
-            <span>Continue to Dashboard</span>
-            <ArrowRight className="w-4 h-4 text-textMuted" />
-          </button>
-        </div>
-
-        {/* Subtle timed progress bar indicator */}
-        <div className="w-full bg-border/40 h-1 rounded-full mt-4 overflow-hidden">
-          <div className="bg-emerald-500 h-full w-full animate-[shrink_1.5s_linear_forwards]" />
-        </div>
       </div>
     </div>
   );

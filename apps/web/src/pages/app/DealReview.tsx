@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase, supabaseUrl } from '../../lib/supabase';
 import { getStatusStyle, getDealLongitudinalHistory } from '../../lib/kairo';
+import { markDealReviewViewed } from '@kairo/platform';
 import {
   Deal,
   DealState,
@@ -623,6 +624,7 @@ export function DealReview() {
 
   useEffect(() => {
     if (!dealId) return;
+    markDealReviewViewed(dealId);
     fetchData();
 
     const channel = supabase

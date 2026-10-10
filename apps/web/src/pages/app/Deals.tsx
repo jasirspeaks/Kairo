@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, SlidersHorizontal, Plus, Building2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getStatusStyle } from '../../lib/kairo';
+import { markDealReviewViewed, isDealReviewViewed } from '@kairo/platform';
 import { useAuth } from '../../hooks/useAuth';
 import { Deal, DEAL_STAGES, DealStage, DealStatus } from '../../types';
 import { Button } from '../../components/ui/Button';
@@ -53,8 +54,14 @@ export function Deals() {
       )
       .subscribe();
 
+    const handleDealViewed = () => {
+      fetchDeals();
+    };
+    window.addEventListener('kairo-deal-viewed', handleDealViewed);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('kairo-deal-viewed', handleDealViewed);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -103,7 +110,13 @@ export function Deals() {
     );
     const recentReviewsByDeal = new Set(
       (lastCalls || [])
-        .filter(c => c.status === 'complete' && Date.now() - new Date(c.created_at).getTime() < 2 * 60 * 60 * 1000)
+        .filter(c => {
+          if (c.status !== 'complete') return false;
+          const callTime = new Date(c.created_at).getTime();
+          const isRecent = Date.now() - callTime < 2 * 60 * 60 * 1000;
+          if (!isRecent) return false;
+          return !isDealReviewViewed(c.deal_id, callTime);
+        })
         .map(c => c.deal_id)
     );
 
@@ -287,7 +300,10 @@ export function Deals() {
               {filtered.map(d => (
                 <tr
                   key={d.id}
-                  onClick={() => navigate(`/app/deals/${d.id}`)}
+                  onClick={() => {
+                    markDealReviewViewed(d.id);
+                    navigate(`/app/deals/${d.id}`);
+                  }}
                   className="border-b border-border last:border-0 cursor-pointer hover:bg-surfaceHigh active:bg-surfaceHigh transition-colors"
                 >
                   <td className="px-5 py-3.5 font-medium text-textPrimary whitespace-nowrap md:whitespace-normal md:max-w-[260px]">
