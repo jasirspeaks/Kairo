@@ -292,7 +292,7 @@ function AppShell() {
       <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
       <View style={styles.content}>{renderScreen()}</View>
 
-      {/* Review Floating Alert at Top of Mobile Screen */}
+      {/* Review Floating Alert at Top of Mobile Screen (Dynamic Island style) */}
       {reviewToast && (
         <View style={styles.toastContainer}>
           <TouchableOpacity
@@ -308,7 +308,7 @@ function AppShell() {
                 navigate('deal_review', { dealId });
               }
             }}
-            activeOpacity={0.85}
+            activeOpacity={0.9}
           >
             <View
               style={[
@@ -325,24 +325,36 @@ function AppShell() {
                 ✦
               </Text>
             </View>
+
             <View style={styles.toastTextContainer}>
-              <Text style={styles.toastTitle}>
-                {reviewToast.status === 'ongoing' ? 'Call Review in Progress' : 'Call Review Ready'}
-              </Text>
+              <View style={styles.toastHeaderRow}>
+                <View style={styles.toastBadgePill}>
+                  <Text style={styles.toastBadgeText}>KAIRO</Text>
+                </View>
+                <Text style={styles.toastNowText}>· NOW</Text>
+              </View>
+
+              <View style={styles.toastTitleRow}>
+                <Text style={styles.toastTitle}>
+                  {reviewToast.status === 'ongoing' ? 'Call Review in Progress' : 'Call Review Ready'}
+                </Text>
+                {reviewToast.status === 'ongoing' && <View style={styles.toastLiveDot} />}
+              </View>
+
               <Text style={styles.toastSubtitle} numberOfLines={2}>
                 {reviewToast.status === 'ongoing'
-                  ? `Review for ${reviewToast.dealName} is ongoing and will be available once complete.`
-                  : `Review for ${reviewToast.dealName} is ready. Tap to view.`}
+                  ? `Review for ${reviewToast.dealName} is ongoing and will be ready shortly.`
+                  : `Review for ${reviewToast.dealName} is ready. Tap to inspect.`}
               </Text>
             </View>
-            <Text
-              style={[
-                styles.toastAction,
-                reviewToast.status === 'ongoing' ? styles.toastActionOngoing : styles.toastActionComplete,
-              ]}
+
+            <TouchableOpacity
+              onPress={() => setReviewToast(null)}
+              style={styles.toastCloseBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              View →
-            </Text>
+              <Text style={styles.toastCloseText}>✕</Text>
+            </TouchableOpacity>
           </TouchableOpacity>
         </View>
       )}
@@ -376,65 +388,101 @@ const styles = StyleSheet.create({
   },
   toastContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 52 : 20,
-    left: 16,
-    right: 16,
+    top: Platform.OS === 'ios' ? 48 : 16,
+    left: 12,
+    right: 12,
     zIndex: 1000,
   },
   toastCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#160D21',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 24,
     paddingHorizontal: 14,
     paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+    elevation: 12,
   },
   toastCardOngoing: {
-    borderColor: 'rgba(99, 102, 241, 0.4)',
+    borderColor: colors.primary,
   },
   toastCardComplete: {
-    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderColor: 'rgba(61, 214, 140, 0.45)',
   },
   toastIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   toastIconOngoing: {
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    backgroundColor: 'rgba(112, 66, 197, 0.2)',
+    borderColor: colors.primary,
   },
   toastIconComplete: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    backgroundColor: 'rgba(61, 214, 140, 0.15)',
+    borderColor: 'rgba(61, 214, 140, 0.4)',
   },
   toastSparkle: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: 'bold',
   },
   toastSparkleOngoing: {
     color: colors.primary,
   },
   toastSparkleComplete: {
-    color: '#34D399',
+    color: '#3DD68C',
   },
   toastTextContainer: {
     flex: 1,
   },
+  toastHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  toastBadgePill: {
+    backgroundColor: '#211333',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(48, 32, 68, 0.6)',
+  },
+  toastBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.textMuted,
+    letterSpacing: 0.8,
+  },
+  toastNowText: {
+    fontSize: 9,
+    color: colors.textMuted,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  toastTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   toastTitle: {
     color: colors.textPrimary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+  },
+  toastLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
   },
   toastSubtitle: {
     color: colors.textSecondary,
@@ -442,15 +490,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 15,
   },
-  toastAction: {
+  toastCloseBtn: {
+    padding: 4,
+  },
+  toastCloseText: {
+    color: colors.textMuted,
     fontSize: 12,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-  toastActionOngoing: {
-    color: colors.primary,
-  },
-  toastActionComplete: {
-    color: '#34D399',
   },
 });

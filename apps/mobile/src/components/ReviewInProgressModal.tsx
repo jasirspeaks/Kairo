@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Platform } from 'react-native';
 import { colors } from '../theme/colors';
 
 interface ReviewInProgressModalProps {
@@ -32,18 +32,50 @@ export function ReviewInProgressModal({
         activeOpacity={1}
         onPress={onDismiss}
       >
-        <View style={styles.card}>
-          <View style={styles.iconContainer}>
-            <Text style={styles.sparkleIcon}>✦</Text>
-          </View>
-          <Text style={styles.title}>Review in Progress</Text>
-          <Text style={styles.message}>
-            {dealName ? (
-              <>Review for this call of <Text style={styles.dealHighlight}>{dealName}</Text> is going on and will be available once it&apos;s complete.</>
-            ) : (
-              "Review for this call is going on and will be available once it's complete."
-            )}
-          </Text>
+        <View style={styles.islandContainer}>
+          <TouchableOpacity
+            style={styles.islandCard}
+            activeOpacity={0.9}
+            onPress={onDismiss}
+          >
+            {/* Left Glyph */}
+            <View style={styles.iconContainer}>
+              <Text style={styles.sparkleIcon}>✦</Text>
+            </View>
+
+            {/* Notification Body */}
+            <View style={styles.contentContainer}>
+              {/* Header Pill */}
+              <View style={styles.headerRow}>
+                <View style={styles.badgePill}>
+                  <Text style={styles.badgeText}>KAIRO</Text>
+                </View>
+                <Text style={styles.nowText}>· NOW</Text>
+              </View>
+
+              <View style={styles.titleRow}>
+                <Text style={styles.title}>Review in Progress</Text>
+                <View style={styles.liveDot} />
+              </View>
+
+              <Text style={styles.message} numberOfLines={2}>
+                {dealName ? (
+                  <>Review for this call of <Text style={styles.dealHighlight}>{dealName}</Text> is going on and will be available once complete.</>
+                ) : (
+                  "Review for this call is going on and will be available once complete."
+                )}
+              </Text>
+            </View>
+
+            {/* Close button */}
+            <TouchableOpacity
+              onPress={onDismiss}
+              style={styles.closeBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.closeText}>✕</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -53,57 +85,104 @@ export function ReviewInProgressModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-start',
+    paddingTop: Platform.OS === 'ios' ? 48 : 20,
+    paddingHorizontal: 12,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 22,
-    alignItems: 'center',
+  islandContainer: {
     width: '100%',
-    maxWidth: 320,
+  },
+  islandCard: {
+    backgroundColor: '#160D21',
+    borderColor: colors.primary,
+    borderWidth: 1,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+    elevation: 12,
   },
   iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(112, 66, 197, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
   },
   sparkleIcon: {
     color: colors.primary,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  title: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.text.primary,
-    marginBottom: 8,
-    textAlign: 'center',
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  badgePill: {
+    backgroundColor: '#211333',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(48, 32, 68, 0.6)',
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.textMuted,
+    letterSpacing: 0.8,
+  },
+  nowText: {
+    fontSize: 9,
+    color: colors.textMuted,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  title: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
   },
   message: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.text.secondary,
-    textAlign: 'center',
+    fontSize: 11,
+    lineHeight: 15,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   dealHighlight: {
-    color: colors.text.primary,
+    color: colors.textPrimary,
     fontWeight: '600',
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  closeText: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
 });
