@@ -58,20 +58,10 @@ export function Deals() {
       fetchDeals();
     };
     window.addEventListener('kairo-deal-viewed', handleDealViewed);
-    window.addEventListener('focus', handleDealViewed);
-    document.addEventListener('visibilitychange', handleDealViewed);
-
-    // Smart polling every 4 seconds to guarantee live updates without manual reload
-    const pollInterval = setInterval(() => {
-      fetchDeals();
-    }, 4000);
 
     return () => {
       supabase.removeChannel(channel);
       window.removeEventListener('kairo-deal-viewed', handleDealViewed);
-      window.removeEventListener('focus', handleDealViewed);
-      document.removeEventListener('visibilitychange', handleDealViewed);
-      clearInterval(pollInterval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);

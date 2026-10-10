@@ -651,18 +651,6 @@ export function DealReview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealId]);
 
-  // Realtime polling while deal analysis is active
-  useEffect(() => {
-    if (!isAnalyzing || !dealId) return;
-
-    const interval = setInterval(() => {
-      fetchData();
-    }, 2500);
-
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnalyzing, dealId]);
-
   async function fetchData() {
     if (!dealId) return;
     setLoading(true);
