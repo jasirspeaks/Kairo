@@ -673,6 +673,25 @@ export function DealReview() {
       if (activeConv) {
         setIsAnalyzing(true);
         setIsRetryingAnalysis(activeConv.status === 'retry_pending');
+
+        // Safe Ambient Recovery: If an active conversation has been quiet for > 90 seconds,
+        // trigger background processing so user navigating here heals stranded jobs.
+        const ageMs = Date.now() - new Date(activeConv.updated_at || activeConv.created_at).getTime();
+        if (ageMs > 90 * 1000) {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+              fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+                keepalive: true,
+                body: JSON.stringify({ conversation_id: activeConv.id }),
+              }).catch(() => {});
+            }
+          });
+        }
       } else {
         setIsAnalyzing(false);
         setIsRetryingAnalysis(false);

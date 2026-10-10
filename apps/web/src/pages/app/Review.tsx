@@ -4,7 +4,7 @@ import {
   Plus, AlertTriangle, CheckCircle, Clock,
   TrendingDown, Copy, Check, Activity, Target, Building2, ArrowRight, Mic
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseUrl } from '../../lib/supabase';
 import { reviewCall, saveDealState, getCallStatusStyle, getCallStatusColor, resolveDealStage, getDealLongitudinalHistory, submitTranscript } from '../../lib/kairo';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
@@ -164,17 +164,66 @@ export function Review() {
     );
   }
 
+  const [pollSeconds, setPollSeconds] = useState(0);
+  const [retryingNow, setRetryingNow] = useState(false);
+
+  useEffect(() => {
+    if (!conv || !['pending', 'processing', 'retry_pending'].includes(conv.status)) {
+      setPollSeconds(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setPollSeconds(s => s + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [conv?.status, conv?.id]);
+
+  async function handleRetryNow() {
+    if (!conv || retryingNow) return;
+    setRetryingNow(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ conversation_id: conv.id }),
+        });
+      }
+      await fetchData();
+    } catch {
+      // Best-effort manual trigger
+    } finally {
+      setRetryingNow(false);
+    }
+  }
+
   if (conv && (conv.status === 'pending' || conv.status === 'processing' || conv.status === 'retry_pending')) {
+    const isTakingLong = pollSeconds > 45;
     return (
       <EmptyState
         icon={<div className="w-8 h-8 border-2 border-t-primary border-border rounded-full animate-spin mx-auto" />}
         title="Analyzing Conversation"
         description={
-          conv.status === 'retry_pending'
+          isTakingLong
+            ? 'Analysis is taking longer than usual. Background workers are continuing the evaluation, or you can trigger a retry.'
+            : conv.status === 'retry_pending'
             ? 'Review retry scheduled. Kairo is analyzing 5-pillar deal intelligence...'
             : 'Extracting 5-pillar intelligence, risks, and next steps in the background...'
         }
-        action={<Button onClick={() => navigate(dealId ? `/app/deals/${dealId}` : '/app/dashboard')}>Back to Deal</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            {isTakingLong && (
+              <Button variant="secondary" onClick={handleRetryNow} disabled={retryingNow}>
+                {retryingNow ? 'Retrying...' : 'Retry Now'}
+              </Button>
+            )}
+            <Button onClick={() => navigate(dealId ? `/app/deals/${dealId}` : '/app/dashboard')}>Back to Deal</Button>
+          </div>
+        }
       />
     );
   }
@@ -185,7 +234,14 @@ export function Review() {
         icon={<AlertTriangle className="w-6 h-6 text-red-400" />}
         title="Review Failed"
         description={conv.last_error || 'We encountered an issue analyzing this conversation.'}
-        action={<Button onClick={() => navigate(dealId ? `/app/deals/${dealId}` : '/app/dashboard')}>Back to Deal</Button>}
+        action={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={handleRetryNow} disabled={retryingNow}>
+              {retryingNow ? 'Retrying...' : 'Re-run Analysis'}
+            </Button>
+            <Button onClick={() => navigate(dealId ? `/app/deals/${dealId}` : '/app/dashboard')}>Back to Deal</Button>
+          </div>
+        }
       />
     );
   }

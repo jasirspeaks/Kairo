@@ -262,12 +262,14 @@ export async function submitRecording(
     // Non-blocking fire-and-forget: The audio is safely stored in Storage and
     // marked 'pending'. Trigger the background review orchestrator without
     // holding the client on a blocking loading screen.
+    // keepalive: true ensures the browser completes the request even if the user navigates immediately.
     fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      keepalive: true,
       body: JSON.stringify({ conversation_id: newConv.id }),
     }).catch((err: any) => {
       console.warn('submitRecording background review dispatch warning:', err);
@@ -376,12 +378,14 @@ export async function submitTranscript(
   } else {
     // Non-blocking fire-and-forget: The transcript is safely committed to DB.
     // Trigger the background review orchestrator without blocking UI thread.
+    // keepalive: true ensures the browser completes the request even if the user navigates immediately.
     fetch(`${supabaseUrl}/functions/v1/mobile-recording-review`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      keepalive: true,
       body: JSON.stringify({ conversation_id: newConv.id }),
     }).catch((err: any) => {
       console.warn('submitTranscript background review dispatch warning:', err);
