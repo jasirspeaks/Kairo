@@ -110,6 +110,14 @@ export function Review() {
       // Instantly commits the conversation to DB and triggers review in background.
       await submitTranscript(deal.id, text);
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('kairo-manual-review-started', {
+            detail: { dealId: deal.id, dealName: deal.deal_name },
+          })
+        );
+      }
+
       setNewTranscript('');
       setAddingCall(false);
       setShowFlashModal(true);
@@ -192,8 +200,15 @@ export function Review() {
     return (
       <RecordCallScreen
         dealId={dealId}
-        onComplete={() => {
+        onComplete={(res) => {
           setRecordingNow(false);
+          if (typeof window !== 'undefined' && dealId) {
+            window.dispatchEvent(
+              new CustomEvent('kairo-manual-review-started', {
+                detail: { dealId, dealName: deal?.deal_name, conversationId: res?.conversationId },
+              })
+            );
+          }
           setShowFlashModal(true);
         }}
         onClose={() => setRecordingNow(false)}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   SafeAreaView,
   StatusBar,
@@ -9,11 +9,12 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  AppState,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { useAuth, supabase } from '@kairo/api';
 import { parseDeepLinkUrl } from '@kairo/platform';
-import { markDealReviewViewed } from './src/lib/dealViewTracking';
+import { markDealReviewViewed, isDealReviewViewed } from './src/lib/dealViewTracking';
 import { colors } from './src/theme/colors';
 import { NavigationProvider, useNavigation } from './src/navigation/NavigationContext';
 import { BottomNav } from './src/components/layout/BottomNav';
@@ -42,37 +43,93 @@ function AppShell() {
     status: 'ongoing' | 'complete';
   } | null>(null);
 
+  const dismissedToastIdRef = useRef<string | null>(null);
+
+  const syncMobileReviews = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      // 1. Check active/ongoing reviews
+      const { data: ongoingData } = await supabase
+        .from('conversations')
+        .select('id, deal_id, status, created_at')
+        .eq('user_id', user.id)
+        .in('status', ['pending', 'processing', 'retry_pending'])
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (ongoingData && ongoingData.length > 0) {
+        const conv = ongoingData[0];
+        if (conv.deal_id && conv.id !== dismissedToastIdRef.current) {
+          let dealName = 'Your deal';
+          try {
+            const { data: dealData } = await supabase
+              .from('deals')
+              .select('deal_name')
+              .eq('id', conv.deal_id)
+              .single();
+            if (dealData?.deal_name) dealName = dealData.deal_name;
+          } catch {}
+
+          setReviewToast({
+            id: conv.id,
+            dealId: conv.deal_id,
+            dealName,
+            status: 'ongoing',
+          });
+          return;
+        }
+      }
+
+      // 2. Check recently completed reviews (within 60 seconds)
+      const sixtySecondsAgo = new Date(Date.now() - 60 * 1000).toISOString();
+      const { data: recentCompleted } = await supabase
+        .from('conversations')
+        .select('id, deal_id, status, created_at')
+        .eq('user_id', user.id)
+        .eq('status', 'complete')
+        .gte('created_at', sixtySecondsAgo)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (recentCompleted && recentCompleted.length > 0) {
+        const conv = recentCompleted[0];
+        if (
+          conv.deal_id &&
+          conv.id !== dismissedToastIdRef.current &&
+          !isDealReviewViewed(conv.deal_id, conv.created_at)
+        ) {
+          let dealName = 'Your deal';
+          try {
+            const { data: dealData } = await supabase
+              .from('deals')
+              .select('deal_name')
+              .eq('id', conv.deal_id)
+              .single();
+            if (dealData?.deal_name) dealName = dealData.deal_name;
+          } catch {}
+
+          setReviewToast({
+            id: conv.id,
+            dealId: conv.deal_id,
+            dealName,
+            status: 'complete',
+          });
+          return;
+        }
+      }
+
+      // If nothing ongoing or recently completed, clear ongoing toast
+      setReviewToast((prev) => (prev?.status === 'ongoing' ? null : prev));
+    } catch (err) {
+      console.warn('[mobile] syncMobileReviews error:', err);
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     if (!user?.id) return;
 
-    // Check for ongoing reviews on mount
-    supabase
-      .from('conversations')
-      .select('id, deal_id, status, created_at')
-      .eq('user_id', user.id)
-      .in('status', ['pending', 'processing', 'retry_pending'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .then(async ({ data }) => {
-        if (!data || data.length === 0) return;
-        const conv = data[0];
-        if (!conv.deal_id) return;
-        let dealName = 'Your deal';
-        try {
-          const { data: dealData } = await supabase
-            .from('deals')
-            .select('deal_name')
-            .eq('id', conv.deal_id)
-            .single();
-          if (dealData?.deal_name) dealName = dealData.deal_name;
-        } catch {}
-        setReviewToast({
-          id: conv.id,
-          dealId: conv.deal_id,
-          dealName,
-          status: 'ongoing',
-        });
-      });
+    syncMobileReviews();
 
     const channel = supabase
       .channel(`mobile-user-reviews-${user.id}`)
@@ -84,46 +141,28 @@ function AppShell() {
           table: 'conversations',
           filter: `user_id=eq.${user.id}`,
         },
-        async (payload) => {
-          const newRow = payload.new as { id?: string; deal_id?: string | null; status?: string };
-          if (!newRow || !newRow.id || !newRow.deal_id) return;
-
-          const isOngoing = newRow.status === 'pending' || newRow.status === 'processing' || newRow.status === 'retry_pending';
-          const isComplete = newRow.status === 'complete';
-
-          if (!isOngoing && !isComplete) {
-            setReviewToast((prev) => (prev?.id === newRow.id ? null : prev));
-            return;
-          }
-
-          let dealName = 'Your deal';
-          try {
-            const { data } = await supabase
-              .from('deals')
-              .select('deal_name')
-              .eq('id', newRow.deal_id)
-              .single();
-            if (data?.deal_name) {
-              dealName = data.deal_name;
-            }
-          } catch {
-            // ignore
-          }
-
-          setReviewToast({
-            id: newRow.id,
-            dealId: newRow.deal_id,
-            dealName,
-            status: isComplete ? 'complete' : 'ongoing',
-          });
+        () => {
+          syncMobileReviews();
         }
       )
       .subscribe();
 
+    // Fast polling interval: 3s if review is active, 6s when idle
+    const intervalMs = reviewToast?.status === 'ongoing' ? 3000 : 6000;
+    const interval = setInterval(syncMobileReviews, intervalMs);
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        syncMobileReviews();
+      }
+    });
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
+      subscription.remove();
     };
-  }, [user?.id]);
+  }, [user?.id, syncMobileReviews, reviewToast?.status]);
 
   useEffect(() => {
     if (!reviewToast || reviewToast.status === 'ongoing') return;
@@ -296,10 +335,7 @@ function AppShell() {
       {reviewToast && (
         <View style={styles.toastContainer}>
           <TouchableOpacity
-            style={[
-              styles.toastCard,
-              reviewToast.status === 'ongoing' ? styles.toastCardOngoing : styles.toastCardComplete,
-            ]}
+            style={styles.toastCard}
             onPress={() => {
               const { dealId } = reviewToast;
               setReviewToast(null);
@@ -310,51 +346,34 @@ function AppShell() {
             }}
             activeOpacity={0.9}
           >
-            <View
-              style={[
-                styles.toastIcon,
-                reviewToast.status === 'ongoing' ? styles.toastIconOngoing : styles.toastIconComplete,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.toastSparkle,
-                  reviewToast.status === 'ongoing' ? styles.toastSparkleOngoing : styles.toastSparkleComplete,
-                ]}
-              >
-                ✦
-              </Text>
-            </View>
-
             <View style={styles.toastTextContainer}>
               <View style={styles.toastHeaderRow}>
-                <View style={styles.toastBadgePill}>
-                  <Text style={styles.toastBadgeText}>KAIRO</Text>
-                </View>
-                <Text style={styles.toastNowText}>· NOW</Text>
-              </View>
-
-              <View style={styles.toastTitleRow}>
                 <Text style={styles.toastTitle}>
-                  {reviewToast.status === 'ongoing' ? 'Call Review in Progress' : 'Call Review Ready'}
+                  {reviewToast.status === 'ongoing' ? 'Review in Progress' : 'Review Ready'}
                 </Text>
-                {reviewToast.status === 'ongoing' && <View style={styles.toastLiveDot} />}
+                <TouchableOpacity
+                  onPress={() => {
+                    dismissedToastIdRef.current = reviewToast.id;
+                    setReviewToast(null);
+                  }}
+                  style={styles.toastCloseBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.toastCloseText}>✕</Text>
+                </TouchableOpacity>
               </View>
 
               <Text style={styles.toastSubtitle} numberOfLines={2}>
                 {reviewToast.status === 'ongoing'
-                  ? `Review for ${reviewToast.dealName} is ongoing and will be ready shortly.`
-                  : `Review for ${reviewToast.dealName} is ready. Tap to inspect.`}
+                  ? `Review for ${reviewToast.dealName} is in progress and will be available once complete.`
+                  : `Review for ${reviewToast.dealName} is ready. Tap to open.`}
               </Text>
-            </View>
 
-            <TouchableOpacity
-              onPress={() => setReviewToast(null)}
-              style={styles.toastCloseBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.toastCloseText}>✕</Text>
-            </TouchableOpacity>
+              <View style={styles.toastActionRow}>
+                <Text style={styles.toastActionText}>View Deal Review</Text>
+                <Text style={styles.toastActionChevron}>›</Text>
+              </View>
+            </View>
           </TouchableOpacity>
         </View>
       )}
@@ -396,105 +415,57 @@ const styles = StyleSheet.create({
   toastCard: {
     backgroundColor: '#160D21',
     borderWidth: 1,
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    borderColor: colors.primary,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.55,
     shadowRadius: 18,
     elevation: 12,
   },
-  toastCardOngoing: {
-    borderColor: colors.primary,
-  },
-  toastCardComplete: {
-    borderColor: 'rgba(61, 214, 140, 0.45)',
-  },
-  toastIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toastIconOngoing: {
-    backgroundColor: 'rgba(112, 66, 197, 0.2)',
-    borderColor: colors.primary,
-  },
-  toastIconComplete: {
-    backgroundColor: 'rgba(61, 214, 140, 0.15)',
-    borderColor: 'rgba(61, 214, 140, 0.4)',
-  },
-  toastSparkle: {
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  toastSparkleOngoing: {
-    color: colors.primary,
-  },
-  toastSparkleComplete: {
-    color: '#3DD68C',
-  },
   toastTextContainer: {
-    flex: 1,
+    width: '100%',
   },
   toastHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginBottom: 2,
-  },
-  toastBadgePill: {
-    backgroundColor: '#211333',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(48, 32, 68, 0.6)',
-  },
-  toastBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: colors.textMuted,
-    letterSpacing: 0.8,
-  },
-  toastNowText: {
-    fontSize: 9,
-    color: colors.textMuted,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  toastTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   toastTitle: {
     color: colors.textPrimary,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
-  },
-  toastLiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.primary,
   },
   toastSubtitle: {
     color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 2,
-    lineHeight: 15,
+    lineHeight: 16,
+  },
+  toastActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  toastActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  toastActionChevron: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '600',
   },
   toastCloseBtn: {
-    padding: 4,
+    padding: 2,
   },
   toastCloseText: {
     color: colors.textMuted,
-    fontSize: 12,
+    fontSize: 13,
   },
 });

@@ -191,9 +191,17 @@ export function NewDeal() {
 
   function handleRecordingComplete(res?: { conversationId: string; dealId: string }) {
     callSucceeded.current = true;
+    const finalDealId = res?.dealId || scheduledDealIdRef.current || scheduledDealId;
     if (res?.dealId) {
       setScheduledDealId(res.dealId);
       scheduledDealIdRef.current = res.dealId;
+    }
+    if (typeof window !== 'undefined' && finalDealId) {
+      window.dispatchEvent(
+        new CustomEvent('kairo-manual-review-started', {
+          detail: { dealId: finalDealId, dealName, conversationId: res?.conversationId },
+        })
+      );
     }
     setShowFlashModal(true);
   }
@@ -224,6 +232,14 @@ export function NewDeal() {
       // Write-Ahead Persistence (WAL) & non-blocking background orchestration:
       // Instantly commits transcript to DB as pending and triggers review in background.
       await submitTranscript(dealId, text);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('kairo-manual-review-started', {
+            detail: { dealId, dealName },
+          })
+        );
+      }
 
       callSucceeded.current = true;
       setShowFlashModal(true);
